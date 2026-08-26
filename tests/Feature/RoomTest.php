@@ -248,7 +248,11 @@ class RoomTest extends TestCase
             'host_id' => $host->id,
             'code' => 'ABC123',
             'max_players' => 10,
-            'configuration' => [],
+            'configuration' => [
+                'mafia_count' => 1,
+                'doctor' => false,
+                'detective' => false,
+            ],
             'status' => 'waiting',
         ]);
 
@@ -260,10 +264,9 @@ class RoomTest extends TestCase
         $response->assertRedirect(route('rooms.show', $room));
 
         $this->assertEquals('in_progress', $room->refresh()->status);
-        $this->assertEquals([
-            'phase' => 'setup',
-            'round' => 1,
-        ], $room->game_state);
+        $this->assertEquals('night', $room->game_state['phase']);
+        $this->assertEquals(1, $room->game_state['round']);
+        $this->assertEquals('mafia', $room->game_state['night_step']);
     }
 
     public function test_game_started_event_is_broadcast_when_host_starts_room(): void
@@ -279,7 +282,11 @@ class RoomTest extends TestCase
             'host_id' => $host->id,
             'code' => 'ABC123',
             'max_players' => 10,
-            'configuration' => [],
+            'configuration' => [
+                'mafia_count' => 1,
+                'doctor' => false,
+                'detective' => false,
+            ],
             'status' => 'waiting',
         ]);
 
@@ -383,5 +390,488 @@ class RoomTest extends TestCase
             ->assertSessionHasErrors('room');
 
         $this->assertEquals('waiting', $room->refresh()->status);
+    }
+
+    public function test_room_creation_rejects_mafia_not_outnumbered_by_town(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+
+        $response = $this->actingAs($host)->post('/rooms', [
+            'game_id' => $game->id,
+            'max_players' => 20,
+            'configuration' => [
+                'mafia_count' => 16,
+                'doctor' => false,
+                'detective' => false,
+            ],
+        ]);
+
+        $response->assertRedirect()
+            ->assertSessionHasErrors('configuration');
+
+        $this->assertNull(Room::first());
+    }
+
+    public function test_host_can_advance_the_phase(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $players = User::factory()->count(5)->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => ['mafia_count' => 1, 'doctor' => false, 'detective' => false],
+            'status' => 'in_progress',
+            'game_state' => ['phase' => 'night', 'round' => 1, 'roles' => [], 'alive' => [], 'winner' => null],
+        ]);
+
+        $room->players()->attach($players->pluck('id')->all());
+
+        $response = $this->actingAs($host)->post("/rooms/{$room->id}/advance");
+
+        $response->assertRedirect(route('rooms.show', $room));
+
+        // No doctor/detective enabled, so mafia's turn is the only night
+        // step — one advance call resolves the night and reaches day.
+        $this->assertEquals('day', $room->refresh()->game_state['phase']);
+    }
+
+    public function test_advance_steps_through_special_roles_before_resolving_night(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $players = User::factory()->count(5)->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => ['mafia_count' => 1, 'doctor' => true, 'detective' => true],
+            'status' => 'in_progress',
+            'game_state' => [
+                'phase' => 'night',
+                'round' => 1,
+                'roles' => [],
+                'alive' => [],
+                'winner' => null,
+                'night_step' => 'mafia',
+            ],
+        ]);
+
+        $room->players()->attach($players->pluck('id')->all());
+
+        $this->actingAs($host)->post("/rooms/{$room->id}/advance");
+        $this->assertEquals('night', $room->refresh()->game_state['phase']);
+        $this->assertEquals('doctor', $room->game_state['night_step']);
+
+        $this->actingAs($host)->post("/rooms/{$room->id}/advance");
+        $this->assertEquals('night', $room->refresh()->game_state['phase']);
+        $this->assertEquals('detective', $room->game_state['night_step']);
+
+        $this->actingAs($host)->post("/rooms/{$room->id}/advance");
+        $this->assertEquals('day', $room->refresh()->game_state['phase']);
+        $this->assertNull($room->game_state['night_step']);
+    }
+
+    public function test_non_host_cannot_advance_the_phase(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'in_progress',
+            'game_state' => ['phase' => 'night', 'round' => 1, 'roles' => [], 'alive' => [], 'winner' => null],
+        ]);
+
+        $room->players()->attach($player->id);
+
+        $response = $this->actingAs($player)->post("/rooms/{$room->id}/advance");
+
+        $response->assertRedirect()->assertSessionHasErrors('room');
+        $this->assertEquals('night', $room->refresh()->game_state['phase']);
+    }
+
+    public function test_cannot_advance_a_room_that_is_not_in_progress(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $response = $this->actingAs($host)->post("/rooms/{$room->id}/advance");
+
+        $response->assertRedirect()->assertSessionHasErrors('room');
+    }
+
+    public function test_action_submission_broadcasts_to_both_mafia_and_host_channels(): void
+    {
+        Event::fake([\App\Events\NightActionUpdated::class, \App\Events\HostNightActionUpdated::class]);
+
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $players = User::factory()->count(5)->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => ['mafia_count' => 1, 'doctor' => true, 'detective' => false],
+            'status' => 'in_progress',
+        ]);
+
+        $room->players()->attach($players->pluck('id')->all());
+
+        $playerIds = $players->pluck('id')->values();
+        $roles = [
+            $playerIds[0] => 'mafia',
+            $playerIds[1] => 'doctor',
+            $playerIds[2] => 'civilian',
+            $playerIds[3] => 'civilian',
+            $playerIds[4] => 'civilian',
+        ];
+
+        $room->update([
+            'game_state' => [
+                'phase' => 'night',
+                'round' => 1,
+                'roles' => $roles,
+                'alive' => collect($roles)->keys()->mapWithKeys(fn($id) => [$id => true])->all(),
+                'winner' => null,
+                'night_actions' => [
+                    'mafia' => ['selections' => [], 'confirmed' => []],
+                    'doctor' => ['selections' => [], 'confirmed' => []],
+                    'detective' => ['selections' => [], 'confirmed' => [], 'results' => []],
+                ],
+                // Mafia's turn has already passed for this test — it's
+                // specifically exercising the doctor's action.
+                'night_step' => 'doctor',
+            ],
+        ]);
+
+        $doctor = User::find($playerIds[1]);
+
+        $this->actingAs($doctor)->post("/rooms/{$room->id}/actions", [
+            'type' => 'doctor_select',
+            'target_id' => $playerIds[1],
+        ]);
+
+        Event::assertDispatched(\App\Events\NightActionUpdated::class);
+        Event::assertDispatched(\App\Events\HostNightActionUpdated::class);
+    }
+
+    public function test_cannot_submit_action_before_that_roles_turn(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $players = User::factory()->count(5)->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => ['mafia_count' => 1, 'doctor' => true, 'detective' => false],
+            'status' => 'in_progress',
+        ]);
+
+        $room->players()->attach($players->pluck('id')->all());
+
+        $playerIds = $players->pluck('id')->values();
+        $roles = [
+            $playerIds[0] => 'mafia',
+            $playerIds[1] => 'doctor',
+            $playerIds[2] => 'civilian',
+            $playerIds[3] => 'civilian',
+            $playerIds[4] => 'civilian',
+        ];
+
+        $room->update([
+            'game_state' => [
+                'phase' => 'night',
+                'round' => 1,
+                'roles' => $roles,
+                'alive' => collect($roles)->keys()->mapWithKeys(fn($id) => [$id => true])->all(),
+                'winner' => null,
+                'night_actions' => [
+                    'mafia' => ['selections' => [], 'confirmed' => []],
+                    'doctor' => ['selections' => [], 'confirmed' => []],
+                    'detective' => ['selections' => [], 'confirmed' => [], 'results' => []],
+                ],
+                // Still mafia's turn — doctor should not be able to act yet.
+                'night_step' => 'mafia',
+            ],
+        ]);
+
+        $doctor = User::find($playerIds[1]);
+
+        $response = $this->actingAs($doctor)->post("/rooms/{$room->id}/actions", [
+            'type' => 'doctor_select',
+            'target_id' => $playerIds[1],
+        ]);
+
+        $response->assertRedirect()->assertSessionHasErrors('action');
+    }
+
+    public function test_room_status_becomes_finished_when_win_condition_is_met(): void
+    {
+        Event::fake([\App\Events\GameEnded::class]);
+
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $players = User::factory()->count(5)->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => ['mafia_count' => 1, 'doctor' => false, 'detective' => false],
+            'status' => 'in_progress',
+        ]);
+
+        $room->players()->attach($players->pluck('id')->all());
+
+        $playerIds = $players->pluck('id')->values();
+        $roles = [
+            $playerIds[0] => 'mafia',
+            $playerIds[1] => 'civilian',
+            $playerIds[2] => 'civilian',
+            $playerIds[3] => 'civilian',
+            $playerIds[4] => 'civilian',
+        ];
+
+        $room->update([
+            'game_state' => [
+                'phase' => 'day',
+                'round' => 1,
+                'roles' => $roles,
+                'alive' => collect($roles)->keys()->mapWithKeys(fn($id) => [$id => true])->all(),
+                'winner' => null,
+                'night_actions' => [
+                    'mafia' => ['selections' => [], 'confirmed' => []],
+                    'doctor' => ['selections' => [], 'confirmed' => []],
+                    'detective' => ['selections' => [], 'confirmed' => [], 'results' => []],
+                ],
+                'day_votes' => ['selections' => [], 'confirmed' => []],
+            ],
+        ]);
+
+        $response = $this->actingAs($host)->post("/rooms/{$room->id}/execute", [
+            'target_id' => $playerIds[0], // the only mafia
+        ]);
+
+        $response->assertRedirect(route('rooms.show', $room));
+
+        $room->refresh();
+
+        $this->assertEquals('finished', $room->status);
+        $this->assertEquals('town', $room->game_state['winner']);
+
+        Event::assertDispatched(\App\Events\GameEnded::class);
+    }
+
+    public function test_player_can_leave_a_waiting_room(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $room->players()->attach($player->id);
+
+        $response = $this->actingAs($player)->post("/rooms/{$room->id}/leave");
+
+        $response->assertRedirect(route('games.index'));
+
+        $this->assertDatabaseMissing('room_players', [
+            'room_id' => $room->id,
+            'user_id' => $player->id,
+        ]);
+    }
+
+    public function test_player_cannot_leave_a_room_they_are_not_in(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $outsider = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $response = $this->actingAs($outsider)->post("/rooms/{$room->id}/leave");
+
+        $response->assertRedirect()->assertSessionHasErrors('room');
+    }
+
+    public function test_player_cannot_leave_a_room_that_is_in_progress(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'in_progress',
+        ]);
+
+        $room->players()->attach($player->id);
+
+        $response = $this->actingAs($player)->post("/rooms/{$room->id}/leave");
+
+        $response->assertRedirect()->assertSessionHasErrors('room');
+
+        $this->assertDatabaseHas('room_players', [
+            'room_id' => $room->id,
+            'user_id' => $player->id,
+        ]);
+    }
+
+    public function test_leaving_broadcasts_player_left_event(): void
+    {
+        Event::fake([\App\Events\PlayerLeft::class]);
+
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $room->players()->attach($player->id);
+
+        $this->actingAs($player)->post("/rooms/{$room->id}/leave");
+
+        Event::assertDispatched(\App\Events\PlayerLeft::class, function ($event) use ($room, $player) {
+            return $event->room->id === $room->id && $event->player->id === $player->id;
+        });
+    }
+
+    public function test_show_includes_the_requesting_players_own_role_only(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $players = User::factory()->count(5)->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => ['mafia_count' => 1, 'doctor' => false, 'detective' => false],
+            'status' => 'in_progress',
+        ]);
+
+        $room->players()->attach($players->pluck('id')->all());
+
+        $playerIds = $players->pluck('id')->values();
+        $roles = [
+            $playerIds[0] => 'mafia',
+            $playerIds[1] => 'civilian',
+            $playerIds[2] => 'civilian',
+            $playerIds[3] => 'civilian',
+            $playerIds[4] => 'civilian',
+        ];
+
+        $room->update([
+            'game_state' => [
+                'phase' => 'night',
+                'round' => 1,
+                'roles' => $roles,
+                'alive' => collect($roles)->keys()->mapWithKeys(fn($id) => [$id => true])->all(),
+                'winner' => null,
+                'night_actions' => [
+                    'mafia' => ['selections' => [], 'confirmed' => []],
+                    'doctor' => ['selections' => [], 'confirmed' => []],
+                    'detective' => ['selections' => [], 'confirmed' => [], 'results' => []],
+                ],
+                'day_votes' => ['selections' => [], 'confirmed' => []],
+                'night_step' => 'mafia',
+            ],
+        ]);
+
+        $mafiaPlayer = User::find($playerIds[0]);
+
+        $response = $this->actingAs($mafiaPlayer)->get("/rooms/{$room->code}");
+
+        $response->assertOk()
+            ->assertInertia(
+                fn($page) => $page
+                    ->component('Rooms/Show')
+                    ->where('room.you.role', 'mafia')
+                    ->where('room.you.alive', true)
+                    ->where('room.night_step', 'mafia')
+                    ->missing('room.roles')
+                    ->missing('room.players.0.role')
+            );
+    }
+
+    public function test_show_returns_null_you_before_game_starts(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $room->players()->attach($player->id);
+
+        $response = $this->actingAs($player)->get("/rooms/{$room->code}");
+
+        $response->assertOk()
+            ->assertInertia(
+                fn($page) => $page
+                    ->component('Rooms/Show')
+                    ->where('room.you', null)
+            );
     }
 }

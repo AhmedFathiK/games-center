@@ -20,6 +20,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/games', [GameController::class, 'index'])
         ->name('games.index');
 
+    Route::post('/rooms/{room}/advance', [RoomController::class, 'advance'])
+        ->name('rooms.advance');
+
+    // Room lookups by URL (GET) use the shareable room code.
     Route::get('/rooms/{room:code}', [RoomController::class, 'show'])
         ->name('rooms.show');
 
@@ -31,4 +35,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::post('/rooms/{room}/start', [RoomController::class, 'start'])
         ->name('rooms.start');
+
+    Route::post('/rooms/{room}/actions', [RoomController::class, 'act'])
+        ->name('rooms.act');
+
+    Route::post('/rooms/{room}/execute', [RoomController::class, 'execute'])
+        ->name('rooms.execute');
+
+    Route::post('/rooms/{room}/leave', [RoomController::class, 'leave'])
+        ->name('rooms.leave');
 });

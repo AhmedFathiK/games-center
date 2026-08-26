@@ -11,6 +11,13 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use App\Events\PlayerJoined;
 use App\Events\GameStarted;
+use App\Events\HostNightActionUpdated;
+use App\Events\NightActionUpdated;
+use App\Events\PhaseChanged;
+use App\Events\PlayerExecuted;
+use App\Events\VoteUpdated;
+use App\Events\GameEnded;
+use App\Events\PlayerLeft;
 
 class RoomController extends Controller
 {
@@ -47,6 +54,17 @@ class RoomController extends Controller
             $game->configurationSchema(),
             $configuration
         );
+
+        $configErrors = $game->validateRoomConfiguration(
+            $configuration,
+            $validated['max_players']
+        );
+
+        if (! empty($configErrors)) {
+            throw ValidationException::withMessages([
+                'configuration' => $configErrors,
+            ]);
+        }
 
         $room = DB::transaction(function () use (
             $gameRecord,
@@ -89,6 +107,16 @@ class RoomController extends Controller
     ): void {
         foreach ($schema as $key => $rules) {
             if (!array_key_exists($key, $configuration)) {
+                // Booleans reasonably default to false when omitted (an
+                // unchecked toggle). Integers have no such safe absence —
+                // silently treating a missing required count as 0 is how
+                // a room could previously be created with zero Mafia.
+                if ($rules['type'] === 'integer') {
+                    throw ValidationException::withMessages([
+                        "configuration.$key" => "$key is required.",
+                    ]);
+                }
+
                 continue;
             }
 
@@ -163,6 +191,28 @@ class RoomController extends Controller
         return redirect()->route('rooms.show', $room);
     }
 
+    public function leave(Request $request, Room $room)
+    {
+        $user = $request->user();
+
+        if (! $room->isWaiting()) {
+            throw ValidationException::withMessages([
+                'room' => 'You can only leave a room while it is waiting to start.',
+            ]);
+        }
+
+        if (! $room->players()->where('users.id', $user->id)->exists()) {
+            throw ValidationException::withMessages([
+                'room' => 'You are not in this room.',
+            ]);
+        }
+
+        $room->players()->detach($user->id);
+        broadcast(new PlayerLeft($room, $user));
+
+        return redirect()->route('games.index');
+    }
+
     public function start(Request $request, Room $room)
     {
         $user = $request->user();
@@ -228,6 +278,74 @@ class RoomController extends Controller
             'players',
         ]);
 
+        $user = $request->user();
+        $gameState = $room->game_state;
+        $isHost = $room->host_id === $user->id;
+
+        $you = null;
+        $hostView = null;
+
+        if ($gameState !== null) {
+            $role = $gameState['roles'][$user->id] ?? null;
+
+            // The requesting player's own in-progress night-action state.
+            // Every select/confirm submission redirects back through this
+            // endpoint, so this is the only way a player recovers "I already
+            // picked someone, awaiting confirmation" after that round-trip.
+            //
+            // Mafia is a coordinated role: members are shown the full
+            // mafia night_actions tree (everyone's picks/confirmations),
+            // matching what the `rooms.{id}.mafia` channel broadcasts live.
+            // Doctor/detective only ever see their own selection.
+            $nightAction = null;
+
+            if ($role === 'mafia') {
+                $nightAction = $gameState['night_actions']['mafia'] ?? null;
+            } elseif (in_array($role, ['doctor', 'detective'], true)) {
+                $nightAction = [
+                    'selected_target_id' => $gameState['night_actions'][$role]['selections'][$user->id] ?? null,
+                    'confirmed' => $gameState['night_actions'][$role]['confirmed'][$user->id] ?? false,
+                ];
+            }
+
+            $mafiaTeam = null;
+
+            if ($role === 'mafia') {
+                $teammateIds = collect($gameState['roles'])
+                    ->filter(fn($r, $id) => $r === 'mafia' && (int) $id !== (int) $user->id)
+                    ->keys();
+
+                $mafiaTeam = $room->players
+                    ->whereIn('id', $teammateIds)
+                    ->map(fn($player) => [
+                        'id' => $player->id,
+                        'name' => $player->name,
+                    ])
+                    ->values();
+            }
+
+            $you = [
+                'role' => $role,
+                'alive' => $gameState['alive'][$user->id] ?? null,
+                'detective_result' => $role === 'detective'
+                    ? ($gameState['night_actions']['detective']['results'][$user->id] ?? null)
+                    : null,
+                'night_action' => $nightAction,
+                'mafia_team' => $mafiaTeam,
+            ];
+
+            // Host sees everything: all mafia/doctor/detective picks, via
+            // a key that is only ever populated for the actual host. The
+            // role map is included here too so the host UI can label whose
+            // pick is whose — safe, since only the host receives this key.
+            if ($isHost) {
+                $hostView = [
+                    'roles' => $gameState['roles'] ?? null,
+                    'night_actions' => $gameState['night_actions'] ?? null,
+                ];
+            }
+        }
+
         return Inertia::render('Rooms/Show', [
             'room' => [
                 'id' => $room->id,
@@ -235,6 +353,15 @@ class RoomController extends Controller
                 'max_players' => $room->max_players,
                 'status' => $room->status,
                 'configuration' => $room->configuration,
+
+                'phase' => $gameState['phase'] ?? null,
+                'round' => $gameState['round'] ?? null,
+                'winner' => $gameState['winner'] ?? null,
+                'night_step' => $gameState['night_step'] ?? null,
+
+                // Day voting is public by design — everyone in the room
+                // sees the same selections/confirmations.
+                'day_votes' => $gameState['day_votes'] ?? null,
 
                 'game' => [
                     'id' => $room->game->id,
@@ -251,8 +378,120 @@ class RoomController extends Controller
                 'players' => $room->players->map(fn($player) => [
                     'id' => $player->id,
                     'name' => $player->name,
+                    'alive' => $gameState['alive'][$player->id] ?? true,
                 ])->values(),
+
+                'you' => $you,
+                'host_view' => $hostView,
             ],
         ]);
+    }
+
+    public function advance(Request $request, Room $room)
+    {
+        $user = $request->user();
+
+        if ($room->host_id !== $user->id) {
+            throw ValidationException::withMessages([
+                'room' => 'Only the host can advance the game.',
+            ]);
+        }
+
+        if (! $room->isInProgress()) {
+            throw ValidationException::withMessages([
+                'room' => 'This room is not currently in progress.',
+            ]);
+        }
+
+        $gameDefinition = GameRegistry::get($room->game->slug);
+
+        try {
+            $newState = $gameDefinition->advancePhase($room);
+        } catch (\InvalidArgumentException $e) {
+            throw ValidationException::withMessages([
+                'room' => $e->getMessage(),
+            ]);
+        }
+
+        $room->update(['game_state' => $newState]);
+
+        broadcast(new PhaseChanged($room));
+
+        if (($newState['winner'] ?? null) !== null) {
+            $room->update(['status' => 'finished']);
+            broadcast(new GameEnded($room));
+        }
+
+        return redirect()->route('rooms.show', $room);
+    }
+
+    public function act(Request $request, Room $room)
+    {
+        $user = $request->user();
+
+        if (! $room->isInProgress()) {
+            throw ValidationException::withMessages([
+                'action' => 'This room is not currently in progress.',
+            ]);
+        }
+
+        $gameDefinition = GameRegistry::get($room->game->slug);
+
+        try {
+            $newState = $gameDefinition->submitAction($room, $user, $request->all());
+        } catch (\InvalidArgumentException $e) {
+            throw ValidationException::withMessages([
+                'action' => $e->getMessage(),
+            ]);
+        }
+
+        $room->update(['game_state' => $newState]);
+
+        if (in_array($request->input('type'), ['vote_select', 'vote_confirm'], true)) {
+            broadcast(new VoteUpdated($room));
+        } else {
+            broadcast(new NightActionUpdated($room));
+            broadcast(new HostNightActionUpdated($room));
+        }
+
+        return redirect()->route('rooms.show', $room);
+    }
+
+    public function execute(Request $request, Room $room)
+    {
+        $user = $request->user();
+
+        if ($room->host_id !== $user->id) {
+            throw ValidationException::withMessages([
+                'room' => 'Only the host can execute a player.',
+            ]);
+        }
+
+        if (! $room->isInProgress()) {
+            throw ValidationException::withMessages([
+                'room' => 'This room is not currently in progress.',
+            ]);
+        }
+
+        $gameDefinition = GameRegistry::get($room->game->slug);
+
+        try {
+            $newState = $gameDefinition->executePlayer($room, $request->input('target_id'));
+        } catch (\InvalidArgumentException $e) {
+            throw ValidationException::withMessages([
+                'room' => $e->getMessage(),
+            ]);
+        }
+
+        $room->update(['game_state' => $newState]);
+
+        broadcast(new PlayerExecuted($room));
+
+        if (($newState['winner'] ?? null) !== null) {
+            $room->update(['status' => 'finished']);
+            broadcast(new GameEnded($room));
+        }
+
+        return redirect()->route('rooms.show', $room);
     }
 }
