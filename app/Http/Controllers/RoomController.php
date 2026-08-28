@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Games\GameRegistry;
 use App\Models\Game;
 use App\Models\Room;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -15,6 +16,7 @@ use App\Events\HostNightActionUpdated;
 use App\Events\NightActionUpdated;
 use App\Events\PhaseChanged;
 use App\Events\PlayerExecuted;
+use App\Events\PlayerKicked;
 use App\Events\VoteUpdated;
 use App\Events\GameEnded;
 use App\Events\PlayerLeft;
@@ -28,6 +30,16 @@ class RoomController extends Controller
             'max_players' => ['required', 'integer', 'min:1'],
             'configuration' => ['nullable', 'array'],
         ]);
+
+        // A user can only be host/player of one active (waiting or
+        // in_progress) room at a time. Checked first, before any other
+        // validation, since there is nothing else worth validating if
+        // this request can't succeed regardless.
+        if (Room::activeFor($request->user()->id) !== null) {
+            throw ValidationException::withMessages([
+                'room' => 'You are already in an active room.',
+            ]);
+        }
 
         $gameRecord = Game::findOrFail($validated['game_id']);
 
@@ -179,6 +191,16 @@ class RoomController extends Controller
             ]);
         }
 
+        // A user can only be host/player of one active room at a time.
+        // This runs after the "already in this room" check above, so by
+        // this point we know they're not already a member of *this*
+        // room — an active hit here necessarily means a different room.
+        if (Room::activeFor($user->id) !== null) {
+            throw ValidationException::withMessages([
+                'room' => 'You are already in an active room.',
+            ]);
+        }
+
         if ($room->players()->count() >= $room->max_players) {
             throw ValidationException::withMessages([
                 'room' => 'This room is full.',
@@ -187,6 +209,29 @@ class RoomController extends Controller
 
         $room->players()->attach($user->id);
         broadcast(new PlayerJoined($room, $user));
+
+        return redirect()->route('rooms.show', $room);
+    }
+
+    public function find(Request $request)
+    {
+        $validated = $request->validate([
+            'code' => ['required', 'string'],
+        ]);
+
+        $code = strtoupper(trim($validated['code']));
+
+        $room = Room::where('code', $code)->first();
+
+        if (! $room) {
+            // A raw 404 here would break out of the Inertia SPA and
+            // land on Laravel's default error page. Throwing a
+            // ValidationException instead lets this render as a normal
+            // inline form error, same as every other room action.
+            throw ValidationException::withMessages([
+                'code' => 'No room found with that code.',
+            ]);
+        }
 
         return redirect()->route('rooms.show', $room);
     }
@@ -211,6 +256,40 @@ class RoomController extends Controller
         broadcast(new PlayerLeft($room, $user));
 
         return redirect()->route('games.index');
+    }
+
+    public function kick(Request $request, Room $room, User $user)
+    {
+        $host = $request->user();
+
+        if ($room->host_id !== $host->id) {
+            throw ValidationException::withMessages([
+                'room' => 'Only the host can remove players.',
+            ]);
+        }
+
+        if (! $room->isWaiting()) {
+            throw ValidationException::withMessages([
+                'room' => 'Players can only be removed while the room is waiting to start.',
+            ]);
+        }
+
+        if ($user->id === $room->host_id) {
+            throw ValidationException::withMessages([
+                'room' => 'The host cannot be removed.',
+            ]);
+        }
+
+        if (! $room->players()->where('users.id', $user->id)->exists()) {
+            throw ValidationException::withMessages([
+                'room' => 'That player is not in this room.',
+            ]);
+        }
+
+        $room->players()->detach($user->id);
+        broadcast(new PlayerKicked($room, $user));
+
+        return redirect()->route('rooms.show', $room);
     }
 
     public function start(Request $request, Room $room)
@@ -358,6 +437,13 @@ class RoomController extends Controller
                 'round' => $gameState['round'] ?? null,
                 'winner' => $gameState['winner'] ?? null,
                 'night_step' => $gameState['night_step'] ?? null,
+
+                // Roles are private during play, but once the game has
+                // truly ended there's nothing left to protect — everyone
+                // gets the full reveal for the game-over screen.
+                'role_reveal' => ($gameState['winner'] ?? null) !== null
+                    ? ($gameState['roles'] ?? null)
+                    : null,
 
                 // Day voting is public by design — everyone in the room
                 // sees the same selections/confirmations.

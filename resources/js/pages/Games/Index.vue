@@ -30,6 +30,31 @@ const maxPlayers = ref<number>(0)
 const creatingRoom = ref(false)
 const error = ref<string | null>(null)
 
+// --- Join by code ------------------------------------------------------
+const roomCode = ref('')
+const joiningByCode = ref(false)
+const joinCodeError = ref<string | null>(null)
+
+function joinByCode() {
+    if (!roomCode.value.trim()) return
+
+    joiningByCode.value = true
+    joinCodeError.value = null
+
+    router.post(
+        route('rooms.find'),
+        { code: roomCode.value.trim() },
+        {
+            onError: errors => {
+                joinCodeError.value = Object.values(errors)[0] ?? 'Unable to find that room.'
+            },
+            onFinish: () => {
+                joiningByCode.value = false
+            },
+        },
+    )
+}
+
 function selectGame(game: Game) {
     selectedGame.value = game
     configuration.value = {}
@@ -103,6 +128,34 @@ async function createRoom() {
                 <h1 class="gc-title">Select a module</h1>
                 <p class="gc-subtitle">Choose a game, configure the room, and share the code.</p>
             </header>
+
+            <!-- Join by code -->
+            <section class="gc-joinbar">
+                <p class="gc-joinbar-label gc-mono">Have a room code?</p>
+
+                <form class="gc-joinbar-form" @submit.prevent="joinByCode">
+                    <input
+                        v-model="roomCode"
+                        type="text"
+                        class="gc-joinbar-input gc-mono"
+                        placeholder="ROOM CODE"
+                        maxlength="8"
+                        autocomplete="off"
+                        autocapitalize="characters"
+                        spellcheck="false"
+                        @input="roomCode = roomCode.toUpperCase()"
+                    />
+                    <button
+                        type="submit"
+                        class="gc-joinbar-btn"
+                        :disabled="joiningByCode || !roomCode.trim()"
+                    >
+                        {{ joiningByCode ? 'Joining…' : 'Join' }}
+                    </button>
+                </form>
+
+                <p v-if="joinCodeError" class="gc-error">{{ joinCodeError }}</p>
+            </section>
 
             <div class="gc-console" :class="{ 'gc-console--active': selectedGame }">
                 <!-- Module rail -->
@@ -274,9 +327,78 @@ async function createRoom() {
     font-size: 0.95rem;
 }
 
+/* Join by code */
+.gc-joinbar {
+    margin-top: 1.75rem;
+    background: var(--gc-surface);
+    border: 1px solid var(--gc-border);
+    border-radius: 10px;
+    padding: 1.1rem 1.25rem;
+}
+
+.gc-joinbar-label {
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--gc-mist);
+}
+
+.gc-joinbar-form {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.6rem;
+}
+
+.gc-joinbar-input {
+    flex: 1;
+    min-width: 0;
+    background: var(--gc-surface-raised);
+    border: 1px solid var(--gc-border);
+    border-radius: 8px;
+    padding: 0.6rem 0.85rem;
+    color: var(--gc-paper);
+    font-size: 0.95rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.gc-joinbar-input:focus {
+    outline: none;
+    border-color: var(--gc-amber);
+}
+
+.gc-joinbar-input::placeholder {
+    color: var(--gc-mist);
+    letter-spacing: 0.06em;
+}
+
+.gc-joinbar-btn {
+    padding: 0.6rem 1.3rem;
+    border-radius: 8px;
+    border: 1px solid var(--gc-phosphor);
+    background: transparent;
+    color: var(--gc-phosphor);
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.gc-joinbar-btn:hover:not(:disabled) {
+    background: var(--gc-phosphor);
+    color: var(--gc-ink);
+}
+
+.gc-joinbar-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
 /* Console layout */
 .gc-console {
-    margin-top: 2.5rem;
+    margin-top: 2rem;
     display: grid;
     grid-template-columns: 1fr;
     gap: 1.5rem;
@@ -517,7 +639,9 @@ async function createRoom() {
 .gc-module:focus-visible,
 .gc-stepper-btn:focus-visible,
 .gc-toggle:focus-visible,
-.gc-create-btn:focus-visible {
+.gc-create-btn:focus-visible,
+.gc-joinbar-input:focus-visible,
+.gc-joinbar-btn:focus-visible {
     outline: 2px solid var(--gc-amber);
     outline-offset: 2px;
 }
@@ -527,7 +651,8 @@ async function createRoom() {
     .gc-stepper-btn,
     .gc-toggle,
     .gc-toggle-thumb,
-    .gc-create-btn {
+    .gc-create-btn,
+    .gc-joinbar-btn {
         transition: none;
     }
 }

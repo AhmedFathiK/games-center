@@ -44,4 +44,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::post('/rooms/{room}/leave', [RoomController::class, 'leave'])
         ->name('rooms.leave');
+
+    Route::post('/rooms/find', [RoomController::class, 'find'])
+        ->name('rooms.find');
+
+    Route::post('/rooms/{room}/kick/{user}', [RoomController::class, 'kick'])
+        ->name('rooms.kick');
 });

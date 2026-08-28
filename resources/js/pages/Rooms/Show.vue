@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { themeForGame } from '@/themes/gameThemes'
 import NightPhase from './NightPhase.vue'
+import DayPhase from './DayPhase.vue'
+import GameOver from './GameOver.vue'
 import type { Room, AuthUser } from '@/types/room'
 
 const props = defineProps<{
@@ -120,15 +122,123 @@ function startGame() {
     )
 }
 
-onMounted(() => {
+// --- Kick a player (host, waiting-room only) --------------------------
+const kickingPlayerId = ref<number | null>(null)
+const kickError = ref<string | null>(null)
+
+function kickPlayer(playerId: number) {
+    kickingPlayerId.value = playerId
+    kickError.value = null
+
+    router.post(
+        `/rooms/${props.room.id}/kick/${playerId}`,
+        {},
+        {
+            onError: errors => {
+                kickError.value = Object.values(errors)[0] ?? 'Unable to remove that player.'
+            },
+            onFinish: () => {
+                kickingPlayerId.value = null
+            },
+        },
+    )
+}
+
+// The kicked player themself sees a brief modal, then gets redirected
+// out — they're no longer a member, so leaving them on this page would
+// just show them the room as an outside visitor with no explanation.
+const showKickedModal = ref(false)
+let kickedRedirectTimeout: ReturnType<typeof setTimeout> | null = null
+
+function handleSelfKicked() {
+    showKickedModal.value = true
+
+    kickedRedirectTimeout = setTimeout(() => {
+        router.visit(route('games.index'))
+    }, 2500)
+}
+
+// --- Copy link ---------------------------------------------------------
+// The shareable URL uses the room code, matching the GET /rooms/{room:code}
+// route — not the numeric id used by the action endpoints above.
+const linkCopied = ref(false)
+let copiedTimeout: ReturnType<typeof setTimeout> | null = null
+
+async function copyRoomLink() {
+    const link = `${window.location.origin}/rooms/${props.room.code}`
+
+    try {
+        await navigator.clipboard.writeText(link)
+    } catch {
+        // Clipboard API can fail (permissions, non-HTTPS, older browsers).
+        // Fall back to a hidden textarea + the legacy execCommand copy so
+        // the button still works rather than silently doing nothing.
+        const textarea = document.createElement('textarea')
+        textarea.value = link
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+
+        try {
+            document.execCommand('copy')
+        } finally {
+            document.body.removeChild(textarea)
+        }
+    }
+
+    linkCopied.value = true
+
+    if (copiedTimeout) clearTimeout(copiedTimeout)
+    copiedTimeout = setTimeout(() => {
+        linkCopied.value = false
+    }, 2000)
+}
+
+// Authorization for `rooms.{id}` (see routes/channels.php) requires
+// being the host or an existing player. A visitor viewing the room
+// before joining is correctly rejected if they try to subscribe — but
+// subscribing only once at mount means that rejection would stick
+// forever, even after they join, since Inertia updates props on the
+// same component instance rather than remounting it. Subscribing
+// reactively — once, the moment membership actually becomes true —
+// covers both cases: already a member at mount (subscribes immediately,
+// same as before), or becoming one afterward (subscribes right then).
+const canAccessRoomChannel = computed(() => isHost.value || isPlayer.value)
+
+let roomChannelSubscribed = false
+
+function subscribeToRoomChannel() {
+    if (roomChannelSubscribed) return
+    roomChannelSubscribed = true
+
     window.Echo.private(`rooms.${props.room.id}`)
         .listen('.player.joined', () => router.reload({ only: ['room'] }))
         .listen('.game.started', () => router.reload({ only: ['room'] }))
         .listen('.player.left', () => router.reload({ only: ['room'] }))
+        .listen('.player.kicked', (e: { player: { id: number; name: string } }) => {
+            if (e.player.id === props.auth.user.id) {
+                handleSelfKicked()
+            } else {
+                router.reload({ only: ['room'] })
+            }
+        })
         .listen('.phase.changed', () => router.reload({ only: ['room'] }))
         .listen('.vote.updated', () => router.reload({ only: ['room'] }))
         .listen('.player.executed', () => router.reload({ only: ['room'] }))
         .listen('.game.ended', () => router.reload({ only: ['room'] }))
+}
+
+watch(canAccessRoomChannel, canAccess => {
+    if (canAccess) {
+        subscribeToRoomChannel()
+    }
+})
+
+onMounted(() => {
+    if (canAccessRoomChannel.value) {
+        subscribeToRoomChannel()
+    }
 
     // Broadcasts fired while this connection was down/reconnecting are
     // simply lost — Pusher doesn't replay them. Resync once the
@@ -151,6 +261,9 @@ onMounted(() => {
 
 onUnmounted(() => {
     window.Echo.leave(`rooms.${props.room.id}`)
+
+    if (copiedTimeout) clearTimeout(copiedTimeout)
+    if (kickedRedirectTimeout) clearTimeout(kickedRedirectTimeout)
 })
 </script>
 
@@ -161,9 +274,20 @@ onUnmounted(() => {
             <div class="rc-header">
                 <div>
                     <h1 class="rc-title">{{ room.game.name }}</h1>
-                    <p class="rc-subtitle">
-                        Room code: <span class="rc-mono rc-code">{{ room.code }}</span>
-                    </p>
+
+                    <div class="rc-code-row">
+                        <p class="rc-subtitle">
+                            Room code: <span class="rc-mono rc-code">{{ room.code }}</span>
+                        </p>
+
+                        <button
+                            type="button"
+                            class="rc-copy-btn rc-mono"
+                            @click="copyRoomLink"
+                        >
+                            {{ linkCopied ? 'Copied' : 'Copy Link' }}
+                        </button>
+                    </div>
                 </div>
 
                 <span class="rc-badge" :class="`rc-badge--${room.status}`">
@@ -217,12 +341,24 @@ onUnmounted(() => {
                                 {{ indexLabel(i) }}
                             </span>
                             <span class="rc-row-name">{{ player.name }}</span>
+
+                            <button
+                                v-if="isHost"
+                                type="button"
+                                class="rc-kick-btn"
+                                :disabled="kickingPlayerId === player.id"
+                                @click="kickPlayer(player.id)"
+                            >
+                                {{ kickingPlayerId === player.id ? 'Removing…' : 'Kick' }}
+                            </button>
                         </div>
 
                         <p v-if="room.players.length === 0" class="rc-muted">
                             No players have joined yet.
                         </p>
                     </div>
+
+                    <p v-if="kickError" class="rc-error">{{ kickError }}</p>
 
                     <div class="rc-divider" />
 
@@ -279,17 +415,29 @@ onUnmounted(() => {
                 :is-host="isHost"
             />
 
-            <!-- In progress: day phase — separate work item, stub for now -->
-            <section v-else-if="room.status === 'in_progress' && room.phase === 'day'" class="rc-panel">
-                <h2 class="rc-panel-title">Day {{ room.round }}</h2>
-                <p class="rc-muted">The day/voting screen isn't built yet.</p>
-            </section>
+            <!-- In progress: day phase -->
+            <DayPhase
+                v-else-if="room.status === 'in_progress' && room.phase === 'day'"
+                :room="room"
+                :auth="auth"
+                :is-host="isHost"
+            />
 
-            <!-- Finished — separate work item, stub for now -->
-            <section v-else-if="room.status === 'finished'" class="rc-panel">
-                <h2 class="rc-panel-title">Game Over</h2>
-                <p class="rc-muted">Winner: {{ room.winner }}. The game-over screen isn't built yet.</p>
-            </section>
+            <!-- Finished -->
+            <GameOver
+                v-else-if="room.status === 'finished'"
+                :room="room"
+                :auth="auth"
+                :is-host="isHost"
+            />
+        </div>
+
+        <!-- Kicked modal -->
+        <div v-if="showKickedModal" class="rc-kicked-overlay">
+            <div class="rc-kicked-modal">
+                <p class="rc-kicked-title">Removed from Room</p>
+                <p class="rc-kicked-text">The host has removed you from this room.</p>
+            </div>
         </div>
     </div>
 </template>
@@ -336,8 +484,15 @@ onUnmounted(() => {
     letter-spacing: 0.01em;
 }
 
-.rc-subtitle {
+.rc-code-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
     margin-top: 0.25rem;
+    flex-wrap: wrap;
+}
+
+.rc-subtitle {
     font-size: 0.875rem;
     color: var(--rc-text-muted);
 }
@@ -345,6 +500,28 @@ onUnmounted(() => {
 .rc-code {
     font-weight: 600;
     color: var(--rc-text-on-bg);
+}
+
+.rc-copy-btn {
+    border: 1px solid var(--rc-border);
+    background: transparent;
+    color: var(--rc-text-muted);
+    border-radius: 6px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.rc-copy-btn:hover {
+    border-color: var(--rc-primary);
+    color: var(--rc-primary);
+}
+
+.rc-theme-mafia .rc-copy-btn {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-radius: 2px;
 }
 
 .rc-badge {
@@ -463,6 +640,34 @@ onUnmounted(() => {
     color: var(--rc-text-muted);
 }
 
+.rc-kick-btn {
+    border: 1px solid var(--rc-border);
+    background: transparent;
+    color: var(--rc-text-muted);
+    border-radius: 6px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.rc-kick-btn:hover:not(:disabled) {
+    border-color: var(--rc-primary);
+    color: var(--rc-primary);
+}
+
+.rc-kick-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.rc-theme-mafia .rc-kick-btn {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-radius: 2px;
+}
+
 .rc-roster {
     display: flex;
     flex-direction: column;
@@ -575,5 +780,50 @@ onUnmounted(() => {
 
 .rc-ledger-value {
     font-weight: 600;
+}
+
+/* Kicked modal */
+.rc-kicked-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 1.5rem;
+}
+
+.rc-kicked-modal {
+    background: var(--rc-surface);
+    color: var(--rc-text-on-surface);
+    border: 1px solid var(--rc-border);
+    border-radius: 8px;
+    padding: 1.75rem 2rem;
+    max-width: 22rem;
+    text-align: center;
+}
+
+.rc-theme-mafia .rc-kicked-modal {
+    border-radius: 2px;
+    border: 2px solid var(--rc-primary);
+}
+
+.rc-kicked-title {
+    font-family: var(--rc-font-display);
+    font-size: 1.15rem;
+    font-weight: 700;
+}
+
+.rc-theme-mafia .rc-kicked-title {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 1rem;
+}
+
+.rc-kicked-text {
+    margin-top: 0.6rem;
+    font-size: 0.9rem;
+    color: var(--rc-text-muted);
 }
 </style>

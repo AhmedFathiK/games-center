@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -58,5 +59,31 @@ class Room extends Model
     public function isFinished(): bool
     {
         return $this->status === 'finished';
+    }
+
+    /**
+     * Rooms that count as "in use" for the one-active-room-per-user rule.
+     * A finished room (and, later, a cancelled one) no longer occupies a
+     * user's single active-room slot.
+     */
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->whereIn('status', ['waiting', 'in_progress']);
+    }
+
+    /**
+     * The active room (if any) where the given user is either the host
+     * or a joined player. A user may only be host/player of one active
+     * room at a time — used to block both room creation and joining a
+     * second room while already committed to one.
+     */
+    public static function activeFor(int $userId): ?self
+    {
+        return static::active()
+            ->where(function (Builder $query) use ($userId) {
+                $query->where('host_id', $userId)
+                    ->orWhereHas('players', fn(Builder $q) => $q->where('users.id', $userId));
+            })
+            ->first();
     }
 }

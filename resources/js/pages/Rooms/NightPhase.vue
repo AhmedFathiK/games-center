@@ -166,6 +166,9 @@ const mafiaRoster = computed(() => {
 })
 
 function mafiaPickFor(id: number) {
+    if (id === props.auth.user.id && pendingTargetId.value !== null) {
+        return pendingTargetId.value
+    }
     return mafiaState.value?.selections?.[String(id)] ?? null
 }
 

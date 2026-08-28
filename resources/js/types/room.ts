@@ -64,6 +64,7 @@ export interface Room {
     round: number | null
     winner: string | null
     night_step: 'mafia' | 'doctor' | 'detective' | null
+    role_reveal: Record<string, string> | null
     configuration: Record<string, number | boolean>
     day_votes: DayVotes | null
     game: Game

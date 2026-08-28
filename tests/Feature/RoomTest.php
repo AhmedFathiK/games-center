@@ -353,7 +353,7 @@ class RoomTest extends TestCase
                     ->where('games.0.id', $game->id)
                     ->where('games.0.name', 'Mafia')
                     ->where('games.0.slug', 'mafia')
-                    ->where('games.0.minimum_players', 5)
+                    ->where('games.0.minimum_players', 4)
                     ->where('games.0.maximum_players', 20)
                     ->where('games.0.host_is_player', false)
                     ->where('games.0.configuration_schema.mafia_count.type', 'integer')
@@ -873,5 +873,457 @@ class RoomTest extends TestCase
                     ->component('Rooms/Show')
                     ->where('room.you', null)
             );
+    }
+
+    public function test_find_redirects_to_the_room_when_code_exists(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $seeker = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $response = $this->actingAs($seeker)->post('/rooms/find', [
+            'code' => 'ABC123',
+        ]);
+
+        $response->assertRedirect(route('rooms.show', $room));
+    }
+
+    public function test_find_resolves_code_regardless_of_case_and_whitespace(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $seeker = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $response = $this->actingAs($seeker)->post('/rooms/find', [
+            'code' => '  abc123  ',
+        ]);
+
+        $response->assertRedirect(route('rooms.show', $room));
+    }
+
+    public function test_find_returns_a_validation_error_for_a_nonexistent_code(): void
+    {
+        $this->seedMafia();
+        $seeker = User::factory()->create();
+
+        $response = $this->actingAs($seeker)->post('/rooms/find', [
+            'code' => 'ZZZZZZ',
+        ]);
+
+        $response->assertRedirect()
+            ->assertSessionHasErrors('code');
+
+        $this->assertNull(Room::first());
+    }
+
+    public function test_find_requires_a_code(): void
+    {
+        $seeker = User::factory()->create();
+
+        $response = $this->actingAs($seeker)->post('/rooms/find', []);
+
+        $response->assertRedirect()
+            ->assertSessionHasErrors('code');
+    }
+
+    public function test_host_cannot_create_a_room_while_hosting_another_active_room(): void
+    {
+        $game = $this->seedMafia();
+        $user = User::factory()->create();
+
+        Room::create([
+            'game_id' => $game->id,
+            'host_id' => $user->id,
+            'code' => 'AAA111',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $response = $this->actingAs($user)->post('/rooms', [
+            'game_id' => $game->id,
+            'max_players' => 10,
+            'configuration' => [
+                'mafia_count' => 1,
+                'doctor' => false,
+                'detective' => false,
+            ],
+        ]);
+
+        $response->assertRedirect()
+            ->assertSessionHasErrors('room');
+
+        $this->assertEquals(1, Room::count());
+    }
+
+    public function test_user_cannot_create_a_room_while_playing_in_another_active_room(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $existingRoom = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'AAA111',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'in_progress',
+        ]);
+
+        $existingRoom->players()->attach($player->id);
+
+        $response = $this->actingAs($player)->post('/rooms', [
+            'game_id' => $game->id,
+            'max_players' => 10,
+            'configuration' => [
+                'mafia_count' => 1,
+                'doctor' => false,
+                'detective' => false,
+            ],
+        ]);
+
+        $response->assertRedirect()
+            ->assertSessionHasErrors('room');
+
+        $this->assertEquals(1, Room::count());
+    }
+
+    public function test_user_can_create_a_room_after_their_previous_room_finished(): void
+    {
+        $game = $this->seedMafia();
+        $user = User::factory()->create();
+
+        Room::create([
+            'game_id' => $game->id,
+            'host_id' => $user->id,
+            'code' => 'AAA111',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'finished',
+        ]);
+
+        $response = $this->actingAs($user)->post('/rooms', [
+            'game_id' => $game->id,
+            'max_players' => 10,
+            'configuration' => [
+                'mafia_count' => 1,
+                'doctor' => false,
+                'detective' => false,
+            ],
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionDoesntHaveErrors('room');
+
+        $this->assertEquals(2, Room::count());
+    }
+
+    public function test_user_cannot_join_a_room_while_playing_in_another_active_room(): void
+    {
+        $game = $this->seedMafia();
+        $hostA = User::factory()->create();
+        $hostB = User::factory()->create();
+        $player = User::factory()->create();
+
+        $roomA = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $hostA->id,
+            'code' => 'AAA111',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+        $roomA->players()->attach($player->id);
+
+        $roomB = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $hostB->id,
+            'code' => 'BBB222',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $response = $this->actingAs($player)
+            ->postJson("/rooms/{$roomB->id}/join");
+
+        $response->assertStatus(422)
+            ->assertJson([
+                'message' => 'You are already in an active room.',
+            ]);
+
+        $this->assertDatabaseMissing('room_players', [
+            'room_id' => $roomB->id,
+            'user_id' => $player->id,
+        ]);
+    }
+
+    public function test_host_cannot_join_another_room_while_hosting_an_active_room(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $otherHost = User::factory()->create();
+
+        Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'AAA111',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'in_progress',
+        ]);
+
+        $roomB = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $otherHost->id,
+            'code' => 'BBB222',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $response = $this->actingAs($host)
+            ->postJson("/rooms/{$roomB->id}/join");
+
+        $response->assertStatus(422)
+            ->assertJson([
+                'message' => 'You are already in an active room.',
+            ]);
+
+        $this->assertDatabaseMissing('room_players', [
+            'room_id' => $roomB->id,
+            'user_id' => $host->id,
+        ]);
+    }
+
+    public function test_user_can_join_a_room_after_their_previous_room_finished(): void
+    {
+        $game = $this->seedMafia();
+        $previousHost = User::factory()->create();
+        $newHost = User::factory()->create();
+        $player = User::factory()->create();
+
+        $finishedRoom = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $previousHost->id,
+            'code' => 'AAA111',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'finished',
+        ]);
+        $finishedRoom->players()->attach($player->id);
+
+        $newRoom = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $newHost->id,
+            'code' => 'BBB222',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $response = $this->actingAs($player)
+            ->post("/rooms/{$newRoom->id}/join");
+
+        $response->assertRedirect();
+
+        $this->assertDatabaseHas('room_players', [
+            'room_id' => $newRoom->id,
+            'user_id' => $player->id,
+        ]);
+    }
+
+    public function test_host_can_kick_a_player_from_a_waiting_room(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $room->players()->attach($player->id);
+
+        $response = $this->actingAs($host)
+            ->post("/rooms/{$room->id}/kick/{$player->id}");
+
+        $response->assertRedirect(route('rooms.show', $room));
+
+        $this->assertDatabaseMissing('room_players', [
+            'room_id' => $room->id,
+            'user_id' => $player->id,
+        ]);
+    }
+
+    public function test_kick_broadcasts_player_kicked_event(): void
+    {
+        Event::fake([\App\Events\PlayerKicked::class]);
+
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $room->players()->attach($player->id);
+
+        $this->actingAs($host)->post("/rooms/{$room->id}/kick/{$player->id}");
+
+        Event::assertDispatched(\App\Events\PlayerKicked::class, function ($event) use ($room, $player) {
+            return $event->room->id === $room->id && $event->player->id === $player->id;
+        });
+    }
+
+    public function test_non_host_cannot_kick_a_player(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+        $bystander = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $room->players()->attach($player->id);
+
+        $response = $this->actingAs($bystander)
+            ->post("/rooms/{$room->id}/kick/{$player->id}");
+
+        $response->assertRedirect()->assertSessionHasErrors('room');
+
+        $this->assertDatabaseHas('room_players', [
+            'room_id' => $room->id,
+            'user_id' => $player->id,
+        ]);
+    }
+
+    public function test_cannot_kick_a_player_that_is_not_in_the_room(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $outsider = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $response = $this->actingAs($host)
+            ->post("/rooms/{$room->id}/kick/{$outsider->id}");
+
+        $response->assertRedirect()->assertSessionHasErrors('room');
+    }
+
+    /**
+     * @dataProvider nonWaitingStatuses
+     */
+    public function test_cannot_kick_a_player_unless_room_is_waiting(string $status): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => $status,
+        ]);
+
+        $room->players()->attach($player->id);
+
+        $response = $this->actingAs($host)
+            ->post("/rooms/{$room->id}/kick/{$player->id}");
+
+        $response->assertRedirect()->assertSessionHasErrors('room');
+
+        $this->assertDatabaseHas('room_players', [
+            'room_id' => $room->id,
+            'user_id' => $player->id,
+        ]);
+    }
+
+    public static function nonWaitingStatuses(): array
+    {
+        return [
+            'in progress' => ['in_progress'],
+            'finished' => ['finished'],
+            'cancelled' => ['cancelled'],
+            'any other unrecognized status' => ['something_else'],
+        ];
+    }
+
+    public function test_kicked_player_can_rejoin_the_room(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $room->players()->attach($player->id);
+
+        $this->actingAs($host)->post("/rooms/{$room->id}/kick/{$player->id}");
+
+        $response = $this->actingAs($player)
+            ->post("/rooms/{$room->id}/join");
+
+        $response->assertRedirect(route('rooms.show', $room));
+
+        $this->assertDatabaseHas('room_players', [
+            'room_id' => $room->id,
+            'user_id' => $player->id,
+        ]);
     }
 }
