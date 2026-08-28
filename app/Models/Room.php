@@ -72,6 +72,20 @@ class Room extends Model
     }
 
     /**
+     * Rooms where the given user is either the host or a joined player.
+     * Shared by activeFor() (current-room lookup) and the My Rooms
+     * history query, so the "am I involved in this room" definition
+     * lives in exactly one place.
+     */
+    public function scopeForUser(Builder $query, int $userId): Builder
+    {
+        return $query->where(function (Builder $q) use ($userId) {
+            $q->where('host_id', $userId)
+                ->orWhereHas('players', fn(Builder $p) => $p->where('users.id', $userId));
+        });
+    }
+
+    /**
      * The active room (if any) where the given user is either the host
      * or a joined player. A user may only be host/player of one active
      * room at a time — used to block both room creation and joining a
@@ -79,11 +93,6 @@ class Room extends Model
      */
     public static function activeFor(int $userId): ?self
     {
-        return static::active()
-            ->where(function (Builder $query) use ($userId) {
-                $query->where('host_id', $userId)
-                    ->orWhereHas('players', fn(Builder $q) => $q->where('users.id', $userId));
-            })
-            ->first();
+        return static::active()->forUser($userId)->first();
     }
 }

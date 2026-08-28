@@ -1,127 +1,233 @@
 <script setup lang="ts">
-import InputError from '@/components/InputError.vue';
-import AppLayout from '@/layouts/AppLayout.vue';
-import SettingsLayout from '@/layouts/settings/Layout.vue';
-import { TransitionRoot } from '@headlessui/vue';
-import { Head, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { Head, useForm } from '@inertiajs/vue3'
+import { ref } from 'vue'
+import AppLayout from '@/layouts/AppLayout.vue'
+import SettingsNav from '@/components/SettingsNav.vue'
 
-import HeadingSmall from '@/components/HeadingSmall.vue';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { type BreadcrumbItem } from '@/types';
+defineOptions({ layout: AppLayout })
 
-interface Props {
-    className?: string;
-}
-
-defineProps<Props>();
-
-const breadcrumbItems: BreadcrumbItem[] = [
-    {
-        title: 'Password settings',
-        href: '/settings/password',
-    },
-];
-
-const passwordInput = ref<HTMLInputElement>();
-const currentPasswordInput = ref<HTMLInputElement>();
+const passwordInput = ref<HTMLInputElement | null>(null)
+const currentPasswordInput = ref<HTMLInputElement | null>(null)
+const showSaved = ref(false)
 
 const form = useForm({
     current_password: '',
     password: '',
     password_confirmation: '',
-});
+})
 
 const updatePassword = () => {
     form.put(route('password.update'), {
         preserveScroll: true,
-        onSuccess: () => form.reset(),
-        onError: (errors: any) => {
+        onSuccess: () => {
+            form.reset()
+            showSaved.value = true
+            setTimeout(() => (showSaved.value = false), 2000)
+        },
+        onError: (errors: Record<string, string>) => {
             if (errors.password) {
-                form.reset('password', 'password_confirmation');
-                if (passwordInput.value instanceof HTMLInputElement) {
-                    passwordInput.value.focus();
-                }
+                form.reset('password', 'password_confirmation')
+                passwordInput.value?.focus()
             }
 
             if (errors.current_password) {
-                form.reset('current_password');
-                if (currentPasswordInput.value instanceof HTMLInputElement) {
-                    currentPasswordInput.value.focus();
-                }
+                form.reset('current_password')
+                currentPasswordInput.value?.focus()
             }
         },
-    });
-};
+    })
+}
 </script>
 
 <template>
-    <AppLayout :breadcrumbs="breadcrumbItems">
-        <Head title="Profile settings" />
+    <div class="st-page">
+        <Head title="Password settings" />
 
-        <SettingsLayout>
-            <div class="space-y-6">
-                <HeadingSmall title="Update password" description="Ensure your account is using a long, random password to stay secure" />
+        <div class="st-container">
+            <header class="st-header">
+                <h1 class="st-title">Settings</h1>
+                <p class="st-subtitle">Manage your profile and account settings.</p>
+            </header>
 
-                <form @submit.prevent="updatePassword" class="space-y-6">
-                    <div class="grid gap-2">
-                        <Label for="current_password">Current Password</Label>
-                        <Input
+            <SettingsNav />
+
+            <section class="st-section">
+                <h2 class="st-section-title">Update password</h2>
+                <p class="st-section-desc">Ensure your account is using a long, random password to stay secure</p>
+
+                <form @submit.prevent="updatePassword" class="st-form">
+                    <div class="st-field">
+                        <label for="current_password" class="st-label">Current password</label>
+                        <input
                             id="current_password"
                             ref="currentPasswordInput"
                             v-model="form.current_password"
                             type="password"
-                            class="mt-1 block w-full"
                             autocomplete="current-password"
+                            class="st-input"
                             placeholder="Current password"
                         />
-                        <InputError :message="form.errors.current_password" />
+                        <p v-if="form.errors.current_password" class="st-error">{{ form.errors.current_password }}</p>
                     </div>
 
-                    <div class="grid gap-2">
-                        <Label for="password">New password</Label>
-                        <Input
+                    <div class="st-field">
+                        <label for="password" class="st-label">New password</label>
+                        <input
                             id="password"
                             ref="passwordInput"
                             v-model="form.password"
                             type="password"
-                            class="mt-1 block w-full"
                             autocomplete="new-password"
+                            class="st-input"
                             placeholder="New password"
                         />
-                        <InputError :message="form.errors.password" />
+                        <p v-if="form.errors.password" class="st-error">{{ form.errors.password }}</p>
                     </div>
 
-                    <div class="grid gap-2">
-                        <Label for="password_confirmation">Confirm password</Label>
-                        <Input
+                    <div class="st-field">
+                        <label for="password_confirmation" class="st-label">Confirm password</label>
+                        <input
                             id="password_confirmation"
                             v-model="form.password_confirmation"
                             type="password"
-                            class="mt-1 block w-full"
                             autocomplete="new-password"
+                            class="st-input"
                             placeholder="Confirm password"
                         />
-                        <InputError :message="form.errors.password_confirmation" />
+                        <p v-if="form.errors.password_confirmation" class="st-error">{{ form.errors.password_confirmation }}</p>
                     </div>
 
-                    <div class="flex items-center gap-4">
-                        <Button :disabled="form.processing">Save password</Button>
-
-                        <TransitionRoot
-                            :show="form.recentlySuccessful"
-                            enter="transition ease-in-out"
-                            enter-from="opacity-0"
-                            leave="transition ease-in-out"
-                            leave-to="opacity-0"
-                        >
-                            <p class="text-sm text-neutral-600">Saved</p>
-                        </TransitionRoot>
+                    <div class="st-save-row">
+                        <button type="submit" class="st-save-btn" :disabled="form.processing">Save password</button>
+                        <span v-if="showSaved" class="st-saved-text">Saved.</span>
                     </div>
                 </form>
-            </div>
-        </SettingsLayout>
-    </AppLayout>
+            </section>
+        </div>
+    </div>
 </template>
+
+<style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+.st-page {
+    --st-ink: #0f1613;
+    --st-surface: #16201c;
+    --st-surface-raised: #1e2b25;
+    --st-border: #2a3a33;
+    --st-amber: #e8a33d;
+    --st-phosphor: #6fcf97;
+    --st-mist: #9fb0a8;
+    --st-paper: #eef2ef;
+    --st-danger: #e0685f;
+
+    min-height: calc(100vh - 3.5rem);
+    background: var(--st-ink);
+    color: var(--st-paper);
+    font-family: 'Inter', sans-serif;
+    padding: 2rem 1.5rem 4rem;
+}
+
+.st-container {
+    max-width: 36rem;
+    margin: 0 auto;
+}
+
+.st-header {
+    margin-bottom: 1.5rem;
+}
+
+.st-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.6rem;
+    font-weight: 700;
+}
+
+.st-subtitle {
+    margin-top: 0.3rem;
+    color: var(--st-mist);
+    font-size: 0.9rem;
+}
+
+.st-section-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+.st-section-desc {
+    margin-top: 0.25rem;
+    font-size: 0.85rem;
+    color: var(--st-mist);
+}
+
+.st-form {
+    margin-top: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.st-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.st-label {
+    font-size: 0.85rem;
+    color: var(--st-paper);
+}
+
+.st-input {
+    background: var(--st-surface-raised);
+    border: 1px solid var(--st-border);
+    border-radius: 8px;
+    padding: 0.6rem 0.8rem;
+    color: var(--st-paper);
+    font-size: 0.9rem;
+    font-family: 'Inter', sans-serif;
+}
+
+.st-input:focus {
+    outline: none;
+    border-color: var(--st-amber);
+}
+
+.st-error {
+    font-size: 0.78rem;
+    color: var(--st-danger);
+}
+
+.st-save-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.st-save-btn {
+    background: var(--st-amber);
+    color: var(--st-ink);
+    border: none;
+    border-radius: 8px;
+    padding: 0.6rem 1.3rem;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.st-save-btn:hover:not(:disabled) {
+    opacity: 0.9;
+}
+
+.st-save-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.st-saved-text {
+    font-size: 0.85rem;
+    color: var(--st-mist);
+}
+</style>

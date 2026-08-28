@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 use Illuminate\Support\Facades\Event;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 class RoomTest extends TestCase
 {
@@ -1256,9 +1257,7 @@ class RoomTest extends TestCase
         $response->assertRedirect()->assertSessionHasErrors('room');
     }
 
-    /**
-     * @dataProvider nonWaitingStatuses
-     */
+    #[DataProvider('nonWaitingStatuses')]
     public function test_cannot_kick_a_player_unless_room_is_waiting(string $status): void
     {
         $game = $this->seedMafia();
@@ -1325,5 +1324,161 @@ class RoomTest extends TestCase
             'room_id' => $room->id,
             'user_id' => $player->id,
         ]);
+    }
+
+    public function test_mine_returns_the_users_current_active_room_as_host(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $response = $this->actingAs($host)->get('/my-rooms');
+
+        $response->assertOk()
+            ->assertInertia(
+                fn($page) => $page
+                    ->component('Rooms/Mine')
+                    ->where('active_room.id', $room->id)
+                    ->where('active_room.is_host', true)
+            );
+    }
+
+    public function test_mine_returns_the_users_current_active_room_as_player(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'in_progress',
+        ]);
+        $room->players()->attach($player->id);
+
+        $response = $this->actingAs($player)->get('/my-rooms');
+
+        $response->assertOk()
+            ->assertInertia(
+                fn($page) => $page
+                    ->component('Rooms/Mine')
+                    ->where('active_room.id', $room->id)
+                    ->where('active_room.is_host', false)
+            );
+    }
+
+    public function test_mine_returns_null_active_room_when_user_has_none(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->get('/my-rooms');
+
+        $response->assertOk()
+            ->assertInertia(
+                fn($page) => $page
+                    ->component('Rooms/Mine')
+                    ->where('active_room', null)
+            );
+    }
+
+    public function test_mine_history_includes_only_finished_rooms_for_the_user(): void
+    {
+        $game = $this->seedMafia();
+        $user = User::factory()->create();
+        $stranger = User::factory()->create();
+
+        $finishedAsHost = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $user->id,
+            'code' => 'FIN001',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'finished',
+        ]);
+
+        $finishedAsPlayer = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $stranger->id,
+            'code' => 'FIN002',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'finished',
+        ]);
+        $finishedAsPlayer->players()->attach($user->id);
+
+        // Finished, but this user has no relation to it — must not appear.
+        Room::create([
+            'game_id' => $game->id,
+            'host_id' => $stranger->id,
+            'code' => 'FIN003',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'finished',
+        ]);
+
+        // Still active for someone else entirely — must never appear in
+        // anyone's history regardless of relation.
+        Room::create([
+            'game_id' => $game->id,
+            'host_id' => $stranger->id,
+            'code' => 'ACT001',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $response = $this->actingAs($user)->get('/my-rooms');
+
+        $response->assertOk();
+
+        $historyIds = collect($response->viewData('page')['props']['history']['data'])
+            ->pluck('id')
+            ->all();
+
+        $this->assertEqualsCanonicalizing(
+            [$finishedAsHost->id, $finishedAsPlayer->id],
+            $historyIds
+        );
+    }
+
+    public function test_mine_history_is_paginated(): void
+    {
+        $game = $this->seedMafia();
+        $user = User::factory()->create();
+
+        for ($i = 0; $i < 12; $i++) {
+            Room::create([
+                'game_id' => $game->id,
+                'host_id' => $user->id,
+                'code' => 'HIS' . str_pad((string) $i, 3, '0', STR_PAD_LEFT),
+                'max_players' => 10,
+                'configuration' => [],
+                'status' => 'finished',
+            ]);
+        }
+
+        $response = $this->actingAs($user)->get('/my-rooms');
+
+        $response->assertOk();
+
+        $props = $response->viewData('page')['props'];
+
+        $this->assertCount(10, $props['history']['data']);
+        $this->assertEquals(1, $props['history']['current_page']);
+        $this->assertEquals(2, $props['history']['last_page']);
+        $this->assertNotNull($props['history']['next_page_url']);
+        $this->assertNull($props['history']['prev_page_url']);
+        $this->assertEquals(12, $props['history']['total']);
     }
 }

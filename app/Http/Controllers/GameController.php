@@ -29,7 +29,7 @@ class GameController extends Controller
                 ];
             });
 
-        return Inertia::render('Games/Index', [
+        return Inertia::render('Index', [
             'games' => $games,
         ]);
     }

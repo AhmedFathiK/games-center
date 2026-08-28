@@ -6,17 +6,16 @@ use App\Http\Controllers\RoomController;
 use App\Http\Controllers\GameController;
 
 Route::get('/', function () {
-    return Inertia::render('Welcome');
+    return Inertia::render('Index');
 })->name('home');
-
-Route::get('dashboard', function () {
-    return Inertia::render('Dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
 
 require __DIR__ . '/settings.php';
 require __DIR__ . '/auth.php';
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/', [GameController::class, 'index'])
+        ->name('home');
+
     Route::get('/games', [GameController::class, 'index'])
         ->name('games.index');
 
@@ -50,4 +49,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::post('/rooms/{room}/kick/{user}', [RoomController::class, 'kick'])
         ->name('rooms.kick');
+
+    Route::get('/my-rooms', [RoomController::class, 'mine'])
+        ->name('rooms.mine');
 });

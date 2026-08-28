@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { router } from '@inertiajs/vue3'
+import { Link, router } from '@inertiajs/vue3'
 import { themeForGame } from '@/themes/gameThemes'
 import NightPhase from './NightPhase.vue'
 import DayPhase from './DayPhase.vue'
@@ -270,6 +270,10 @@ onUnmounted(() => {
 <template>
     <div class="rc-page" :class="`rc-theme-${theme.slug}`" :style="themeVars">
         <div class="rc-container">
+            <Link :href="route('games.index')" class="rc-back-link rc-mono">
+                &larr; Back to Games
+            </Link>
+
             <!-- Room Header -->
             <div class="rc-header">
                 <div>
@@ -467,6 +471,25 @@ onUnmounted(() => {
 
 .rc-mono {
     font-family: var(--rc-font-mono);
+}
+
+/* Back link */
+.rc-back-link {
+    display: inline-block;
+    font-size: 0.8rem;
+    color: var(--rc-text-muted);
+    text-decoration: none;
+    margin-bottom: 1rem;
+    transition: color 0.15s ease;
+}
+
+.rc-back-link:hover {
+    color: var(--rc-text-on-bg);
+}
+
+.rc-theme-mafia .rc-back-link {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
 }
 
 /* Header */

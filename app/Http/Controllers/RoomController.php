@@ -473,6 +473,59 @@ class RoomController extends Controller
         ]);
     }
 
+    public function mine(Request $request)
+    {
+        $user = $request->user();
+
+        $activeRoom = Room::active()
+            ->forUser($user->id)
+            ->with(['game', 'host'])
+            ->first();
+
+        $history = Room::whereNotIn('status', ['waiting', 'in_progress'])
+            ->forUser($user->id)
+            ->with(['game', 'host'])
+            ->orderByDesc('updated_at')
+            ->paginate(10)
+            ->withQueryString();
+
+        return Inertia::render('Rooms/Mine', [
+            'active_room' => $activeRoom
+                ? $this->roomSummary($activeRoom, $user->id)
+                : null,
+
+            'history' => [
+                'data' => collect($history->items())
+                    ->map(fn(Room $room) => $this->roomSummary($room, $user->id))
+                    ->values(),
+                'current_page' => $history->currentPage(),
+                'last_page' => $history->lastPage(),
+                'prev_page_url' => $history->previousPageUrl(),
+                'next_page_url' => $history->nextPageUrl(),
+                'total' => $history->total(),
+            ],
+        ]);
+    }
+
+    private function roomSummary(Room $room, int $userId): array
+    {
+        return [
+            'id' => $room->id,
+            'code' => $room->code,
+            'status' => $room->status,
+            'game' => [
+                'name' => $room->game->name,
+                'slug' => $room->game->slug,
+            ],
+            'host' => [
+                'id' => $room->host->id,
+                'name' => $room->host->name,
+            ],
+            'is_host' => $room->host_id === $userId,
+            'updated_at' => optional($room->updated_at)->toIso8601String(),
+        ];
+    }
+
     public function advance(Request $request, Room $room)
     {
         $user = $request->user();
