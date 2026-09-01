@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
+import axios from 'axios'
 import { themeForGame } from '@/themes/gameThemes'
 import NightPhase from './NightPhase.vue'
 import DayPhase from './DayPhase.vue'
 import GameOver from './GameOver.vue'
+import Cancelled from './Cancelled.vue'
 import type { Room, AuthUser } from '@/types/room'
 
 const props = defineProps<{
@@ -158,6 +160,130 @@ function handleSelfKicked() {
     }, 2500)
 }
 
+// --- Cancel room --------------------------------------------------------
+// Host can cancel any time (waiting or in progress). Any other player
+// can also cancel, but only once the room is in progress AND the host's
+// heartbeat has gone stale (room.host_stale, computed server-side) —
+// this is the "host had an outage and can't cancel themselves" escape
+// hatch. The backend enforces the actual permission; these are just the
+// two buttons that become visible under each condition.
+const cancelling = ref(false)
+const cancelError = ref<string | null>(null)
+const showCancelModal = ref(false)
+const cancelConfirmText = ref('')
+const cancelModalHeading = ref('')
+const cancelModalBody = ref('')
+
+const canHostCancel = computed(
+    () => isHost.value && (props.room.status === 'waiting' || props.room.status === 'in_progress'),
+)
+
+const canStaleCancel = computed(
+    () => !isHost.value && props.room.status === 'in_progress' && props.room.host_stale === true,
+)
+
+const cancelConfirmValid = computed(
+    () => cancelConfirmText.value.trim().toLowerCase() === 'confirm',
+)
+
+function openCancelModal(heading: string, body: string) {
+    cancelModalHeading.value = heading
+    cancelModalBody.value = body
+    cancelConfirmText.value = ''
+    cancelError.value = null
+    showCancelModal.value = true
+}
+
+function closeCancelModal() {
+    showCancelModal.value = false
+    cancelConfirmText.value = ''
+}
+
+function submitCancel() {
+    if (!cancelConfirmValid.value) return
+
+    cancelling.value = true
+    cancelError.value = null
+
+    router.post(
+        `/rooms/${props.room.id}/cancel`,
+        { confirmation: cancelConfirmText.value },
+        {
+            onSuccess: () => {
+                showCancelModal.value = false
+            },
+            onError: errors => {
+                cancelError.value = Object.values(errors)[0] ?? 'Unable to cancel the room.'
+            },
+            onFinish: () => {
+                cancelling.value = false
+            },
+        },
+    )
+}
+
+// The room was cancelled while still in the waiting lobby — it no
+// longer exists at all (see RoomCancelled's `deleted` flag), so anyone
+// else still viewing this page needs to be redirected out, same
+// treatment as being kicked.
+const showCancelledModal = ref(false)
+let cancelledRedirectTimeout: ReturnType<typeof setTimeout> | null = null
+
+function handleRoomDeleted() {
+    showCancelledModal.value = true
+
+    cancelledRedirectTimeout = setTimeout(() => {
+        router.visit(route('games.index'))
+    }, 2500)
+}
+
+// --- Host heartbeat + non-host stale-refresh ----------------------------
+// A plain HTTP ping, not a Pusher channel — keeps the free-tier
+// connection count untouched. The host's browser bumps
+// host_last_seen_at every 45s while in progress; any *other* connected
+// player periodically reloads room props so the "host appears to be
+// gone" option can appear even if nothing else has triggered a reload
+// (e.g. the game is stalled with no actions happening).
+const HEARTBEAT_INTERVAL_MS = 45_000
+const STALE_REFRESH_INTERVAL_MS = 60_000
+
+let heartbeatInterval: ReturnType<typeof setInterval> | null = null
+let staleRefreshInterval: ReturnType<typeof setInterval> | null = null
+
+function sendHeartbeat() {
+    axios.post(`/rooms/${props.room.id}/heartbeat`).catch(() => {
+        // Best-effort — a single missed heartbeat isn't worth surfacing
+        // to the host; the next tick tries again.
+    })
+}
+
+function stopTimers() {
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval)
+        heartbeatInterval = null
+    }
+    if (staleRefreshInterval) {
+        clearInterval(staleRefreshInterval)
+        staleRefreshInterval = null
+    }
+}
+
+function syncTimersToRoomState() {
+    stopTimers()
+
+    if (props.room.status !== 'in_progress') return
+
+    if (isHost.value) {
+        heartbeatInterval = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS)
+    } else {
+        staleRefreshInterval = setInterval(() => {
+            router.reload({ only: ['room'] })
+        }, STALE_REFRESH_INTERVAL_MS)
+    }
+}
+
+watch(() => props.room.status, syncTimersToRoomState)
+
 // --- Copy link ---------------------------------------------------------
 // The shareable URL uses the room code, matching the GET /rooms/{room:code}
 // route — not the numeric id used by the action endpoints above.
@@ -223,6 +349,13 @@ function subscribeToRoomChannel() {
                 router.reload({ only: ['room'] })
             }
         })
+        .listen('.room.cancelled', (e: { deleted: boolean }) => {
+            if (e.deleted) {
+                handleRoomDeleted()
+            } else {
+                router.reload({ only: ['room'] })
+            }
+        })
         .listen('.phase.changed', () => router.reload({ only: ['room'] }))
         .listen('.vote.updated', () => router.reload({ only: ['room'] }))
         .listen('.player.executed', () => router.reload({ only: ['room'] }))
@@ -239,6 +372,8 @@ onMounted(() => {
     if (canAccessRoomChannel.value) {
         subscribeToRoomChannel()
     }
+
+    syncTimersToRoomState()
 
     // Broadcasts fired while this connection was down/reconnecting are
     // simply lost — Pusher doesn't replay them. Resync once the
@@ -262,8 +397,11 @@ onMounted(() => {
 onUnmounted(() => {
     window.Echo.leave(`rooms.${props.room.id}`)
 
+    stopTimers()
+
     if (copiedTimeout) clearTimeout(copiedTimeout)
     if (kickedRedirectTimeout) clearTimeout(kickedRedirectTimeout)
+    if (cancelledRedirectTimeout) clearTimeout(cancelledRedirectTimeout)
 })
 </script>
 
@@ -297,6 +435,35 @@ onUnmounted(() => {
                 <span class="rc-badge" :class="`rc-badge--${room.status}`">
                     {{ room.status }}
                 </span>
+            </div>
+
+            <!-- Cancel controls — shown above everything else regardless
+                 of phase, since cancelling is a room-level action, not a
+                 game-phase one. -->
+            <div v-if="canHostCancel || canStaleCancel" class="rc-cancel-bar">
+                <button
+                    v-if="canHostCancel"
+                    type="button"
+                    class="rc-cancel-btn"
+                    :disabled="cancelling"
+                    @click="openCancelModal('Cancel this room?', 'This cannot be undone. Type confirm below to proceed.')"
+                >
+                    Cancel Room
+                </button>
+
+                <div v-if="canStaleCancel" class="rc-stale-notice">
+                    <p>The host hasn't been active in a while.</p>
+                    <button
+                        type="button"
+                        class="rc-cancel-btn"
+                        :disabled="cancelling"
+                        @click="openCancelModal('Cancel this room?', 'The host appears to be gone. This cannot be undone. Type confirm below to proceed.')"
+                    >
+                        Cancel — host appears gone
+                    </button>
+                </div>
+
+                <p v-if="cancelError && !showCancelModal" class="rc-error">{{ cancelError }}</p>
             </div>
 
             <!-- Waiting room -->
@@ -434,6 +601,14 @@ onUnmounted(() => {
                 :auth="auth"
                 :is-host="isHost"
             />
+
+            <!-- Cancelled -->
+            <Cancelled
+                v-else-if="room.status === 'cancelled'"
+                :room="room"
+                :auth="auth"
+                :is-host="isHost"
+            />
         </div>
 
         <!-- Kicked modal -->
@@ -441,6 +616,51 @@ onUnmounted(() => {
             <div class="rc-kicked-modal">
                 <p class="rc-kicked-title">Removed from Room</p>
                 <p class="rc-kicked-text">The host has removed you from this room.</p>
+            </div>
+        </div>
+
+        <!-- Cancelled-while-waiting modal (room no longer exists) -->
+        <div v-if="showCancelledModal" class="rc-kicked-overlay">
+            <div class="rc-kicked-modal">
+                <p class="rc-kicked-title">Room Cancelled</p>
+                <p class="rc-kicked-text">The host has cancelled this room.</p>
+            </div>
+        </div>
+
+        <!-- Cancel confirmation modal -->
+        <div v-if="showCancelModal" class="rc-kicked-overlay" @click.self="closeCancelModal">
+            <div class="rc-cancel-modal">
+                <p class="rc-kicked-title">{{ cancelModalHeading }}</p>
+                <p class="rc-kicked-text">{{ cancelModalBody }}</p>
+
+                <label class="rc-cancel-modal-label" for="cancel-confirm-input">
+                    Type <span class="rc-mono">confirm</span> to continue
+                </label>
+                <input
+                    id="cancel-confirm-input"
+                    v-model="cancelConfirmText"
+                    type="text"
+                    class="rc-cancel-modal-input"
+                    autocomplete="off"
+                    autofocus
+                    @keyup.enter="submitCancel"
+                />
+
+                <p v-if="cancelError" class="rc-error">{{ cancelError }}</p>
+
+                <div class="rc-cancel-modal-actions">
+                    <button type="button" class="rc-cancel-modal-cancel-btn" @click="closeCancelModal">
+                        Never mind
+                    </button>
+                    <button
+                        type="button"
+                        class="rc-cancel-modal-confirm-btn"
+                        :disabled="!cancelConfirmValid || cancelling"
+                        @click="submitCancel"
+                    >
+                        {{ cancelling ? 'Cancelling…' : 'Cancel Room' }}
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -577,6 +797,51 @@ onUnmounted(() => {
 .rc-theme-mafia .rc-badge--finished {
     border-color: var(--rc-success);
     color: var(--rc-success);
+}
+
+/* Cancel bar */
+.rc-cancel-bar {
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.rc-cancel-btn {
+    align-self: flex-start;
+    background: transparent;
+    border: 1px solid var(--rc-primary);
+    color: var(--rc-primary);
+    border-radius: 6px;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.rc-cancel-btn:hover:not(:disabled) {
+    background: var(--rc-primary);
+    color: #fff;
+}
+
+.rc-cancel-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.rc-stale-notice {
+    background: var(--rc-surface);
+    border: 1px solid var(--rc-primary);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.rc-stale-notice p {
+    font-size: 0.85rem;
+    color: var(--rc-text-muted);
 }
 
 /* Panels */
@@ -805,7 +1070,7 @@ onUnmounted(() => {
     font-weight: 600;
 }
 
-/* Kicked modal */
+/* Kicked / cancelled modal */
 .rc-kicked-overlay {
     position: fixed;
     inset: 0;
@@ -848,5 +1113,77 @@ onUnmounted(() => {
     margin-top: 0.6rem;
     font-size: 0.9rem;
     color: var(--rc-text-muted);
+}
+
+/* Cancel confirmation modal */
+.rc-cancel-modal {
+    background: var(--rc-surface);
+    color: var(--rc-text-on-surface);
+    border: 1px solid var(--rc-border);
+    border-radius: 8px;
+    padding: 1.75rem 2rem;
+    max-width: 24rem;
+    width: 100%;
+}
+
+.rc-theme-mafia .rc-cancel-modal {
+    border-radius: 2px;
+    border: 2px solid var(--rc-primary);
+}
+
+.rc-cancel-modal-label {
+    display: block;
+    margin-top: 1.25rem;
+    font-size: 0.8rem;
+    color: var(--rc-text-muted);
+}
+
+.rc-cancel-modal-input {
+    width: 100%;
+    margin-top: 0.5rem;
+    background: var(--rc-surface-alt);
+    border: 1px solid var(--rc-border);
+    border-radius: 6px;
+    padding: 0.55rem 0.75rem;
+    color: var(--rc-text-on-surface);
+    font-size: 0.9rem;
+}
+
+.rc-cancel-modal-input:focus {
+    outline: none;
+    border-color: var(--rc-primary);
+}
+
+.rc-cancel-modal-actions {
+    margin-top: 1.5rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+.rc-cancel-modal-cancel-btn {
+    background: transparent;
+    border: 1px solid var(--rc-border);
+    color: var(--rc-text-on-surface);
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.rc-cancel-modal-confirm-btn {
+    background: var(--rc-primary);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.rc-cancel-modal-confirm-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 </style>

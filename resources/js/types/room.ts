@@ -72,4 +72,6 @@ export interface Room {
     players: Player[]
     you: You | null
     host_view: HostView | null
+    host_stale?: boolean
+    player_count?: number
 }

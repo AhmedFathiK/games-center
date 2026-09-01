@@ -52,4 +52,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('/my-rooms', [RoomController::class, 'mine'])
         ->name('rooms.mine');
+
+    Route::post('/rooms/{room}/cancel', [RoomController::class, 'cancel'])
+        ->name('rooms.cancel');
+
+    Route::post('/rooms/{room}/heartbeat', [RoomController::class, 'heartbeat'])
+        ->name('rooms.heartbeat');
 });

@@ -20,6 +20,7 @@ class Room extends Model
         'configuration',
         'game_state',
         'status',
+        'host_last_seen_at',
     ];
 
     protected function casts(): array
@@ -27,6 +28,7 @@ class Room extends Model
         return [
             'configuration' => 'array',
             'game_state' => 'array',
+            'host_last_seen_at' => 'datetime',
         ];
     }
 
@@ -63,8 +65,8 @@ class Room extends Model
 
     /**
      * Rooms that count as "in use" for the one-active-room-per-user rule.
-     * A finished room (and, later, a cancelled one) no longer occupies a
-     * user's single active-room slot.
+     * A finished room (and a cancelled one) no longer occupies a user's
+     * single active-room slot.
      */
     public function scopeActive(Builder $query): Builder
     {

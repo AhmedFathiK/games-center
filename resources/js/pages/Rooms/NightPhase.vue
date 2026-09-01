@@ -203,6 +203,26 @@ function playersWithRole(role: string) {
         .filter(([, r]) => r === role)
         .map(([id]) => ({ id: Number(id), name: playerName(id) }))
 }
+
+// Tally of "how many mafia currently have this target selected" —
+// derived entirely from data the host already receives via host_view,
+// so the host doesn't have to manually count matching selections across
+// the per-member rows below. Counts pending and confirmed selections
+// alike; sorted by count so the leading target is easy to spot.
+const mafiaTargetTally = computed(() => {
+    const selections = hostNightActions.value?.mafia?.selections ?? {}
+    const counts: Record<string, number> = {}
+
+    for (const targetId of Object.values(selections)) {
+        if (targetId === null || targetId === undefined) continue
+        const key = String(targetId)
+        counts[key] = (counts[key] ?? 0) + 1
+    }
+
+    return Object.entries(counts)
+        .map(([id, count]) => ({ id, name: playerName(id), count }))
+        .sort((a, b) => b.count - a.count)
+})
 </script>
 
 <template>
@@ -219,6 +239,12 @@ function playersWithRole(role: string) {
 
             <div class="np-host-block">
                 <h3 class="np-host-role-title">Mafia</h3>
+
+                <div v-if="mafiaTargetTally.length > 0" class="np-tally">
+                    <span v-for="t in mafiaTargetTally" :key="t.id" class="np-tally-badge">
+                        {{ t.name }} <strong>{{ t.count }}</strong>
+                    </span>
+                </div>
 
                 <div v-for="p in playersWithRole('mafia')" :key="p.id" class="np-row">
                     <span class="np-row-name">{{ p.name }}</span>
@@ -529,6 +555,32 @@ function playersWithRole(role: string) {
     letter-spacing: 0.06em;
     color: var(--rc-secondary);
     margin-bottom: 0.5rem;
+}
+
+/* Selection tally — quick-scan pills so the host doesn't have to count
+   matching picks across the per-member rows below. */
+.np-tally {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.np-tally-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: var(--rc-surface-alt);
+    border: 1px solid var(--rc-secondary);
+    color: var(--rc-text-on-surface);
+    border-radius: 999px;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.78rem;
+}
+
+.np-tally-badge strong {
+    font-family: var(--rc-font-mono);
+    color: var(--rc-secondary);
 }
 
 .np-roster {

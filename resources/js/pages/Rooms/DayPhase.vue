@@ -33,6 +33,29 @@ function voteConfirmedFor(id: number | string) {
     return votes.value?.confirmed?.[String(id)] ?? false
 }
 
+// Tally of "how many players currently have this person selected" —
+// day_votes is public to everyone already, so this is just an
+// aggregation of data already on the page, not a new privacy surface.
+// Sorted by count so the leading target is easy to spot at a glance.
+const voteTally = computed(() => {
+    const selections = votes.value?.selections ?? {}
+    const counts: Record<string, number> = {}
+
+    for (const targetId of Object.values(selections)) {
+        if (targetId === null || targetId === undefined) continue
+        const key = String(targetId)
+        counts[key] = (counts[key] ?? 0) + 1
+    }
+
+    return Object.entries(counts)
+        .map(([id, count]) => ({ id, name: playerName(id), count }))
+        .sort((a, b) => b.count - a.count)
+})
+
+function voteCountFor(id: number | string) {
+    return voteTally.value.find(t => t.id === String(id))?.count ?? 0
+}
+
 // --- My vote (select -> confirm -> lock, same pattern as night actions) --
 const myVoteSelection = computed(() => {
     // Optimistic: show the pending pick instantly instead of waiting on
@@ -148,6 +171,12 @@ function advancePhase() {
             <h2 class="dp-panel-title">Town Vote</h2>
             <p class="dp-hint">Voting is advisory — the host decides who, if anyone, is executed.</p>
 
+            <div v-if="voteTally.length > 0" class="dp-tally">
+                <span v-for="t in voteTally" :key="t.id" class="dp-tally-badge">
+                    {{ t.name }} <strong>{{ t.count }}</strong>
+                </span>
+            </div>
+
             <div class="dp-roster">
                 <div v-for="p in room.players" :key="p.id" class="dp-row" :class="{ 'dp-row--dead': !p.alive }">
                     <span class="dp-row-name">
@@ -229,7 +258,8 @@ function advancePhase() {
                     :disabled="executing"
                     @click="toggleExecuteTarget(p.id)"
                 >
-                    {{ p.name }}
+                    <span class="dp-target-name">{{ p.name }}</span>
+                    <span v-if="voteCountFor(p.id) > 0" class="dp-target-badge">{{ voteCountFor(p.id) }}</span>
                 </button>
             </div>
 
@@ -331,6 +361,32 @@ function advancePhase() {
     border-bottom: 2px dashed var(--rc-border);
 }
 
+/* Vote tally — quick-scan pills so no one has to count matching votes
+   across the per-voter roster below. */
+.dp-tally {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.9rem;
+}
+
+.dp-tally-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: var(--rc-surface-alt);
+    border: 1px solid var(--rc-secondary);
+    color: var(--rc-text-on-surface);
+    border-radius: 999px;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.78rem;
+}
+
+.dp-tally-badge strong {
+    font-family: var(--rc-font-mono);
+    color: var(--rc-secondary);
+}
+
 .dp-roster {
     margin-top: 1rem;
 }
@@ -373,6 +429,10 @@ function advancePhase() {
 }
 
 .dp-target {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
     text-align: left;
     background: var(--rc-surface-alt);
     border: 1px solid var(--rc-border);
@@ -396,6 +456,17 @@ function advancePhase() {
 .dp-target:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+.dp-target-badge {
+    flex-shrink: 0;
+    font-family: var(--rc-font-mono);
+    font-size: 0.75rem;
+    background: var(--rc-surface);
+    border: 1px solid var(--rc-secondary);
+    color: var(--rc-secondary);
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
 }
 
 .dp-host-actions {

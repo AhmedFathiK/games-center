@@ -349,7 +349,7 @@ class RoomTest extends TestCase
         $response->assertOk()
             ->assertInertia(
                 fn($page) => $page
-                    ->component('Games/Index')
+                    ->component('Index')
                     ->has('games', 1)
                     ->where('games.0.id', $game->id)
                     ->where('games.0.name', 'Mafia')
@@ -1480,5 +1480,384 @@ class RoomTest extends TestCase
         $this->assertNotNull($props['history']['next_page_url']);
         $this->assertNull($props['history']['prev_page_url']);
         $this->assertEquals(12, $props['history']['total']);
+    }
+
+    public function test_cancel_requires_the_word_confirm(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $response = $this->actingAs($host)->postJson("/rooms/{$room->id}/cancel", [
+            'confirmation' => 'yes please',
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertDatabaseHas('rooms', ['id' => $room->id]);
+    }
+
+    public function test_cancel_confirmation_is_case_insensitive_and_trims_whitespace(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $response = $this->actingAs($host)->post("/rooms/{$room->id}/cancel", [
+            'confirmation' => '  CONFIRM  ',
+        ]);
+
+        $response->assertRedirect(route('games.index'));
+        $this->assertDatabaseMissing('rooms', ['id' => $room->id]);
+    }
+
+    public function test_host_cancelling_a_waiting_room_deletes_it(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+        $room->players()->attach($player->id);
+
+        $response = $this->actingAs($host)->post("/rooms/{$room->id}/cancel", [
+            'confirmation' => 'confirm',
+        ]);
+
+        $response->assertRedirect(route('games.index'));
+
+        $this->assertDatabaseMissing('rooms', ['id' => $room->id]);
+        $this->assertDatabaseMissing('room_players', ['room_id' => $room->id]);
+    }
+
+    public function test_host_cancelling_an_in_progress_room_marks_it_cancelled_and_keeps_it(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $players = User::factory()->count(5)->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => ['mafia_count' => 1, 'doctor' => false, 'detective' => false],
+            'status' => 'in_progress',
+            'game_state' => [
+                'phase' => 'night',
+                'round' => 1,
+                'roles' => [],
+                'alive' => [],
+                'winner' => null,
+                'night_step' => 'mafia',
+            ],
+        ]);
+        $room->players()->attach($players->pluck('id')->all());
+
+        $response = $this->actingAs($host)->post("/rooms/{$room->id}/cancel", [
+            'confirmation' => 'confirm',
+        ]);
+
+        $response->assertRedirect(route('rooms.show', $room));
+
+        $room->refresh();
+        $this->assertEquals('cancelled', $room->status);
+        $this->assertNull($room->game_state['winner']);
+    }
+
+    public function test_cancel_broadcasts_room_cancelled_event(): void
+    {
+        Event::fake([\App\Events\RoomCancelled::class]);
+
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $this->actingAs($host)->post("/rooms/{$room->id}/cancel", [
+            'confirmation' => 'confirm',
+        ]);
+
+        Event::assertDispatched(\App\Events\RoomCancelled::class, function ($event) use ($room) {
+            return $event->room->id === $room->id && $event->deleted === true;
+        });
+    }
+
+    public function test_non_host_cannot_cancel_while_host_is_active(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'in_progress',
+            'host_last_seen_at' => now(),
+        ]);
+        $room->players()->attach($player->id);
+
+        $response = $this->actingAs($player)->post("/rooms/{$room->id}/cancel", [
+            'confirmation' => 'confirm',
+        ]);
+
+        $response->assertRedirect()->assertSessionHasErrors('room');
+        $this->assertEquals('in_progress', $room->refresh()->status);
+    }
+
+    public function test_non_host_can_cancel_once_host_heartbeat_is_stale(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'in_progress',
+            'host_last_seen_at' => now()->subMinutes(5),
+        ]);
+        $room->players()->attach($player->id);
+
+        $response = $this->actingAs($player)->post("/rooms/{$room->id}/cancel", [
+            'confirmation' => 'confirm',
+        ]);
+
+        $response->assertRedirect(route('rooms.show', $room));
+        $this->assertEquals('cancelled', $room->refresh()->status);
+    }
+
+    public function test_non_host_cannot_stale_cancel_a_waiting_room(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+            'host_last_seen_at' => now()->subMinutes(10),
+        ]);
+        $room->players()->attach($player->id);
+
+        $response = $this->actingAs($player)->post("/rooms/{$room->id}/cancel", [
+            'confirmation' => 'confirm',
+        ]);
+
+        $response->assertRedirect()->assertSessionHasErrors('room');
+        $this->assertDatabaseHas('rooms', ['id' => $room->id]);
+    }
+
+    public function test_cannot_cancel_a_finished_room(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'finished',
+        ]);
+
+        $response = $this->actingAs($host)->post("/rooms/{$room->id}/cancel", [
+            'confirmation' => 'confirm',
+        ]);
+
+        $response->assertRedirect()->assertSessionHasErrors('room');
+    }
+
+    public function test_host_heartbeat_updates_last_seen(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'in_progress',
+            'host_last_seen_at' => now()->subMinutes(10),
+        ]);
+
+        $this->actingAs($host)->post("/rooms/{$room->id}/heartbeat")
+            ->assertNoContent();
+
+        $this->assertTrue($room->refresh()->host_last_seen_at->gt(now()->subMinute()));
+    }
+
+    public function test_non_host_cannot_send_heartbeat(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $player = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'in_progress',
+        ]);
+        $room->players()->attach($player->id);
+
+        $response = $this->actingAs($player)->postJson("/rooms/{$room->id}/heartbeat");
+
+        $response->assertStatus(422);
+    }
+
+    public function test_heartbeat_rejected_outside_in_progress(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $response = $this->actingAs($host)->postJson("/rooms/{$room->id}/heartbeat");
+
+        $response->assertStatus(422);
+    }
+
+    public function test_starting_a_room_seeds_host_last_seen_at(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $players = User::factory()->count(5)->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => ['mafia_count' => 1, 'doctor' => false, 'detective' => false],
+            'status' => 'waiting',
+        ]);
+        $room->players()->attach($players->pluck('id')->all());
+
+        $this->actingAs($host)->post("/rooms/{$room->id}/start");
+
+        $this->assertNotNull($room->refresh()->host_last_seen_at);
+    }
+
+    public function test_show_marks_role_reveal_visible_for_cancelled_rooms(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $players = User::factory()->count(5)->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => ['mafia_count' => 1, 'doctor' => false, 'detective' => false],
+            'status' => 'cancelled',
+        ]);
+        $room->players()->attach($players->pluck('id')->all());
+
+        $playerIds = $players->pluck('id')->values();
+        $roles = [
+            $playerIds[0] => 'mafia',
+            $playerIds[1] => 'civilian',
+            $playerIds[2] => 'civilian',
+            $playerIds[3] => 'civilian',
+            $playerIds[4] => 'civilian',
+        ];
+
+        $room->update([
+            'game_state' => [
+                'phase' => 'night',
+                'round' => 1,
+                'roles' => $roles,
+                'alive' => collect($roles)->keys()->mapWithKeys(fn($id) => [$id => true])->all(),
+                'winner' => null,
+            ],
+        ]);
+
+        $response = $this->actingAs($players->first())->get("/rooms/{$room->code}");
+
+        $response->assertOk()
+            ->assertInertia(
+                fn($page) => $page
+                    ->component('Rooms/Show')
+                    ->where('room.role_reveal.' . $playerIds[0], 'mafia')
+            );
+    }
+
+    public function test_mine_includes_player_count(): void
+    {
+        $game = $this->seedMafia();
+        $host = User::factory()->create();
+        $players = User::factory()->count(3)->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'ABC123',
+            'max_players' => 10,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+        $room->players()->attach($players->pluck('id')->all());
+
+        $response = $this->actingAs($host)->get('/my-rooms');
+
+        $response->assertOk()
+            ->assertInertia(
+                fn($page) => $page
+                    ->component('Rooms/Mine')
+                    ->where('active_room.player_count', 3)
+            );
     }
 }

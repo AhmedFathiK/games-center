@@ -17,12 +17,17 @@ use App\Events\NightActionUpdated;
 use App\Events\PhaseChanged;
 use App\Events\PlayerExecuted;
 use App\Events\PlayerKicked;
+use App\Events\RoomCancelled;
 use App\Events\VoteUpdated;
 use App\Events\GameEnded;
 use App\Events\PlayerLeft;
 
 class RoomController extends Controller
 {
+    // How long the host's heartbeat can go stale before another player
+    // is allowed to cancel a stuck in-progress room on their behalf.
+    private const HOST_STALE_MINUTES = 3;
+
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -292,6 +297,93 @@ class RoomController extends Controller
         return redirect()->route('rooms.show', $room);
     }
 
+    /**
+     * The host can cancel at any time (waiting or in progress). Any
+     * other player can also cancel, but only once the room is in
+     * progress AND the host's heartbeat has gone stale — this is the
+     * "host had a power/internet outage and can't cancel themselves"
+     * escape hatch, gated by isHostStale() rather than any timer/queue.
+     *
+     * A room cancelled while still waiting has no real state worth
+     * keeping (no roles assigned, nothing played) — it's deleted
+     * outright, no history record. A room cancelled while in progress
+     * keeps its game_state exactly as it was and is marked 'cancelled',
+     * so every player can review what happened, the same way a
+     * finished game's role reveal works.
+     */
+    public function cancel(Request $request, Room $room)
+    {
+        $validated = $request->validate([
+            'confirmation' => ['required', 'string'],
+        ]);
+
+        if (strtolower(trim($validated['confirmation'])) !== 'confirm') {
+            throw ValidationException::withMessages([
+                'confirmation' => 'Type "confirm" to cancel this room.',
+            ]);
+        }
+
+        $user = $request->user();
+        $isHost = $room->host_id === $user->id;
+
+        if (! in_array($room->status, ['waiting', 'in_progress'], true)) {
+            throw ValidationException::withMessages([
+                'room' => 'This room can no longer be cancelled.',
+            ]);
+        }
+
+        if (! $isHost && ! ($room->isInProgress() && $this->isHostStale($room))) {
+            throw ValidationException::withMessages([
+                'room' => 'Only the host can cancel this room.',
+            ]);
+        }
+
+        if ($room->isWaiting()) {
+            broadcast(new RoomCancelled($room, deleted: true));
+            $room->delete();
+
+            return redirect()->route('games.index');
+        }
+
+        $room->update(['status' => 'cancelled']);
+        broadcast(new RoomCancelled($room, deleted: false));
+
+        return redirect()->route('rooms.show', $room);
+    }
+
+    private function isHostStale(Room $room): bool
+    {
+        return $room->host_last_seen_at !== null
+            && $room->host_last_seen_at->lt(now()->subMinutes(self::HOST_STALE_MINUTES));
+    }
+
+    /**
+     * Pinged periodically by the host's browser while a room is in
+     * progress, so other players have a way to tell "host is gone" from
+     * "host is just thinking" without any presence-channel infrastructure.
+     * Plain HTTP, no Pusher connection involved.
+     */
+    public function heartbeat(Request $request, Room $room)
+    {
+        $user = $request->user();
+
+        if ($room->host_id !== $user->id) {
+            throw ValidationException::withMessages([
+                'room' => 'Only the host can send a heartbeat.',
+            ]);
+        }
+
+        if (! $room->isInProgress()) {
+            throw ValidationException::withMessages([
+                'room' => 'Heartbeats are only accepted while the room is in progress.',
+            ]);
+        }
+
+        $room->update(['host_last_seen_at' => now()]);
+
+        return response()->noContent();
+    }
+
     public function start(Request $request, Room $room)
     {
         $user = $request->user();
@@ -341,6 +433,10 @@ class RoomController extends Controller
             $room->update([
                 'status' => 'in_progress',
                 'game_state' => $gameState,
+                // Seeded here so the host is never considered "stale"
+                // the instant a game starts — isHostStale() would
+                // otherwise treat a null timestamp as gone.
+                'host_last_seen_at' => now(),
             ]);
         });
 
@@ -438,16 +534,23 @@ class RoomController extends Controller
                 'winner' => $gameState['winner'] ?? null,
                 'night_step' => $gameState['night_step'] ?? null,
 
-                // Roles are private during play, but once the game has
-                // truly ended there's nothing left to protect — everyone
-                // gets the full reveal for the game-over screen.
-                'role_reveal' => ($gameState['winner'] ?? null) !== null
+                // Roles are private during play. That protection drops
+                // once there's nothing left to protect — either the game
+                // truly ended (winner set) or it was cancelled mid-game,
+                // in which case everyone gets the same reveal a finished
+                // game would show, so no dispute needs an admin to settle.
+                'role_reveal' => (($gameState['winner'] ?? null) !== null || $room->status === 'cancelled')
                     ? ($gameState['roles'] ?? null)
                     : null,
 
                 // Day voting is public by design — everyone in the room
                 // sees the same selections/confirmations.
                 'day_votes' => $gameState['day_votes'] ?? null,
+
+                // Only meaningful while in progress; lets any non-host
+                // player see that cancelling on the host's behalf has
+                // become available, without exposing the raw timestamp.
+                'host_stale' => $room->isInProgress() && $this->isHostStale($room),
 
                 'game' => [
                     'id' => $room->game->id,
@@ -480,11 +583,13 @@ class RoomController extends Controller
         $activeRoom = Room::active()
             ->forUser($user->id)
             ->with(['game', 'host'])
+            ->withCount('players')
             ->first();
 
         $history = Room::whereNotIn('status', ['waiting', 'in_progress'])
             ->forUser($user->id)
             ->with(['game', 'host'])
+            ->withCount('players')
             ->orderByDesc('updated_at')
             ->paginate(10)
             ->withQueryString();
@@ -522,6 +627,7 @@ class RoomController extends Controller
                 'name' => $room->host->name,
             ],
             'is_host' => $room->host_id === $userId,
+            'player_count' => $room->players_count,
             'updated_at' => optional($room->updated_at)->toIso8601String(),
         ];
     }
