@@ -189,6 +189,15 @@ async function createRoom() {
                     <p v-if="props.games.length === 0" class="gc-empty">
                         No games are available right now.
                     </p>
+
+                    <div class="gc-module gc-module--placeholder" aria-hidden="true">
+                        <span class="gc-module-cursor" aria-hidden="true">+</span>
+
+                        <span class="gc-module-body">
+                            <span class="gc-module-name">More games on the way</span>
+                            <span class="gc-module-desc">Phase 10 and other titles are in development.</span>
+                        </span>
+                    </div>
                 </div>
 
                 <!-- Configuration panel -->
@@ -330,13 +339,13 @@ async function createRoom() {
     font-size: 0.95rem;
 }
 
-/* Join by code */
+/* Join by code — deliberately lighter than the module rail/panel below:
+   this is the alternate entry point, not the primary flow, so it should
+   read as a slim utility row rather than a competing card. */
 .gc-joinbar {
     margin-top: 1.75rem;
-    background: var(--gc-surface);
-    border: 1px solid var(--gc-border);
-    border-radius: 10px;
-    padding: 1.1rem 1.25rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--gc-border);
 }
 
 .gc-joinbar-label {
@@ -350,6 +359,7 @@ async function createRoom() {
     display: flex;
     gap: 0.75rem;
     margin-top: 0.6rem;
+    max-width: 24rem;
 }
 
 .gc-joinbar-input {
@@ -484,6 +494,22 @@ async function createRoom() {
     color: var(--gc-mist);
     font-size: 0.9rem;
     padding: 1rem 0;
+}
+
+.gc-module--placeholder {
+    cursor: default;
+    background: transparent;
+    border: 1px dashed var(--gc-border);
+}
+
+.gc-module--placeholder:hover {
+    background: transparent;
+    transform: none;
+}
+
+.gc-module--placeholder .gc-module-name,
+.gc-module--placeholder .gc-module-desc {
+    color: var(--gc-mist);
 }
 
 /* Configuration panel */

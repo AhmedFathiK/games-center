@@ -218,6 +218,17 @@ class RoomController extends Controller
         return redirect()->route('rooms.show', $room);
     }
 
+    /**
+     * Resolves a room code and, unlike a plain lookup, actually joins the
+     * requesting user in the same request — entering a code is already a
+     * declaration of intent to join, so landing on the room page and still
+     * requiring a separate "Join Room" click was an extra, confusing step.
+     *
+     * If the user is already the host or an existing player of the room
+     * (e.g. re-entering a code after a refresh, or the host testing their
+     * own code), this simply takes them back in rather than erroring —
+     * every other case reuses the same validation join() applies.
+     */
     public function find(Request $request)
     {
         $validated = $request->validate([
@@ -237,6 +248,35 @@ class RoomController extends Controller
                 'code' => 'No room found with that code.',
             ]);
         }
+
+        $user = $request->user();
+        $isHost = $room->host_id === $user->id;
+        $isPlayer = $room->players()->where('users.id', $user->id)->exists();
+
+        if ($isHost || $isPlayer) {
+            return redirect()->route('rooms.show', $room);
+        }
+
+        if (! $room->isWaiting()) {
+            throw ValidationException::withMessages([
+                'code' => 'This room is no longer accepting players.',
+            ]);
+        }
+
+        if (Room::activeFor($user->id) !== null) {
+            throw ValidationException::withMessages([
+                'code' => 'You are already in an active room.',
+            ]);
+        }
+
+        if ($room->players()->count() >= $room->max_players) {
+            throw ValidationException::withMessages([
+                'code' => 'This room is full.',
+            ]);
+        }
+
+        $room->players()->attach($user->id);
+        broadcast(new PlayerJoined($room, $user));
 
         return redirect()->route('rooms.show', $room);
     }
