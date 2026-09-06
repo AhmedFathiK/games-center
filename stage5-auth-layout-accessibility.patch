@@ -1,0 +1,100 @@
+diff --git a/resources/js/layouts/AppLayout.vue b/resources/js/layouts/AppLayout.vue
+index a1b2c3d..e4f5678 100644
+--- a/resources/js/layouts/AppLayout.vue
++++ b/resources/js/layouts/AppLayout.vue
+@@ -32,6 +32,7 @@ const userInitials = getInitials(page.props.auth.user.name)
+                     <button
+                         type="button"
+                         class="app-user-btn"
++                        :aria-expanded="isUserMenuOpen"
++                        aria-haspopup="true"
+                         @click="isUserMenuOpen = !isUserMenuOpen"
+                     >
+                         <span class="app-avatar">{{ userInitials }}</span>
+                         <span class="app-username">{{ page.props.auth.user.name }}</span>
++                        <span class="app-chevron" :class="{ 'app-chevron--open': isUserMenuOpen }" aria-hidden="true" />
+                     </button>
+
+                     <div v-if="isUserMenuOpen" class="app-dropdown">
+@@ -115,6 +116,21 @@ const userInitials = getInitials(page.props.auth.user.name)
+     font-size: 0.875rem;
+     font-weight: 500;
+ }
+
++.app-chevron {
++    display: inline-block;
++    width: 0.4rem;
++    height: 0.4rem;
++    border-right: 2px solid var(--gc-mist, #9fb0a8);
++    border-bottom: 2px solid var(--gc-mist, #9fb0a8);
++    transform: rotate(45deg);
++    transition: transform 0.2s ease;
++    margin-left: 0.2rem;
++}
++
++.app-chevron--open {
++    transform: rotate(-135deg);
++}
+
+ .app-dropdown {
+     position: absolute;
+diff --git a/resources/js/pages/auth/Login.vue b/resources/js/pages/auth/Login.vue
+index f8e7d6c..b2a3c4d 100644
+--- a/resources/js/pages/auth/Login.vue
++++ b/resources/js/pages/auth/Login.vue
+@@ -35,7 +35,6 @@ function submit() {
+                     v-model="form.email"
+                     type="email"
+                     class="auth-input"
+-                    tabindex="1"
+                     required
+                     autofocus
+                     autocomplete="email"
+@@ -49,7 +48,6 @@ function submit() {
+                     v-model="form.password"
+                     type="password"
+                     class="auth-input"
+-                    tabindex="2"
+                     required
+                     autocomplete="current-password"
+                 />
+@@ -57,11 +55,10 @@ function submit() {
+             </div>
+
+             <div class="auth-row">
+-                <label class="auth-checkbox-label" tabindex="3">
++                <label class="auth-checkbox-label">
+                     <input
+                         id="remember"
+                         v-model="form.remember"
+                         type="checkbox"
+                         class="auth-checkbox"
+-                        tabindex="4"
+                     />
+                     <span>Remember me</span>
+                 </label>
+@@ -70,7 +67,6 @@ function submit() {
+                     v-if="canResetPassword"
+                     :href="route('password.request')"
+                     class="auth-link"
+-                    tabindex="5"
+                 >
+                     Forgot password?
+                 </Link>
+@@ -78,7 +74,6 @@ function submit() {
+
+             <button
+                 type="submit"
+                 class="auth-btn-primary"
+-                tabindex="4"
+                 :disabled="form.processing"
+             >
+                 <span v-if="form.processing">Logging in...</span>
+@@ -88,7 +83,6 @@ function submit() {
+             <p class="auth-footer-text">
+                 Don't have an account?
+-                <Link :href="route('register')" class="auth-link" tabindex="5">Sign up</Link>
++                <Link :href="route('register')" class="auth-link">Sign up</Link>
+             </p>
+         </form>
+     </AuthLayout>
