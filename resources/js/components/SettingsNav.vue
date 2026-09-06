@@ -4,7 +4,6 @@ import { Link } from '@inertiajs/vue3'
 const tabs = [
     { label: 'Profile', routeName: 'profile.edit' },
     { label: 'Password', routeName: 'password.edit' },
-    { label: 'Appearance', routeName: 'appearance' },
 ] as const
 </script>
 
