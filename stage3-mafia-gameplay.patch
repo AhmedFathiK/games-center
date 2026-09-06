@@ -1,0 +1,107 @@
+diff --git a/resources/js/pages/Rooms/DayPhase.vue b/resources/js/pages/Rooms/DayPhase.vue
+index 6ae0d51..ff8d3b6 100644
+--- a/resources/js/pages/Rooms/DayPhase.vue
++++ b/resources/js/pages/Rooms/DayPhase.vue
+@@ -479,11 +479,11 @@ function advancePhase() {
+ .dp-btn {
+     margin-top: 1rem;
+     border-radius: 2px;
+-    padding: 0.6rem 1.1rem;
++    padding: 0.75rem 1.25rem;
+     font-family: var(--rc-font-display);
+     text-transform: uppercase;
+     letter-spacing: 0.05em;
+-    font-size: 0.8rem;
++    font-size: 0.85rem;
+     border: 1px solid var(--rc-border);
+     background: var(--rc-surface-alt);
+     color: var(--rc-text-on-surface);
+@@ -492,9 +492,11 @@ function advancePhase() {
+ 
+ .dp-host-actions .dp-btn {
+     margin-top: 0;
++    flex: 1 1 10rem;
+ }
+ 
+ .dp-btn--primary {
++    width: 100%;
+     background: var(--rc-secondary);
+     border-color: var(--rc-secondary);
+     color: #fff;
+diff --git a/resources/js/pages/Rooms/NightPhase.vue b/resources/js/pages/Rooms/NightPhase.vue
+index 246f0b6..af58702 100644
+--- a/resources/js/pages/Rooms/NightPhase.vue
++++ b/resources/js/pages/Rooms/NightPhase.vue
+@@ -48,6 +48,16 @@ const advanceButtonLabel = computed(() => {
+     return `Let ${next.charAt(0).toUpperCase()}${next.slice(1)} Act`
+ })
+ 
++// Used by the banner and by the doctor/detective "sit tight" status
++// lines — factored out so both stay in sync instead of independently
++// capitalizing (or, previously, forgetting to capitalize) the same
++// raw night_step value.
++const currentTurnLabel = computed(() => {
++    const step = props.room.night_step ?? 'mafia'
++    return step.charAt(0).toUpperCase() + step.slice(1)
++})
++
++
+ // --- Live updates for channels beyond the base room channel --------------
+ // Show.vue already subscribes to `rooms.{id}` and reloads on every
+ // platform-level event. Mafia coordination and host oversight ride on
+@@ -229,7 +239,7 @@ const mafiaTargetTally = computed(() => {
+     <div class="np-root">
+         <div class="np-banner">
+             <span class="np-stamp">
+-                Night · Round {{ room.round }} · {{ (room.night_step ?? 'mafia').charAt(0).toUpperCase() + (room.night_step ?? 'mafia').slice(1) }}'s Turn
++                Night · Round {{ room.round }} · {{ currentTurnLabel }}'s Turn
+             </span>
+         </div>
+ 
+@@ -387,7 +397,7 @@ const mafiaTargetTally = computed(() => {
+                         Confirmed: {{ playerName(mySoloSelection) }}. This cannot be changed.
+                     </template>
+                     <template v-else-if="!isMyTurn">
+-                        It's currently {{ room.night_step }}'s turn. Sit tight.
++                        It's currently {{ currentTurnLabel }}'s turn. Sit tight.
+                     </template>
+                     <template v-else-if="mySoloSelection">
+                         Selected: {{ playerName(mySoloSelection) }} — confirm to lock it in.
+@@ -431,7 +441,7 @@ const mafiaTargetTally = computed(() => {
+                         <strong>{{ room.you.detective_result.is_mafia ? 'Mafia' : 'not Mafia' }}</strong>.
+                     </template>
+                     <template v-else-if="!isMyTurn">
+-                        It's currently {{ room.night_step }}'s turn. Sit tight.
++                        It's currently {{ currentTurnLabel }}'s turn. Sit tight.
+                     </template>
+                     <template v-else-if="mySoloSelection">
+                         Selected: {{ playerName(mySoloSelection) }} — confirm to investigate.
+@@ -473,7 +483,7 @@ const mafiaTargetTally = computed(() => {
+                 </h2>
+                 <p class="np-muted">
+                     <template v-if="amAlive">
+-                        Nothing to do right now — it's currently {{ room.night_step ?? 'Mafia' }}'s turn.
++                        Nothing to do right now — it's currently {{ currentTurnLabel }}'s turn.
+                     </template>
+                     <template v-else>
+                         You can no longer act, but you can keep watching how the game unfolds.
+@@ -655,16 +665,17 @@ const mafiaTargetTally = computed(() => {
+ .np-btn {
+     margin-top: 1rem;
+     border-radius: 2px;
+-    padding: 0.6rem 1.1rem;
++    padding: 0.75rem 1.25rem;
+     font-family: var(--rc-font-display);
+     text-transform: uppercase;
+     letter-spacing: 0.05em;
+-    font-size: 0.8rem;
++    font-size: 0.85rem;
+     border: 1px solid var(--rc-border);
+     cursor: pointer;
+ }
+ 
+ .np-btn--primary {
++    width: 100%;
+     background: var(--rc-primary);
+     border-color: var(--rc-primary);
+     color: #fff;

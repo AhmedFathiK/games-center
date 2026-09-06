@@ -479,11 +479,11 @@ function advancePhase() {
 .dp-btn {
     margin-top: 1rem;
     border-radius: 2px;
-    padding: 0.6rem 1.1rem;
+    padding: 0.75rem 1.25rem;
     font-family: var(--rc-font-display);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     border: 1px solid var(--rc-border);
     background: var(--rc-surface-alt);
     color: var(--rc-text-on-surface);
@@ -492,9 +492,11 @@ function advancePhase() {
 
 .dp-host-actions .dp-btn {
     margin-top: 0;
+    flex: 1 1 10rem;
 }
 
 .dp-btn--primary {
+    width: 100%;
     background: var(--rc-secondary);
     border-color: var(--rc-secondary);
     color: #fff;
