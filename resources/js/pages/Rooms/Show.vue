@@ -41,6 +41,13 @@ function indexLabel(i: number) {
     return `N°${String(i + 1).padStart(2, '0')}`
 }
 
+// Backend statuses are underscore-separated (e.g. "in_progress"). CSS
+// `text-transform: capitalize` does not insert spaces on its own, so the
+// space swap has to happen here — capitalization of each resulting word
+// is then handled by the existing `.rc-badge` CSS, same pattern already
+// used for game_state keys further down this file.
+const formattedStatus = computed(() => props.room.status.replace(/_/g, ' '))
+
 // --- State / actions (unchanged from platform behavior) --------------
 const joiningRoom = ref(false)
 const joinError = ref<string | null>(null)
@@ -166,7 +173,7 @@ function handleSelfKicked() {
 // heartbeat has gone stale (room.host_stale, computed server-side) —
 // this is the "host had an outage and can't cancel themselves" escape
 // hatch. The backend enforces the actual permission; these are just the
-// two buttons that become visible under each condition.
+// controls that become visible under each condition.
 const cancelling = ref(false)
 const cancelError = ref<string | null>(null)
 const showCancelModal = ref(false)
@@ -180,6 +187,21 @@ const canHostCancel = computed(
 
 const canStaleCancel = computed(
     () => !isHost.value && props.room.status === 'in_progress' && props.room.host_stale === true,
+)
+
+// Cancelling is a rare, destructive action — it shouldn't visually
+// compete with Start Game for a host's attention while a room is still
+// filling up. During the waiting phase the host-cancel option is shown
+// as a plain text link at the bottom of the page instead of a bordered
+// button. The in-progress and stale-host cases stay in the more
+// prominent bar below, since those situations are rarer and more urgent
+// (a stuck or abandoned game, not routine lobby management).
+const showProminentCancelBar = computed(
+    () => canStaleCancel.value || (canHostCancel.value && props.room.status === 'in_progress'),
+)
+
+const showWaitingCancelLink = computed(
+    () => canHostCancel.value && props.room.status === 'waiting',
 )
 
 const cancelConfirmValid = computed(
@@ -284,23 +306,28 @@ function syncTimersToRoomState() {
 
 watch(() => props.room.status, syncTimersToRoomState)
 
-// --- Copy link ---------------------------------------------------------
-// The shareable URL uses the room code, matching the GET /rooms/{room:code}
-// route — not the numeric id used by the action endpoints above.
+// --- Copy code / link ---------------------------------------------------
+// Sharing the room is the primary thing a host or player needs to do
+// while a room is filling up, so both the raw code and the full link
+// are offered as equally easy one-click copies (see the Invite Players
+// section in the template). The shareable URL uses the room code,
+// matching the GET /rooms/{room:code} route — not the numeric id used
+// by the action endpoints above.
 const linkCopied = ref(false)
-let copiedTimeout: ReturnType<typeof setTimeout> | null = null
+let linkCopiedTimeout: ReturnType<typeof setTimeout> | null = null
 
-async function copyRoomLink() {
-    const link = `${window.location.origin}/rooms/${props.room.code}`
+const codeCopied = ref(false)
+let codeCopiedTimeout: ReturnType<typeof setTimeout> | null = null
 
+async function copyToClipboard(text: string) {
     try {
-        await navigator.clipboard.writeText(link)
+        await navigator.clipboard.writeText(text)
     } catch {
         // Clipboard API can fail (permissions, non-HTTPS, older browsers).
         // Fall back to a hidden textarea + the legacy execCommand copy so
         // the button still works rather than silently doing nothing.
         const textarea = document.createElement('textarea')
-        textarea.value = link
+        textarea.value = text
         textarea.style.position = 'fixed'
         textarea.style.opacity = '0'
         document.body.appendChild(textarea)
@@ -312,12 +339,28 @@ async function copyRoomLink() {
             document.body.removeChild(textarea)
         }
     }
+}
+
+async function copyRoomLink() {
+    const link = `${window.location.origin}/rooms/${props.room.code}`
+    await copyToClipboard(link)
 
     linkCopied.value = true
 
-    if (copiedTimeout) clearTimeout(copiedTimeout)
-    copiedTimeout = setTimeout(() => {
+    if (linkCopiedTimeout) clearTimeout(linkCopiedTimeout)
+    linkCopiedTimeout = setTimeout(() => {
         linkCopied.value = false
+    }, 2000)
+}
+
+async function copyRoomCode() {
+    await copyToClipboard(props.room.code)
+
+    codeCopied.value = true
+
+    if (codeCopiedTimeout) clearTimeout(codeCopiedTimeout)
+    codeCopiedTimeout = setTimeout(() => {
+        codeCopied.value = false
     }, 2000)
 }
 
@@ -399,7 +442,8 @@ onUnmounted(() => {
 
     stopTimers()
 
-    if (copiedTimeout) clearTimeout(copiedTimeout)
+    if (linkCopiedTimeout) clearTimeout(linkCopiedTimeout)
+    if (codeCopiedTimeout) clearTimeout(codeCopiedTimeout)
     if (kickedRedirectTimeout) clearTimeout(kickedRedirectTimeout)
     if (cancelledRedirectTimeout) clearTimeout(cancelledRedirectTimeout)
 })
@@ -414,33 +458,42 @@ onUnmounted(() => {
 
             <!-- Room Header -->
             <div class="rc-header">
-                <div>
-                    <h1 class="rc-title">{{ room.game.name }}</h1>
-
-                    <div class="rc-code-row">
-                        <p class="rc-subtitle">
-                            Room code: <span class="rc-mono rc-code">{{ room.code }}</span>
-                        </p>
-
-                        <button
-                            type="button"
-                            class="rc-copy-btn rc-mono"
-                            @click="copyRoomLink"
-                        >
-                            {{ linkCopied ? 'Copied' : 'Copy Link' }}
-                        </button>
-                    </div>
-                </div>
+                <h1 class="rc-title">{{ room.game.name }}</h1>
 
                 <span class="rc-badge" :class="`rc-badge--${room.status}`">
-                    {{ room.status }}
+                    {{ formattedStatus }}
                 </span>
             </div>
 
-            <!-- Cancel controls — shown above everything else regardless
-                 of phase, since cancelling is a room-level action, not a
-                 game-phase one. -->
-            <div v-if="canHostCancel || canStaleCancel" class="rc-cancel-bar">
+            <!-- Invite CTA — the primary action while a room is filling
+                 up. Kept visually assertive on purpose: getting other
+                 players in is the whole point of a waiting-room lobby. -->
+            <section v-if="room.status === 'waiting'" class="rc-invite">
+                <p class="rc-invite-eyebrow">Invite Players</p>
+
+                <div class="rc-invite-code-row">
+                    <span class="rc-mono rc-invite-code">{{ room.code }}</span>
+                </div>
+
+                <div class="rc-invite-actions">
+                    <button type="button" class="rc-invite-btn" @click="copyRoomCode">
+                        {{ codeCopied ? 'Copied!' : 'Copy Code' }}
+                    </button>
+                    <button
+                        type="button"
+                        class="rc-invite-btn rc-invite-btn--secondary"
+                        @click="copyRoomLink"
+                    >
+                        {{ linkCopied ? 'Copied!' : 'Copy Link' }}
+                    </button>
+                </div>
+            </section>
+
+            <!-- Cancel controls — the in-progress / stale-host cases only.
+                 The routine "cancel while waiting" option lives as a
+                 subtle link at the bottom of the waiting-room content
+                 below, so it doesn't compete with Start Game. -->
+            <div v-if="showProminentCancelBar" class="rc-cancel-bar">
                 <button
                     v-if="canHostCancel"
                     type="button"
@@ -576,6 +629,20 @@ onUnmounted(() => {
                         </div>
                     </div>
                 </section>
+
+                <!-- Routine host-cancel, demoted to a plain link so it
+                     never competes with Start Game above. -->
+                <div v-if="showWaitingCancelLink" class="rc-cancel-link-row">
+                    <button
+                        type="button"
+                        class="rc-cancel-link"
+                        :disabled="cancelling"
+                        @click="openCancelModal('Cancel this room?', 'This cannot be undone. Type confirm below to proceed.')"
+                    >
+                        Cancel this room
+                    </button>
+                    <p v-if="cancelError && !showCancelModal" class="rc-error">{{ cancelError }}</p>
+                </div>
             </template>
 
             <!-- In progress: night phase -->
@@ -727,46 +794,6 @@ onUnmounted(() => {
     letter-spacing: 0.01em;
 }
 
-.rc-code-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-top: 0.25rem;
-    flex-wrap: wrap;
-}
-
-.rc-subtitle {
-    font-size: 0.875rem;
-    color: var(--rc-text-muted);
-}
-
-.rc-code {
-    font-weight: 600;
-    color: var(--rc-text-on-bg);
-}
-
-.rc-copy-btn {
-    border: 1px solid var(--rc-border);
-    background: transparent;
-    color: var(--rc-text-muted);
-    border-radius: 6px;
-    padding: 0.2rem 0.6rem;
-    font-size: 0.75rem;
-    cursor: pointer;
-    transition: border-color 0.15s ease, color 0.15s ease;
-}
-
-.rc-copy-btn:hover {
-    border-color: var(--rc-primary);
-    color: var(--rc-primary);
-}
-
-.rc-theme-mafia .rc-copy-btn {
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    border-radius: 2px;
-}
-
 .rc-badge {
     border: 1px solid var(--rc-border);
     padding: 0.25rem 0.75rem;
@@ -799,7 +826,86 @@ onUnmounted(() => {
     color: var(--rc-success);
 }
 
-/* Cancel bar */
+/* Invite CTA — deliberately the most visually assertive block on the
+   waiting-room page besides Start Game itself: sharing the room is the
+   primary thing a host/player needs to do while waiting for others. */
+.rc-invite {
+    margin-top: 1.5rem;
+    background: var(--rc-surface);
+    border: 1px solid var(--rc-primary);
+    border-radius: 10px;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.rc-invite-eyebrow {
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--rc-primary);
+    font-weight: 600;
+}
+
+.rc-invite-code-row {
+    margin-top: 0.75rem;
+}
+
+.rc-invite-code {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--rc-text-on-surface);
+}
+
+.rc-invite-actions {
+    margin-top: 1.1rem;
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.rc-invite-btn {
+    border-radius: 8px;
+    padding: 0.65rem 1.4rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    border: 1px solid var(--rc-primary);
+    background: var(--rc-primary);
+    color: #fff;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+
+.rc-invite-btn:hover {
+    opacity: 0.9;
+}
+
+.rc-invite-btn--secondary {
+    background: transparent;
+    color: var(--rc-primary);
+}
+
+.rc-theme-mafia .rc-invite {
+    border-radius: 2px;
+}
+
+.rc-theme-mafia .rc-invite-eyebrow {
+    font-family: var(--rc-font-display);
+}
+
+.rc-theme-mafia .rc-invite-code {
+    font-family: var(--rc-font-mono);
+}
+
+.rc-theme-mafia .rc-invite-btn {
+    font-family: var(--rc-font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-radius: 2px;
+}
+
+/* Cancel bar (in-progress / stale-host cases only — see template) */
 .rc-cancel-bar {
     margin-bottom: 1.5rem;
     display: flex;
@@ -842,6 +948,33 @@ onUnmounted(() => {
 .rc-stale-notice p {
     font-size: 0.85rem;
     color: var(--rc-text-muted);
+}
+
+/* Subtle cancel link — the host-cancel option is kept available during
+   the waiting phase but shouldn't visually compete with Start Game, so
+   it lives at the bottom of the waiting-room content as plain text
+   rather than a bordered button. */
+.rc-cancel-link-row {
+    margin-top: 1.5rem;
+    text-align: center;
+}
+
+.rc-cancel-link {
+    background: none;
+    border: none;
+    color: var(--rc-text-muted);
+    font-size: 0.8rem;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.rc-cancel-link:hover:not(:disabled) {
+    color: var(--rc-primary);
+}
+
+.rc-cancel-link:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 /* Panels */

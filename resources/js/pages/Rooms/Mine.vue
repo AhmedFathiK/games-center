@@ -51,6 +51,14 @@ function formatDate(iso: string | null) {
         day: 'numeric',
     })
 }
+
+// Backend statuses are underscore-separated (e.g. "in_progress"). CSS
+// `text-transform: capitalize` on `.mr-badge` does not insert spaces on
+// its own, so the space swap happens here — same fix as Rooms/Show.vue's
+// `formattedStatus`, applied to both badges rendered on this page.
+function formatStatus(status: string) {
+    return status.replace(/_/g, ' ')
+}
 </script>
 
 <template>
@@ -76,7 +84,7 @@ function formatDate(iso: string | null) {
                     </div>
 
                     <span class="mr-badge" :class="`mr-badge--${props.active_room.status}`">
-                        {{ props.active_room.status }}
+                        {{ formatStatus(props.active_room.status) }}
                     </span>
                 </div>
 
@@ -110,7 +118,7 @@ function formatDate(iso: string | null) {
                         </div>
 
                         <span class="mr-badge" :class="`mr-badge--${room.status}`">
-                            {{ room.status }}
+                            {{ formatStatus(room.status) }}
                         </span>
                     </div>
                 </div>

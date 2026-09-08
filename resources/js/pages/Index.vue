@@ -132,9 +132,12 @@ async function createRoom() {
                 <p class="gc-subtitle">Choose a game, configure the room, and share the code.</p>
             </header>
 
-            <!-- Join by code -->
+            <!-- Join by code — a full entry point on its own, not a
+                 secondary utility strip: for someone who received a code
+                 from another player, this IS the app until they're in. -->
             <section class="gc-joinbar">
-                <p class="gc-joinbar-label gc-mono">Have a room code?</p>
+                <p class="gc-joinbar-eyebrow gc-mono">Have a room code?</p>
+                <h2 class="gc-joinbar-title">Join a Room</h2>
 
                 <form class="gc-joinbar-form" @submit.prevent="joinByCode">
                     <input
@@ -153,7 +156,7 @@ async function createRoom() {
                         class="gc-joinbar-btn"
                         :disabled="joiningByCode || !roomCode.trim()"
                     >
-                        {{ joiningByCode ? 'Joining…' : 'Join' }}
+                        {{ joiningByCode ? 'Joining…' : 'Join Room' }}
                     </button>
                 </form>
 
@@ -339,40 +342,54 @@ async function createRoom() {
     font-size: 0.95rem;
 }
 
-/* Join by code — deliberately lighter than the module rail/panel below:
-   this is the alternate entry point, not the primary flow, so it should
-   read as a slim utility row rather than a competing card. */
+/* Join by code — its own bordered, centered CTA card so it reads as an
+   equally valid entry point alongside picking a game below, not a
+   secondary utility strip. */
 .gc-joinbar {
     margin-top: 1.75rem;
-    padding-bottom: 1.25rem;
-    border-bottom: 1px solid var(--gc-border);
+    padding: 1.5rem;
+    background: var(--gc-surface);
+    border: 1px solid var(--gc-amber);
+    border-radius: 12px;
+    text-align: center;
 }
 
-.gc-joinbar-label {
+.gc-joinbar-eyebrow {
     font-size: 0.75rem;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--gc-mist);
+    color: var(--gc-amber);
+    font-weight: 600;
+}
+
+.gc-joinbar-title {
+    margin-top: 0.35rem;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.3rem;
+    font-weight: 700;
 }
 
 .gc-joinbar-form {
     display: flex;
+    justify-content: center;
     gap: 0.75rem;
-    margin-top: 0.6rem;
-    max-width: 24rem;
+    margin: 1.1rem auto 0;
+    max-width: 28rem;
+    flex-wrap: wrap;
 }
 
 .gc-joinbar-input {
     flex: 1;
-    min-width: 0;
+    min-width: 10rem;
     background: var(--gc-surface-raised);
     border: 1px solid var(--gc-border);
     border-radius: 8px;
-    padding: 0.6rem 0.85rem;
+    padding: 0.75rem 1rem;
     color: var(--gc-paper);
-    font-size: 0.95rem;
-    letter-spacing: 0.08em;
+    font-size: 1.05rem;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
+    text-align: center;
 }
 
 .gc-joinbar-input:focus {
@@ -382,26 +399,25 @@ async function createRoom() {
 
 .gc-joinbar-input::placeholder {
     color: var(--gc-mist);
-    letter-spacing: 0.06em;
+    letter-spacing: 0.08em;
 }
 
 .gc-joinbar-btn {
-    padding: 0.6rem 1.3rem;
+    padding: 0.75rem 1.6rem;
     border-radius: 8px;
-    border: 1px solid var(--gc-phosphor);
-    background: transparent;
-    color: var(--gc-phosphor);
+    border: none;
+    background: var(--gc-amber);
+    color: var(--gc-ink);
     font-family: 'Space Grotesk', sans-serif;
-    font-weight: 600;
-    font-size: 0.9rem;
+    font-weight: 700;
+    font-size: 1rem;
     cursor: pointer;
     white-space: nowrap;
-    transition: background 0.15s ease, color 0.15s ease;
+    transition: opacity 0.15s ease;
 }
 
 .gc-joinbar-btn:hover:not(:disabled) {
-    background: var(--gc-phosphor);
-    color: var(--gc-ink);
+    opacity: 0.9;
 }
 
 .gc-joinbar-btn:disabled {
