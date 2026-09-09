@@ -61,7 +61,12 @@ function joinByCode() {
 function selectGame(game: Game) {
     selectedGame.value = game
     configuration.value = {}
-    maxPlayers.value = game.maximum_players
+    // Default to a modest lobby size rather than the game's absolute
+    // ceiling — defaulting to the maximum makes an empty room look like
+    // it needs 20 people before anyone would consider starting it. This
+    // is a generic min/max-based heuristic (not a Mafia-specific rule),
+    // so it applies the same way to any future game.
+    maxPlayers.value = Math.min(game.maximum_players, game.minimum_players + 4)
     error.value = null
 
     for (const [key, field] of Object.entries(game.configuration_schema)) {
@@ -128,16 +133,19 @@ async function createRoom() {
         <div class="gc-container">
             <header class="gc-header">
                 <p class="gc-eyebrow">Games Center</p>
-                <h1 class="gc-title">Select a module</h1>
-                <p class="gc-subtitle">Choose a game, configure the room, and share the code.</p>
+                <h1 class="gc-title">Choose a Game</h1>
+                <p class="gc-subtitle">Choose a game, configure your room, and invite your friends.</p>
             </header>
 
-            <!-- Join by code — a full entry point on its own, not a
-                 secondary utility strip: for someone who received a code
-                 from another player, this IS the app until they're in. -->
+            <!-- Path 1: Join by code — a full entry point on its own, not
+                 a secondary utility strip: for someone who received a
+                 code from another player, this IS the app until they're
+                 in. Framed explicitly as one of two paths so the
+                 relationship between joining and hosting is obvious
+                 rather than implied by layout alone. -->
             <section class="gc-joinbar">
                 <p class="gc-joinbar-eyebrow gc-mono">Have a room code?</p>
-                <h2 class="gc-joinbar-title">Join a Room</h2>
+                <h2 class="gc-joinbar-title">Join an Existing Room</h2>
 
                 <form class="gc-joinbar-form" @submit.prevent="joinByCode">
                     <input
@@ -161,6 +169,19 @@ async function createRoom() {
                 </form>
 
                 <p v-if="joinCodeError" class="gc-error">{{ joinCodeError }}</p>
+            </section>
+
+            <div class="gc-or-divider" aria-hidden="true">
+                <span>or</span>
+            </div>
+
+            <!-- Path 2: Create a room — the module rail + configuration
+                 panel below belong to this path as a whole, so the
+                 heading sits above the entire console rather than just
+                 the rail, matching how the join path above is framed. -->
+            <section class="gc-path-header">
+                <p class="gc-joinbar-eyebrow gc-mono">Want to host?</p>
+                <h2 class="gc-joinbar-title">Create a New Room</h2>
             </section>
 
             <div class="gc-console" :class="{ 'gc-console--active': selectedGame }">
@@ -208,7 +229,7 @@ async function createRoom() {
                     <div class="gc-panel-header">
                         <h2 class="gc-panel-title">{{ selectedGame.name }}</h2>
                         <span class="gc-tag">
-                            {{ selectedGame.host_is_player ? 'Host plays' : 'Host manages only' }}
+                            {{ selectedGame.host_is_player ? 'Host plays too' : "Host doesn't play" }}
                         </span>
                     </div>
 
@@ -425,9 +446,40 @@ async function createRoom() {
     cursor: not-allowed;
 }
 
+/* "or" divider between the join and create paths — makes the two-path
+   mental model explicit rather than leaving the relationship between
+   the two sections implied by layout alone. */
+.gc-or-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1.75rem 0;
+    color: var(--gc-mist);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.gc-or-divider::before,
+.gc-or-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--gc-border);
+}
+
+/* Create-path header — same eyebrow/title typography as the join card
+   above (via shared .gc-joinbar-eyebrow/.gc-joinbar-title classes) but
+   unboxed, since the module rail + config panel below it already carry
+   their own visual weight. */
+.gc-path-header {
+    text-align: center;
+}
+
 /* Console layout */
 .gc-console {
-    margin-top: 2rem;
+    margin-top: 1.25rem;
     display: grid;
     grid-template-columns: 1fr;
     gap: 1.5rem;
@@ -462,6 +514,7 @@ async function createRoom() {
 
 .gc-module:hover {
     background: var(--gc-surface-raised);
+    border-color: var(--gc-amber);
     transform: translateX(2px);
 }
 
@@ -470,15 +523,24 @@ async function createRoom() {
     background: var(--gc-surface-raised);
 }
 
+/* Faintly visible at rest (not fully hidden) so the card reads as
+   interactive before the user even hovers it — a blank space where an
+   indicator could be gives no affordance at all. */
 .gc-module-cursor {
     font-family: 'JetBrains Mono', monospace;
     color: var(--gc-amber);
-    opacity: 0;
+    opacity: 0.35;
     line-height: 1.5rem;
+    transition: opacity 0.15s ease;
 }
 
+.gc-module:hover .gc-module-cursor,
 .gc-module--selected .gc-module-cursor {
     opacity: 1;
+}
+
+.gc-module--placeholder .gc-module-cursor {
+    opacity: 0.2;
 }
 
 .gc-module-body {

@@ -29,7 +29,6 @@ const submit = () => {
                     type="text"
                     required
                     autofocus
-                    tabindex="1"
                     autocomplete="name"
                     class="au-input"
                     placeholder="Full name"
@@ -44,7 +43,6 @@ const submit = () => {
                     v-model="form.email"
                     type="email"
                     required
-                    tabindex="2"
                     autocomplete="email"
                     class="au-input"
                     placeholder="email@example.com"
@@ -59,7 +57,6 @@ const submit = () => {
                     v-model="form.password"
                     type="password"
                     required
-                    tabindex="3"
                     autocomplete="new-password"
                     class="au-input"
                     placeholder="Password"
@@ -74,7 +71,6 @@ const submit = () => {
                     v-model="form.password_confirmation"
                     type="password"
                     required
-                    tabindex="4"
                     autocomplete="new-password"
                     class="au-input"
                     placeholder="Confirm password"
@@ -82,14 +78,14 @@ const submit = () => {
                 <p v-if="form.errors.password_confirmation" class="au-error">{{ form.errors.password_confirmation }}</p>
             </div>
 
-            <button type="submit" class="au-submit-btn" tabindex="5" :disabled="form.processing">
+            <button type="submit" class="au-submit-btn" :disabled="form.processing">
                 <span v-if="form.processing" class="au-spinner" />
                 Create account
             </button>
 
             <p class="au-footer-text">
                 Already have an account?
-                <Link :href="route('login')" tabindex="6" class="au-link">Log in</Link>
+                <Link :href="route('login')" class="au-link">Log in</Link>
             </p>
         </form>
     </AuthLayout>

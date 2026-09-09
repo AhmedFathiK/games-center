@@ -1,13 +1,40 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import { useInitials } from '@/composables/useInitials'
 
 const page = usePage()
 const { getInitials } = useInitials()
 const isUserMenuOpen = ref(false)
+const userMenuRef = ref<HTMLElement | null>(null)
 
 const userInitials = getInitials(page.props.auth.user.name)
+
+// The dropdown previously only closed via the trigger button or a link
+// inside it — clicking anywhere else on the page, or pressing Escape,
+// left it open. Both are standard expectations for any dropdown menu.
+function handleOutsideClick(event: MouseEvent) {
+    if (!isUserMenuOpen.value) return
+    if (userMenuRef.value && !userMenuRef.value.contains(event.target as Node)) {
+        isUserMenuOpen.value = false
+    }
+}
+
+function handleEscape(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+        isUserMenuOpen.value = false
+    }
+}
+
+onMounted(() => {
+    document.addEventListener('click', handleOutsideClick)
+    document.addEventListener('keydown', handleEscape)
+})
+
+onUnmounted(() => {
+    document.removeEventListener('click', handleOutsideClick)
+    document.removeEventListener('keydown', handleEscape)
+})
 </script>
 
 <template>
@@ -35,7 +62,7 @@ const userInitials = getInitials(page.props.auth.user.name)
                     </Link>
                 </nav>
 
-                <div class="app-user-menu">
+                <div ref="userMenuRef" class="app-user-menu">
                     <button
                         type="button"
                         class="app-user-btn"
