@@ -213,15 +213,6 @@ async function createRoom() {
                     <p v-if="props.games.length === 0" class="gc-empty">
                         No games are available right now.
                     </p>
-
-                    <div class="gc-module gc-module--placeholder" aria-hidden="true">
-                        <span class="gc-module-cursor" aria-hidden="true">+</span>
-
-                        <span class="gc-module-body">
-                            <span class="gc-module-name">More games on the way</span>
-                            <span class="gc-module-desc">Phase 10 and other titles are in development.</span>
-                        </span>
-                    </div>
                 </div>
 
                 <!-- Configuration panel -->
@@ -307,6 +298,20 @@ async function createRoom() {
                         {{ creatingRoom ? 'Creating Room…' : 'Create Room' }}
                     </button>
                 </div>
+            </div>
+
+            <!-- Kept out of the rail and always last: previously this sat
+                 between the game list and the config panel, so on mobile
+                 (where the console stacks into a single column) selecting
+                 a game meant scrolling past an unrelated placeholder card
+                 before reaching its own configuration. -->
+            <div class="gc-module gc-module--placeholder" aria-hidden="true">
+                <span class="gc-module-cursor" aria-hidden="true">+</span>
+
+                <span class="gc-module-body">
+                    <span class="gc-module-name">More games on the way</span>
+                    <span class="gc-module-desc">Phase 10 and other titles are in development.</span>
+                </span>
             </div>
         </div>
     </div>
@@ -575,6 +580,7 @@ async function createRoom() {
 }
 
 .gc-module--placeholder {
+    margin-top: 1.5rem;
     cursor: default;
     background: transparent;
     border: 1px dashed var(--gc-border);
@@ -582,6 +588,7 @@ async function createRoom() {
 
 .gc-module--placeholder:hover {
     background: transparent;
+    border-color: var(--gc-border);
     transform: none;
 }
 

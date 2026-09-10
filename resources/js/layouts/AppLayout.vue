@@ -115,10 +115,11 @@ onUnmounted(() => {
     max-width: 72rem;
     margin: 0 auto;
     padding: 0 1.5rem;
-    height: 3.5rem;
+    min-height: 3.5rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 0.75rem;
 }
 
 .app-brand {
@@ -126,6 +127,7 @@ onUnmounted(() => {
     font-size: 1.1rem;
     color: var(--gc-paper, #eef2ef);
     text-decoration: none;
+    white-space: nowrap;
 }
 
 .app-nav {
@@ -138,6 +140,7 @@ onUnmounted(() => {
     text-decoration: none;
     font-size: 0.9rem;
     font-weight: 500;
+    white-space: nowrap;
     transition: color 0.15s ease;
 }
 
@@ -182,6 +185,7 @@ onUnmounted(() => {
 .app-username {
     font-size: 0.875rem;
     font-weight: 500;
+    white-space: nowrap;
 }
 
 .app-chevron {
@@ -193,10 +197,39 @@ onUnmounted(() => {
     transform: rotate(45deg);
     transition: transform 0.2s ease;
     margin-left: 0.2rem;
+    flex-shrink: 0;
 }
 
 .app-chevron--open {
     transform: rotate(-135deg);
+}
+
+/* Below this width, brand + nav + full name reliably no longer fit on
+   one line. Rather than let each piece squeeze and its text wrap
+   internally (the previous behavior), drop the username text — the
+   avatar + chevron alone remain a clear, tappable menu trigger — and
+   tighten spacing so everything else stays on a single row. */
+@media (max-width: 640px) {
+    .app-header-container {
+        padding: 0.6rem 1rem;
+        gap: 0.5rem;
+    }
+
+    .app-brand {
+        font-size: 0.95rem;
+    }
+
+    .app-nav {
+        gap: 1rem;
+    }
+
+    .app-nav-link {
+        font-size: 0.82rem;
+    }
+
+    .app-username {
+        display: none;
+    }
 }
 
 .app-dropdown {
