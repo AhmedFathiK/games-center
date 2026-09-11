@@ -33,7 +33,7 @@ const submit = () => {
                     class="au-input"
                     placeholder="email@example.com"
                 />
-                <p v-if="form.errors.email" class="au-error">{{ form.errors.email }}</p>
+                <p v-if="form.errors.email" role="alert" class="au-error">{{ form.errors.email }}</p>
             </div>
 
             <button type="submit" class="au-submit-btn" :disabled="form.processing">

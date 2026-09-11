@@ -67,7 +67,7 @@ const updatePassword = () => {
                             class="st-input"
                             placeholder="Current password"
                         />
-                        <p v-if="form.errors.current_password" class="st-error">{{ form.errors.current_password }}</p>
+                        <p v-if="form.errors.current_password" role="alert" class="st-error">{{ form.errors.current_password }}</p>
                     </div>
 
                     <div class="st-field">
@@ -81,7 +81,7 @@ const updatePassword = () => {
                             class="st-input"
                             placeholder="New password"
                         />
-                        <p v-if="form.errors.password" class="st-error">{{ form.errors.password }}</p>
+                        <p v-if="form.errors.password" role="alert" class="st-error">{{ form.errors.password }}</p>
                     </div>
 
                     <div class="st-field">
@@ -94,7 +94,7 @@ const updatePassword = () => {
                             class="st-input"
                             placeholder="Confirm password"
                         />
-                        <p v-if="form.errors.password_confirmation" class="st-error">{{ form.errors.password_confirmation }}</p>
+                        <p v-if="form.errors.password_confirmation" role="alert" class="st-error">{{ form.errors.password_confirmation }}</p>
                     </div>
 
                     <div class="st-save-row">
@@ -108,7 +108,6 @@ const updatePassword = () => {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
 .st-page {
     --st-ink: #0f1613;

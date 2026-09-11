@@ -55,7 +55,7 @@ function deleteUser() {
                             placeholder="Password"
                             class="da-input"
                         />
-                        <p v-if="form.errors.password" class="da-error">{{ form.errors.password }}</p>
+                        <p v-if="form.errors.password" role="alert" class="da-error">{{ form.errors.password }}</p>
                     </div>
 
                     <div class="da-actions">

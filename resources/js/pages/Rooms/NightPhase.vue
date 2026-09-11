@@ -326,7 +326,7 @@ const mafiaTargetTally = computed(() => {
                 {{ advanceButtonLabel }}
             </button>
 
-            <p v-if="advanceError" class="np-error">{{ advanceError }}</p>
+            <p v-if="advanceError" role="alert" class="np-error">{{ advanceError }}</p>
         </section>
 
         <!-- Player panel — only rendered for an actual participant in this game (host of a game where hostIsPlayer() is false has no role and sees only the panel above) -->
@@ -386,7 +386,7 @@ const mafiaTargetTally = computed(() => {
                     You confirmed: {{ playerName(myMafiaSelection) }}. This cannot be changed.
                 </p>
 
-                <p v-if="actionError" class="np-error">{{ actionError }}</p>
+                <p v-if="actionError" role="alert" class="np-error">{{ actionError }}</p>
             </section>
 
             <section v-else-if="myRole === 'doctor' && amAlive" class="np-panel">
@@ -429,7 +429,7 @@ const mafiaTargetTally = computed(() => {
                     {{ confirming ? 'Confirming…' : 'Confirm Save' }}
                 </button>
 
-                <p v-if="actionError" class="np-error">{{ actionError }}</p>
+                <p v-if="actionError" role="alert" class="np-error">{{ actionError }}</p>
             </section>
 
             <section v-else-if="myRole === 'detective' && amAlive" class="np-panel">
@@ -473,7 +473,7 @@ const mafiaTargetTally = computed(() => {
                     {{ confirming ? 'Confirming…' : 'Confirm Investigation' }}
                 </button>
 
-                <p v-if="actionError" class="np-error">{{ actionError }}</p>
+                <p v-if="actionError" role="alert" class="np-error">{{ actionError }}</p>
             </section>
 
             <!-- Civilian (alive) or dead player of any role -->

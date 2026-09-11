@@ -41,7 +41,7 @@ function submit() {
                     placeholder="email@example.com"
                     required
                 />
-                <p v-if="form.errors.email" class="au-error">{{ form.errors.email }}</p>
+                <p v-if="form.errors.email" role="alert" class="au-error">{{ form.errors.email }}</p>
             </div>
 
             <div class="au-field">
@@ -54,7 +54,7 @@ function submit() {
                     class="au-input"
                     required
                 />
-                <p v-if="form.errors.password" class="au-error">{{ form.errors.password }}</p>
+                <p v-if="form.errors.password" role="alert" class="au-error">{{ form.errors.password }}</p>
             </div>
 
             <div class="au-row">

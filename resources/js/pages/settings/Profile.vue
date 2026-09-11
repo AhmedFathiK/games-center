@@ -56,7 +56,7 @@ const submit = () => {
                     <div class="st-field">
                         <label for="name" class="st-label">Name</label>
                         <input id="name" v-model="form.name" required autocomplete="name" class="st-input" placeholder="Full name" />
-                        <p v-if="form.errors.name" class="st-error">{{ form.errors.name }}</p>
+                        <p v-if="form.errors.name" role="alert" class="st-error">{{ form.errors.name }}</p>
                     </div>
 
                     <div class="st-field">
@@ -70,7 +70,7 @@ const submit = () => {
                             class="st-input"
                             placeholder="Email address"
                         />
-                        <p v-if="form.errors.email" class="st-error">{{ form.errors.email }}</p>
+                        <p v-if="form.errors.email" role="alert" class="st-error">{{ form.errors.email }}</p>
                     </div>
 
                     <div v-if="mustVerifyEmail && !user.email_verified_at" class="st-verify-notice">
@@ -100,7 +100,6 @@ const submit = () => {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
 .st-page {
     --st-ink: #0f1613;

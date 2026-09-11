@@ -34,7 +34,7 @@ const submit = () => {
                     autofocus
                     class="au-input"
                 />
-                <p v-if="form.errors.password" class="au-error">{{ form.errors.password }}</p>
+                <p v-if="form.errors.password" role="alert" class="au-error">{{ form.errors.password }}</p>
             </div>
 
             <button type="submit" class="au-submit-btn" :disabled="form.processing">

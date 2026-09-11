@@ -168,7 +168,7 @@ async function createRoom() {
                     </button>
                 </form>
 
-                <p v-if="joinCodeError" class="gc-error">{{ joinCodeError }}</p>
+                <p v-if="joinCodeError" role="alert" class="gc-error">{{ joinCodeError }}</p>
             </section>
 
             <div class="gc-or-divider" aria-hidden="true">
@@ -287,7 +287,7 @@ async function createRoom() {
                         </button>
                     </div>
 
-                    <p v-if="error" class="gc-error">{{ error }}</p>
+                    <p v-if="error" role="alert" class="gc-error">{{ error }}</p>
 
                     <button
                         type="button"
@@ -318,7 +318,6 @@ async function createRoom() {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
 .gc-page {
     --gc-ink: #0f1613;

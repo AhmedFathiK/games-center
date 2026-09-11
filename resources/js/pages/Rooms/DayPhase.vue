@@ -233,7 +233,7 @@ function advancePhase() {
                 {{ confirming ? 'Confirming…' : 'Confirm Vote' }}
             </button>
 
-            <p v-if="actionError" class="dp-error">{{ actionError }}</p>
+            <p v-if="actionError" role="alert" class="dp-error">{{ actionError }}</p>
         </section>
 
         <section v-else-if="isParticipant && !amAlive" class="dp-panel">
@@ -283,7 +283,7 @@ function advancePhase() {
                 </button>
             </div>
 
-            <p v-if="executeError" class="dp-error">{{ executeError }}</p>
+            <p v-if="executeError" role="alert" class="dp-error">{{ executeError }}</p>
 
             <div class="dp-divider" />
 
@@ -296,7 +296,7 @@ function advancePhase() {
                 {{ advancing ? 'Advancing…' : 'Advance to Night' }}
             </button>
 
-            <p v-if="advanceError" class="dp-error">{{ advanceError }}</p>
+            <p v-if="advanceError" role="alert" class="dp-error">{{ advanceError }}</p>
         </section>
     </div>
 </template>

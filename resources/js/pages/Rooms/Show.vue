@@ -516,7 +516,7 @@ onUnmounted(() => {
                     </button>
                 </div>
 
-                <p v-if="cancelError && !showCancelModal" class="rc-error">{{ cancelError }}</p>
+                <p v-if="cancelError && !showCancelModal" role="alert" class="rc-error">{{ cancelError }}</p>
             </div>
 
             <!-- Waiting room -->
@@ -546,7 +546,7 @@ onUnmounted(() => {
                             <template v-else>Start Game</template>
                         </button>
 
-                        <p v-if="startError" class="rc-error">{{ startError }}</p>
+                        <p v-if="startError" role="alert" class="rc-error">{{ startError }}</p>
                     </div>
                 </section>
 
@@ -582,7 +582,7 @@ onUnmounted(() => {
                         </p>
                     </div>
 
-                    <p v-if="kickError" class="rc-error">{{ kickError }}</p>
+                    <p v-if="kickError" role="alert" class="rc-error">{{ kickError }}</p>
 
                     <div class="rc-divider" />
 
@@ -610,8 +610,8 @@ onUnmounted(() => {
                             {{ leavingRoom ? 'Leaving…' : 'Leave Room' }}
                         </button>
 
-                        <p v-if="joinError" class="rc-error">{{ joinError }}</p>
-                        <p v-if="leaveError" class="rc-error">{{ leaveError }}</p>
+                        <p v-if="joinError" role="alert" class="rc-error">{{ joinError }}</p>
+                        <p v-if="leaveError" role="alert" class="rc-error">{{ leaveError }}</p>
                     </div>
                 </section>
 
@@ -641,7 +641,7 @@ onUnmounted(() => {
                     >
                         Cancel this room
                     </button>
-                    <p v-if="cancelError && !showCancelModal" class="rc-error">{{ cancelError }}</p>
+                    <p v-if="cancelError && !showCancelModal" role="alert" class="rc-error">{{ cancelError }}</p>
                 </div>
             </template>
 
@@ -713,7 +713,7 @@ onUnmounted(() => {
                     @keyup.enter="submitCancel"
                 />
 
-                <p v-if="cancelError" class="rc-error">{{ cancelError }}</p>
+                <p v-if="cancelError" role="alert" class="rc-error">{{ cancelError }}</p>
 
                 <div class="rc-cancel-modal-actions">
                     <button type="button" class="rc-cancel-modal-cancel-btn" @click="closeCancelModal">

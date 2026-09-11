@@ -33,7 +33,7 @@ const submit = () => {
             <div class="au-field">
                 <label for="email" class="au-label">Email</label>
                 <input id="email" v-model="form.email" type="email" autocomplete="email" readonly class="au-input au-input--readonly" />
-                <p v-if="form.errors.email" class="au-error">{{ form.errors.email }}</p>
+                <p v-if="form.errors.email" role="alert" class="au-error">{{ form.errors.email }}</p>
             </div>
 
             <div class="au-field">
@@ -47,7 +47,7 @@ const submit = () => {
                     class="au-input"
                     placeholder="Password"
                 />
-                <p v-if="form.errors.password" class="au-error">{{ form.errors.password }}</p>
+                <p v-if="form.errors.password" role="alert" class="au-error">{{ form.errors.password }}</p>
             </div>
 
             <div class="au-field">
@@ -60,7 +60,7 @@ const submit = () => {
                     class="au-input"
                     placeholder="Confirm password"
                 />
-                <p v-if="form.errors.password_confirmation" class="au-error">{{ form.errors.password_confirmation }}</p>
+                <p v-if="form.errors.password_confirmation" role="alert" class="au-error">{{ form.errors.password_confirmation }}</p>
             </div>
 
             <button type="submit" class="au-submit-btn" :disabled="form.processing">
