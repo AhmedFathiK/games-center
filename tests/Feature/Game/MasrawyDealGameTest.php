@@ -1,0 +1,404 @@
+<?php
+
+namespace Tests\Feature\Games;
+
+use App\Games\MasrawyDeal\CardCatalog;
+use App\Games\MasrawyDeal\MasrawyDealGame;
+use App\Models\Game;
+use App\Models\Room;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\TestCase;
+
+class MasrawyDealGameTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function makeRoom(int $playerCount): Room
+    {
+        $game = Game::create([
+            'name' => 'Masrawy Deal',
+            'slug' => 'masrawy-deal',
+            'enabled' => true,
+        ]);
+
+        $host = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'XYZ789',
+            'max_players' => 5,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        // Masrawy Deal's hostIsPlayer() is true, so the host must be
+        // attached as a player too, unlike Mafia's makeRoom() helper.
+        $room->players()->attach($host->id);
+
+        $otherPlayers = User::factory()->count($playerCount - 1)->create();
+        $room->players()->attach($otherPlayers->pluck('id')->all());
+
+        return $room->fresh();
+    }
+
+    // --- Card catalog integrity ---------------------------------------
+
+    public function test_catalog_contains_exactly_106_unique_cards(): void
+    {
+        $cards = CardCatalog::all();
+
+        $this->assertCount(106, $cards);
+        $this->assertCount(106, array_unique(array_keys($cards)));
+    }
+
+    public function test_catalog_category_counts_match_the_official_breakdown(): void
+    {
+        $cards = CardCatalog::all();
+        $counts = ['money' => 0, 'property' => 0, 'wildcard' => 0, 'rent' => 0, 'action' => 0];
+
+        foreach ($cards as $card) {
+            $counts[$card['type']]++;
+        }
+
+        $this->assertEquals(20, $counts['money']);
+        $this->assertEquals(28, $counts['property']);
+        $this->assertEquals(11, $counts['wildcard']);
+        $this->assertEquals(13, $counts['rent']);
+        $this->assertEquals(34, $counts['action']);
+    }
+
+    public function test_catalog_money_total_value_is_57_million(): void
+    {
+        $total = collect(CardCatalog::all())
+            ->where('type', 'money')
+            ->sum('value');
+
+        $this->assertEquals(57, $total);
+    }
+
+    public function test_property_card_count_per_color_matches_its_set_size(): void
+    {
+        $cards = collect(CardCatalog::all())->where('type', 'property');
+
+        foreach (CardCatalog::SET_SIZE as $color => $setSize) {
+            $this->assertEquals(
+                $setSize,
+                $cards->where('color', $color)->count(),
+                "Expected {$setSize} standard {$color} property cards."
+            );
+        }
+    }
+
+    public function test_rent_chart_has_an_entry_for_every_color_matching_its_set_size(): void
+    {
+        foreach (CardCatalog::SET_SIZE as $color => $setSize) {
+            $this->assertArrayHasKey($color, CardCatalog::RENT_CHART);
+            $this->assertCount($setSize, CardCatalog::RENT_CHART[$color]);
+        }
+    }
+
+    public function test_get_returns_the_requested_card(): void
+    {
+        $card = CardCatalog::get('action_deal_breaker_1');
+
+        $this->assertEquals('action', $card['type']);
+        $this->assertEquals('deal_breaker', $card['action']);
+    }
+
+    public function test_get_throws_for_an_unknown_card_id(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        CardCatalog::get('not_a_real_card');
+    }
+
+    // --- Franco-Arabic text (translated so far) -----------------------
+
+    public function test_action_category_label_is_set(): void
+    {
+        $this->assertEquals('CART SAYTARA', CardCatalog::ACTION_CATEGORY_LABEL);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: string, 3: int}>
+     */
+    public static function translatedActionCards(): array
+    {
+        return [
+            'birthday' => ['birthday', 'EID MILADY YA KELAB', 'KHOD 2 MILLION MALTOOSH MIN KOL BRINCE', 2],
+            'sly_deal' => ['sly_deal', 'KHOD AMA 2OLAK', 'KHOD MANTI2A MIN AY BRINCE (MATKONSH MIN MAGMO3A KAMLA)', 3],
+            'forced_deal' => ['forced_deal', 'MA.. TEEGY WANA AGY!', 'SALIM WESTILIM MANTI2A', 3],
+            'pass_go' => ['pass_go', 'GARAB 7AZAK', 'ES7AB KARTEIN', 1],
+            'just_say_no' => ['just_say_no', 'DA 3AND OMMO...', 'ORFOD AY CART SAYTARA', 4],
+        ];
+    }
+
+    #[DataProvider('translatedActionCards')]
+    public function test_translated_action_cards_have_the_correct_label_description_and_value(
+        string $action,
+        string $expectedLabel,
+        string $expectedDescription,
+        int $expectedValue,
+    ): void {
+        $cards = collect(CardCatalog::all())->where('action', $action)->values();
+
+        $this->assertNotEmpty($cards);
+
+        foreach ($cards as $card) {
+            $this->assertEquals($expectedLabel, $card['label']);
+            $this->assertEquals($expectedDescription, $card['description']);
+            $this->assertEquals($expectedValue, $card['value']);
+        }
+    }
+
+    public function test_pending_action_cards_still_have_a_null_description(): void
+    {
+        foreach (['deal_breaker', 'debt_collector', 'double_rent', 'house', 'hotel'] as $action) {
+            $cards = collect(CardCatalog::all())->where('action', $action);
+
+            foreach ($cards as $card) {
+                $this->assertNull($card['description'], "{$action} should still be pending translation.");
+            }
+        }
+    }
+
+    public function test_house_and_hotel_are_renamed_to_shisha_and_wil3a(): void
+    {
+        // The internal 'action' key deliberately stays 'house'/'hotel'
+        // (same convention as every other technical identifier) — only
+        // the player-facing 'label' changes.
+        $shishaCards = collect(CardCatalog::all())->where('action', 'house');
+        $wil3aCards = collect(CardCatalog::all())->where('action', 'hotel');
+
+        $this->assertCount(3, $shishaCards);
+        $this->assertCount(2, $wil3aCards);
+
+        foreach ($shishaCards as $card) {
+            $this->assertEquals('SHISHA', $card['label']);
+        }
+
+        foreach ($wil3aCards as $card) {
+            $this->assertEquals('WIL3A', $card['label']);
+        }
+    }
+
+    public function test_regular_rent_cards_charge_everyone_and_bank_for_1m(): void
+    {
+        $regularRentCards = collect(CardCatalog::all())
+            ->where('type', 'rent')
+            ->where('any_color', false);
+
+        $this->assertCount(10, $regularRentCards);
+
+        foreach ($regularRentCards as $card) {
+            $this->assertEquals('ELBIS!', $card['label']);
+            $this->assertEquals('LABES EL KOL EL EIGAR', $card['description']);
+            $this->assertTrue($card['charges_all']);
+            $this->assertEquals(1, $card['value']);
+        }
+    }
+
+    public function test_wild_rent_cards_charge_one_player_and_bank_for_3m(): void
+    {
+        $wildRentCards = collect(CardCatalog::all())
+            ->where('type', 'rent')
+            ->where('any_color', true);
+
+        $this->assertCount(3, $wildRentCards);
+
+        foreach ($wildRentCards as $card) {
+            $this->assertEquals('ELBIS!', $card['label']);
+            $this->assertEquals('LABES WA7ID LEWA7DO EL EIGAR', $card['description']);
+            $this->assertFalse($card['charges_all']);
+            // Deliberately 3M, not the 1M stock Monopoly Deal value —
+            // Ahmed's explicit house-rule call, locked in so it doesn't
+            // silently drift back to 1M in a later refactor.
+            $this->assertEquals(3, $card['value']);
+        }
+    }
+
+    public function test_every_card_has_a_description_key_even_if_still_null(): void
+    {
+        foreach (CardCatalog::all() as $card) {
+            $this->assertArrayHasKey('description', $card);
+        }
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: array<int, string>}>
+     */
+    public static function translatedPropertyColors(): array
+    {
+        return [
+            'green' => ['green', ['SA7RAWY', '6 OCTOBER', 'SHEIKH ZAYED']],
+            'red' => ['red', ['GARDEN CITY', 'MASR EL GEDIDA', 'ZAMALEK']],
+            'light_blue' => ['light_blue', ['MOHAMED MAHMOUD', 'MIDDAN EL TAHRIR', 'TAL3AT 7ARB']],
+            'brown' => ['brown', ['100 302BA', 'ARD EL LEWA']],
+            'railroad' => ['railroad', ['Taftaf Ghamra', 'Taftaf El Bo7ous', 'Taftaf El 3ataba', 'Taftaf Ramsis']],
+            'yellow' => ['yellow', ['DOKKI', 'MOHANDESIN', 'HARAM']],
+            'dark_blue' => ['dark_blue', ['CAIRO FESTIVAL CITY', '2ATAMEYA HIGHTS']],
+            'utility' => ['utility', ['MAYA El dayman ma2too3a', 'KAHRABA El dayman ma2too3a']],
+        ];
+    }
+
+    #[DataProvider('translatedPropertyColors')]
+    public function test_translated_property_colors_have_their_individual_titles_in_order(
+        string $color,
+        array $expectedTitles,
+    ): void {
+        foreach ($expectedTitles as $i => $expectedTitle) {
+            $card = CardCatalog::get('prop_' . $color . '_' . ($i + 1));
+
+            $this->assertEquals($expectedTitle, $card['label']);
+        }
+    }
+
+    public function test_pink_and_orange_properties_still_fall_back_to_the_generic_color_label(): void
+    {
+        // These two colors are the only ones still pending individual
+        // titles — confirms the fallback path in propertyCards() works,
+        // and will start failing (correctly) the moment Ahmed supplies
+        // real titles and this test should be updated to match.
+        $this->assertEquals('Pink', CardCatalog::get('prop_pink_1')['label']);
+        $this->assertEquals('Orange', CardCatalog::get('prop_orange_1')['label']);
+    }
+
+    public function test_face_value_has_an_entry_for_every_color(): void
+    {
+        foreach (CardCatalog::SET_SIZE as $color => $setSize) {
+            $this->assertArrayHasKey($color, CardCatalog::FACE_VALUE);
+        }
+    }
+
+    public function test_every_property_card_carries_its_colors_face_value(): void
+    {
+        $cards = collect(CardCatalog::all())->where('type', 'property');
+
+        foreach (CardCatalog::FACE_VALUE as $color => $faceValue) {
+            foreach ($cards->where('color', $color) as $card) {
+                $this->assertEquals($faceValue, $card['value']);
+            }
+        }
+    }
+
+    public function test_multicolor_wildcard_is_named_el_bob(): void
+    {
+        $cards = collect(CardCatalog::all())->where('any_color', true)->where('type', 'wildcard');
+
+        $this->assertCount(2, $cards);
+
+        foreach ($cards as $card) {
+            $this->assertEquals('EL BOB', $card['label']);
+            $this->assertEquals('7ot el bob 3ala kol lon ya batista', $card['description']);
+        }
+    }
+
+    public function test_two_color_property_wildcards_still_pending_a_dedicated_name(): void
+    {
+        // Still just "ColorA / ColorB" via colorLabel() fallback — no
+        // dedicated Franco-Arabic wildcard name given yet, unlike the
+        // multicolor wildcard (EL BOB) above.
+        $card = CardCatalog::get('wild_dark_blue_green_1');
+
+        $this->assertEquals('Dark Blue / Green', $card['label']);
+    }
+
+    // --- Game definition -------------------------------------------------
+
+    public function test_host_is_a_player(): void
+    {
+        $this->assertTrue((new MasrawyDealGame())->hostIsPlayer());
+    }
+
+    public function test_minimum_and_maximum_players(): void
+    {
+        $game = new MasrawyDealGame();
+
+        $this->assertEquals(2, $game->minimumPlayers());
+        $this->assertEquals(5, $game->maximumPlayers());
+    }
+
+    // --- Dealing / setup ---------------------------------------------------
+
+    public function test_every_player_is_dealt_exactly_5_cards(): void
+    {
+        $room = $this->makeRoom(4);
+
+        $state = (new MasrawyDealGame())->initializeState($room);
+
+        foreach ($state['hands'] as $hand) {
+            $this->assertCount(5, $hand);
+        }
+    }
+
+    public function test_draw_pile_and_hands_account_for_the_full_deck_with_no_duplicates(): void
+    {
+        $room = $this->makeRoom(3);
+
+        $state = (new MasrawyDealGame())->initializeState($room);
+
+        $dealtCardIds = collect($state['hands'])->flatten()->all();
+        $allCardIds = array_merge($dealtCardIds, $state['draw_pile']);
+
+        $this->assertCount(106, $allCardIds);
+        $this->assertCount(106, array_unique($allCardIds));
+        $this->assertEqualsCanonicalizing(CardCatalog::deckIds(), $allCardIds);
+    }
+
+    public function test_draw_pile_size_matches_player_count(): void
+    {
+        $room = $this->makeRoom(5);
+
+        $state = (new MasrawyDealGame())->initializeState($room);
+
+        // 106 - (5 cards * 5 players) = 81
+        $this->assertCount(81, $state['draw_pile']);
+    }
+
+    public function test_turn_order_contains_exactly_the_rooms_players(): void
+    {
+        $room = $this->makeRoom(4);
+        $expectedIds = $room->players()->pluck('users.id')->sort()->values()->all();
+
+        $state = (new MasrawyDealGame())->initializeState($room);
+        $actualIds = collect($state['turn_order'])->sort()->values()->all();
+
+        $this->assertEquals($expectedIds, $actualIds);
+    }
+
+    public function test_current_player_is_the_first_in_turn_order(): void
+    {
+        $room = $this->makeRoom(3);
+
+        $state = (new MasrawyDealGame())->initializeState($room);
+
+        $this->assertEquals($state['turn_order'][0], $state['current_player_id']);
+    }
+
+    public function test_every_player_starts_with_an_empty_bank_and_properties(): void
+    {
+        $room = $this->makeRoom(2);
+
+        $state = (new MasrawyDealGame())->initializeState($room);
+
+        foreach ($state['turn_order'] as $userId) {
+            $this->assertEquals([], $state['banks'][$userId]);
+            $this->assertEquals([], $state['properties'][$userId]);
+        }
+    }
+
+    public function test_initial_state_has_no_pending_action_and_no_winner(): void
+    {
+        $room = $this->makeRoom(2);
+
+        $state = (new MasrawyDealGame())->initializeState($room);
+
+        $this->assertNull($state['pending']);
+        $this->assertNull($state['winner']);
+        $this->assertEquals(0, $state['cards_played_this_turn']);
+        $this->assertFalse($state['has_drawn_this_turn']);
+    }
+}

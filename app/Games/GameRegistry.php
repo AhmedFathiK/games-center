@@ -4,6 +4,7 @@ namespace App\Games;
 
 use App\Games\Contracts\GameDefinition;
 use App\Games\Mafia\MafiaGame;
+use App\Games\MasrawyDeal\MasrawyDealGame;
 use InvalidArgumentException;
 
 class GameRegistry
@@ -15,6 +16,7 @@ class GameRegistry
     {
         return [
             'mafia' => MafiaGame::class,
+            'masrawy-deal' => MasrawyDealGame::class,
         ];
     }
 
