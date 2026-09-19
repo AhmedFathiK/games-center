@@ -79,6 +79,13 @@ class MasrawyDealGameTest extends TestCase
         $this->assertEquals(57, $total);
     }
 
+    public function test_money_card_labels_have_no_currency_symbol(): void
+    {
+        // Confirmed via the card studio: plain "1M"/"2M"/etc., not "$1M".
+        $this->assertEquals('1M', CardCatalog::get('money_1_1')['label']);
+        $this->assertEquals('10M', CardCatalog::get('money_10_1')['label']);
+    }
+
     public function test_property_card_count_per_color_matches_its_set_size(): void
     {
         $cards = collect(CardCatalog::all())->where('type', 'property');
@@ -128,11 +135,16 @@ class MasrawyDealGameTest extends TestCase
     public static function translatedActionCards(): array
     {
         return [
-            'birthday' => ['birthday', 'EID MILADY YA KELAB', 'KHOD 2 MILLION MALTOOSH MIN KOL BRINCE', 2],
-            'sly_deal' => ['sly_deal', 'KHOD AMA 2OLAK', 'KHOD MANTI2A MIN AY BRINCE (MATKONSH MIN MAGMO3A KAMLA)', 3],
+            'deal_breaker' => ['deal_breaker', 'HAT wa lamo2akhza EL SHORT!', 'HAT EL GAMAL BEMA 7AMAL', 5],
+            'birthday' => ['birthday', '3ID MILADY YA KELAB', '2 MILLION MALTOOSH min KOL BRINCE', 2],
+            'sly_deal' => ['sly_deal', 'KHOD AMA 2OLAK', 'KHOD MANTI2A MIN AY BRINCE', 3],
             'forced_deal' => ['forced_deal', 'MA.. TEEGY WANA AGY!', 'SALIM WESTILIM MANTI2A', 3],
+            'debt_collector' => ['debt_collector', 'HAT 5 FI KEES', 'LABES WA7ID YEDIK 5 MILLION MALTOOSH', 3],
             'pass_go' => ['pass_go', 'GARAB 7AZAK', 'ES7AB KARTEIN', 1],
             'just_say_no' => ['just_say_no', 'DA 3AND OMMO...', 'ORFOD AY CART SAYTARA', 4],
+            'double_rent' => ['double_rent', 'ELBIS X 2', 'LAZEM CART EL TALBEES 3ASHAN TELABES X 2', 1],
+            'house' => ['house', 'SHISHA', '7OT SHISHATK 3ALA MANTI2A KAMLA LABES 3M ZYADA', 3],
+            'hotel' => ['hotel', 'WIL3A', 'ZABAT SHISHTAK BEL WIL3A LABES 4M ZYADA', 4],
         ];
     }
 
@@ -154,14 +166,13 @@ class MasrawyDealGameTest extends TestCase
         }
     }
 
-    public function test_pending_action_cards_still_have_a_null_description(): void
+    public function test_no_action_card_has_a_null_description_anymore(): void
     {
-        foreach (['deal_breaker', 'debt_collector', 'double_rent', 'house', 'hotel'] as $action) {
-            $cards = collect(CardCatalog::all())->where('action', $action);
-
-            foreach ($cards as $card) {
-                $this->assertNull($card['description'], "{$action} should still be pending translation.");
-            }
+        // Every action card is now confirmed — this is the mirror image
+        // of the old "still pending" test, kept so a future action card
+        // added without a description gets caught immediately.
+        foreach (collect(CardCatalog::all())->where('type', 'action') as $card) {
+            $this->assertNotNull($card['description'], "{$card['id']} should not be pending translation.");
         }
     }
 
@@ -241,6 +252,8 @@ class MasrawyDealGameTest extends TestCase
             'yellow' => ['yellow', ['DOKKI', 'MOHANDESIN', 'HARAM']],
             'dark_blue' => ['dark_blue', ['CAIRO FESTIVAL CITY', '2ATAMEYA HIGHTS']],
             'utility' => ['utility', ['MAYA El dayman ma2too3a', 'KAHRABA El dayman ma2too3a']],
+            'orange' => ['orange', ['EL MONTAZA', 'SIDY GABER', 'SAN STEPHANO']],
+            'pink' => ['pink', ['EL SHEROU2', 'EL 3OBOOR', 'MAADI']],
         ];
     }
 
@@ -256,14 +269,27 @@ class MasrawyDealGameTest extends TestCase
         }
     }
 
-    public function test_pink_and_orange_properties_still_fall_back_to_the_generic_color_label(): void
+    public function test_every_property_color_has_an_individual_title_now(): void
     {
-        // These two colors are the only ones still pending individual
-        // titles — confirms the fallback path in propertyCards() works,
-        // and will start failing (correctly) the moment Ahmed supplies
-        // real titles and this test should be updated to match.
-        $this->assertEquals('Pink', CardCatalog::get('prop_pink_1')['label']);
-        $this->assertEquals('Orange', CardCatalog::get('prop_orange_1')['label']);
+        // All 10 colors are confirmed — colorLabel() is now a dead
+        // fallback, unused by any actual card label (properties all
+        // have individual titles, wildcards are named EL BOB / Cart
+        // Karbaga, kept only for defensive future use).
+        foreach (CardCatalog::SET_SIZE as $color => $count) {
+            $card = CardCatalog::get('prop_' . $color . '_1');
+
+            $this->assertNotEquals(CardCatalog::colorLabel($color), $card['label']);
+        }
+    }
+
+    public function test_orange_face_value_is_confirmed_at_2m(): void
+    {
+        $this->assertEquals(2, CardCatalog::FACE_VALUE['orange']);
+    }
+
+    public function test_pink_face_value_is_confirmed_at_2m(): void
+    {
+        $this->assertEquals(2, CardCatalog::FACE_VALUE['pink']);
     }
 
     public function test_face_value_has_an_entry_for_every_color(): void
@@ -296,14 +322,15 @@ class MasrawyDealGameTest extends TestCase
         }
     }
 
-    public function test_two_color_property_wildcards_still_pending_a_dedicated_name(): void
+    public function test_two_color_property_wildcards_are_named_cart_karbaga(): void
     {
-        // Still just "ColorA / ColorB" via colorLabel() fallback — no
-        // dedicated Franco-Arabic wildcard name given yet, unlike the
-        // multicolor wildcard (EL BOB) above.
-        $card = CardCatalog::get('wild_dark_blue_green_1');
+        $cards = collect(CardCatalog::all())->where('any_color', false)->where('type', 'wildcard');
 
-        $this->assertEquals('Dark Blue / Green', $card['label']);
+        $this->assertCount(9, $cards);
+
+        foreach ($cards as $card) {
+            $this->assertEquals('Cart Karbaga', $card['label']);
+        }
     }
 
     // --- Game definition -------------------------------------------------

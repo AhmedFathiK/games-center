@@ -16,17 +16,15 @@ namespace App\Games\MasrawyDeal;
  * official card text and cross-checked across multiple independent
  * rules references for internal consistency (every category total
  * reconciles to the documented 20 money / 34 action / 13 rent / 28
- * property / 11 wildcard = 106 breakdown). The RENT_CHART values are
- * the ones consistently cited across every reference checked, but —
- * unlike everything else here — no single authoritative numeric table
- * was found during research, so it's worth a spot-check against a
- * physical or digital deck if one is available.
+ * property / 11 wildcard = 106 breakdown). RENT_CHART is independently
+ * corroborated against Ahmed's own card-studio presets for 9 of 10
+ * colors (see RENT_CHART's own doc comment for the orange exception).
  *
- * Every card also carries a `description` (nullable — populated only
- * once Ahmed has supplied Franco-Arabic text for that card; still
- * `null` for anything pending translation). `label` is the card's
- * name; `description` is its rules text, shown to explain what the
- * card actually does.
+ * Every card also carries a `description` (nullable; `null` only for
+ * money/property/two-color-wildcard cards, which have no rules text of
+ * their own to show — everything with actual game-text has one).
+ * `label` is the card's name; `description` is its rules text, shown
+ * to explain what the card actually does.
  *
  * Property cards ALSO carry a `value` — unlike money/action/rent
  * cards, this isn't a bankable amount (property cards can never be
@@ -42,11 +40,10 @@ namespace App\Games\MasrawyDeal;
  * only a *fallback* label for colors Ahmed hasn't supplied individual
  * property titles for yet, not the source of truth once they exist.
  *
- * Any `label`/`description` still in plain English below is a
- * placeholder pending Ahmed's Franco-Arabic text — `id`, `type`,
- * `color`/`colors`, and `action` are internal identifiers the rest of
- * the game logic depends on and must stay as-is regardless of
- * translation.
+ * Every `label`/`description` below is now Ahmed's Franco-Arabic text —
+ * `id`, `type`, `color`/`colors`, and `action` are internal identifiers
+ * the rest of the game logic depends on and must stay as-is regardless
+ * of translation.
  */
 class CardCatalog
 {
@@ -73,11 +70,13 @@ class CardCatalog
      * Rent (in $M) for owning 1..N cards of that color, N = SET_SIZE[$color].
      * Index 0 = rent for owning exactly 1 card of that color.
      *
-     * Independently corroborated for brown/light_blue/red/yellow/green/
-     * dark_blue/railroad/utility via Ahmed's own card-studio presets
-     * (exact rent numbers matched on every one of those 8 colors) —
-     * pink and orange are still just the researched stock values,
-     * unconfirmed either way.
+     * Independently corroborated for 9 of 10 colors via Ahmed's own
+     * card-studio presets (exact rent numbers matched on every one).
+     * Orange never appeared as a property preset in any file supplied
+     * so far — its chart here is still the researched stock value,
+     * finalized on Ahmed's confirmation that the per-count rent
+     * pattern is consistent across every property, rather than from a
+     * literal orange preset entry the way the other 9 were confirmed.
      */
     public const RENT_CHART = [
         'brown' => [1, 2],
@@ -95,16 +94,14 @@ class CardCatalog
     /**
      * Printed face value (in $M) of every property card of that color
      * — used when a player pays a rent/debt with property instead of
-     * cash, never for banking. Confirmed via the card studio for
-     * brown/light_blue/red/yellow/green/dark_blue/railroad/utility;
-     * pink/orange are still an unconfirmed placeholder guess (the
-     * commonly-cited stock Monopoly Deal value).
+     * cash, never for banking. Confirmed via the card studio for every
+     * color.
      */
     public const FACE_VALUE = [
         'brown' => 1,
         'light_blue' => 1,
-        'pink' => 2, // PENDING — unconfirmed guess
-        'orange' => 2, // PENDING — unconfirmed guess
+        'pink' => 2,
+        'orange' => 2,
         'red' => 3,
         'yellow' => 3,
         'green' => 4,
@@ -173,9 +170,11 @@ class CardCatalog
         return array_keys(self::all());
     }
 
-    // PENDING: Franco-Arabic color names not yet supplied. This is the
-    // single place to update once they are — every property, wildcard,
-    // and rent card label derives its color text from here.
+    // Plain-English generic color names. No longer used by any actual
+    // card label (every property/wildcard/rent card now has its own
+    // dedicated Franco-Arabic name) — kept only as propertyCards()'s
+    // defensive fallback in case a color is ever added without an
+    // individual title supplied yet.
     public static function colorLabel(string $color): string
     {
         return match ($color) {
@@ -207,10 +206,9 @@ class CardCatalog
                 $cards[$id] = [
                     'id' => $id,
                     'type' => 'money',
-                    // PENDING: Ahmed hasn't said whether money cards
-                    // should be relabeled (e.g. "X Melyon") or keep
-                    // this numeric format — ask before assuming.
-                    'label' => "\${$value}M",
+                    // Confirmed via the card studio: plain "1M"/"2M"/
+                    // etc., no currency symbol prefix.
+                    'label' => "{$value}M",
                     'description' => null,
                     'value' => $value,
                 ];
@@ -222,9 +220,8 @@ class CardCatalog
 
     /**
      * Individual Franco-Arabic property titles, in card order, per
-     * color — sourced from Ahmed's card-studio presets. A color absent
-     * here (pink, orange — still pending) falls back to colorLabel()
-     * in propertyCards() below.
+     * color — sourced from Ahmed's card-studio presets. Every color is
+     * now covered.
      *
      * @return array<string, array<int, string>>
      */
@@ -239,7 +236,8 @@ class CardCatalog
             'yellow' => ['DOKKI', 'MOHANDESIN', 'HARAM'],
             'dark_blue' => ['CAIRO FESTIVAL CITY', '2ATAMEYA HIGHTS'],
             'utility' => ['MAYA El dayman ma2too3a', 'KAHRABA El dayman ma2too3a'],
-            // pink, orange: PENDING — not yet supplied.
+            'orange' => ['EL MONTAZA', 'SIDY GABER', 'SAN STEPHANO'],
+            'pink' => ['EL SHEROU2', 'EL 3OBOOR', 'MAADI'],
         ];
     }
 
@@ -259,9 +257,6 @@ class CardCatalog
                 $cards[$id] = [
                     'id' => $id,
                     'type' => 'property',
-                    // PENDING (pink, orange): falls back to the
-                    // (still-English) generic colorLabel() until
-                    // Ahmed supplies individual titles for that color.
                     'label' => $colorTitles[$i - 1] ?? self::colorLabel($color),
                     'description' => null,
                     'color' => $color,
@@ -297,11 +292,7 @@ class CardCatalog
                 $cards[$id] = [
                     'id' => $id,
                     'type' => 'wildcard',
-                    // PENDING: no Franco-Arabic name given yet for the
-                    // "property wildcard" concept itself — currently
-                    // just the two color names, same placeholder
-                    // pattern as property cards above.
-                    'label' => self::colorLabel($colorA) . ' / ' . self::colorLabel($colorB),
+                    'label' => 'Cart Karbaga',
                     'description' => null,
                     'colors' => [$colorA, $colorB],
                     'any_color' => false,
@@ -387,34 +378,34 @@ class CardCatalog
      */
     private static function actionCards(): array
     {
-        // PENDING marks the ones still waiting on Franco-Arabic text —
-        // deal_breaker and debt_collector still need everything;
-        // double_rent, house, and hotel now have their label (Ahmed
-        // renamed house/hotel to SHISHA/WIL3A) but still need a
-        // description. Every 'value' below that hasn't been explicitly
-        // confirmed by Ahmed is still just my original researched
-        // assumption (matching stock Monopoly Deal bank values).
+        // Every action below is now confirmed directly from Ahmed's
+        // card-studio export, which takes precedence over any earlier
+        // chat-typed text where the two differ (birthday and sly_deal
+        // both got minor wording refinements in the studio version).
         //
         // NOTE: the 'house'/'hotel' action keys themselves stay as
         // internal English identifiers on purpose (same convention as
         // every other card's id/type/color/action) — only the 'label'
         // shown to players changes to SHISHA/WIL3A.
         $definitions = [
-            'deal_breaker' => ['count' => 2, 'value' => 5, 'label' => 'Deal Breaker', 'description' => null], // PENDING
+            'deal_breaker' => ['count' => 2, 'value' => 5, 'label' => 'HAT wa lamo2akhza EL SHORT!', 'description' => 'HAT EL GAMAL BEMA 7AMAL'],
             'just_say_no' => ['count' => 3, 'value' => 4, 'label' => 'DA 3AND OMMO...', 'description' => 'ORFOD AY CART SAYTARA'],
             'pass_go' => ['count' => 10, 'value' => 1, 'label' => 'GARAB 7AZAK', 'description' => 'ES7AB KARTEIN'],
             'forced_deal' => ['count' => 3, 'value' => 3, 'label' => 'MA.. TEEGY WANA AGY!', 'description' => 'SALIM WESTILIM MANTI2A'],
-            'sly_deal' => ['count' => 3, 'value' => 3, 'label' => 'KHOD AMA 2OLAK', 'description' => 'KHOD MANTI2A MIN AY BRINCE (MATKONSH MIN MAGMO3A KAMLA)'],
-            'debt_collector' => ['count' => 3, 'value' => 3, 'label' => 'Debt Collector', 'description' => null], // PENDING
-            'birthday' => ['count' => 3, 'value' => 2, 'label' => 'EID MILADY YA KELAB', 'description' => 'KHOD 2 MILLION MALTOOSH MIN KOL BRINCE'],
-            'double_rent' => ['count' => 2, 'value' => 1, 'label' => 'Double The Rent', 'description' => null], // PENDING
+            'sly_deal' => ['count' => 3, 'value' => 3, 'label' => 'KHOD AMA 2OLAK', 'description' => 'KHOD MANTI2A MIN AY BRINCE'],
+            'debt_collector' => ['count' => 3, 'value' => 3, 'label' => 'HAT 5 FI KEES', 'description' => 'LABES WA7ID YEDIK 5 MILLION MALTOOSH'],
+            'birthday' => ['count' => 3, 'value' => 2, 'label' => '3ID MILADY YA KELAB', 'description' => '2 MILLION MALTOOSH min KOL BRINCE'],
+            // "Double The Rent", renamed ELBIS X 2 — you need to hold
+            // an ELBIS (rent) card to play this alongside it.
+            'double_rent' => ['count' => 2, 'value' => 1, 'label' => 'ELBIS X 2', 'description' => 'LAZEM CART EL TALBEES 3ASHAN TELABES X 2'],
             // SHISHA = Masrawy Deal's reskin of the official "House"
             // card. Rent bonus unchanged (see HOUSE_RENT_BONUS).
-            'house' => ['count' => 3, 'value' => 3, 'label' => 'SHISHA', 'description' => null], // description PENDING
+            'house' => ['count' => 3, 'value' => 3, 'label' => 'SHISHA', 'description' => '7OT SHISHATK 3ALA MANTI2A KAMLA LABES 3M ZYADA'],
             // WIL3A = Masrawy Deal's reskin of the official "Hotel"
             // card. Can only be placed on a set that already has a
-            // SHISHA on it — see HOTEL_RENT_BONUS's doc comment.
-            'hotel' => ['count' => 2, 'value' => 4, 'label' => 'WIL3A', 'description' => null], // description PENDING
+            // SHISHA on it — see HOTEL_RENT_BONUS's doc comment, and
+            // this card's own description confirms the same ordering.
+            'hotel' => ['count' => 2, 'value' => 4, 'label' => 'WIL3A', 'description' => 'ZABAT SHISHTAK BEL WIL3A LABES 4M ZYADA'],
         ];
 
         $cards = [];
