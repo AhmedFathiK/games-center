@@ -428,4 +428,540 @@ class MasrawyDealGameTest extends TestCase
         $this->assertEquals(0, $state['cards_played_this_turn']);
         $this->assertFalse($state['has_drawn_this_turn']);
     }
+
+    // ==================================================================
+    // Phase 2: turn logic
+    // ==================================================================
+
+    /**
+     * A bare-bones in-progress room: empty hands/banks/properties for
+     * every player, turn_order fixed to join order (not shuffled, so
+     * tests can rely on it), current player is the first. Individual
+     * tests layer on whatever hand/pile/property state they need via
+     * setState()/setHand().
+     */
+    protected function makeInProgressRoom(int $playerCount): Room
+    {
+        $room = $this->makeRoom($playerCount);
+        $playerIds = $room->players()->pluck('users.id')->values()->all();
+
+        $hands = [];
+        $banks = [];
+        $properties = [];
+
+        foreach ($playerIds as $id) {
+            $hands[$id] = [];
+            $banks[$id] = [];
+            $properties[$id] = [];
+        }
+
+        $room->update([
+            'status' => 'in_progress',
+            'game_state' => [
+                'turn_order' => $playerIds,
+                'current_player_id' => $playerIds[0],
+                'draw_pile' => [],
+                'discard_pile' => [],
+                'hands' => $hands,
+                'banks' => $banks,
+                'properties' => $properties,
+                'cards_played_this_turn' => 0,
+                'has_drawn_this_turn' => false,
+                'pending' => null,
+                'winner' => null,
+            ],
+        ]);
+
+        return $room->fresh();
+    }
+
+    protected function setState(Room $room, array $changes): Room
+    {
+        $state = $room->game_state;
+
+        foreach ($changes as $key => $value) {
+            $state[$key] = $value;
+        }
+
+        $room->update(['game_state' => $state]);
+
+        return $room->fresh();
+    }
+
+    protected function setHand(Room $room, int $userId, array $cardIds): Room
+    {
+        $state = $room->game_state;
+        $state['hands'][$userId] = $cardIds;
+        $room->update(['game_state' => $state]);
+
+        return $room->fresh();
+    }
+
+    // --- Draw -----------------------------------------------------------
+
+    public function test_draw_gives_two_cards_when_hand_is_not_empty(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setHand($room, $p1, ['money_1_1']);
+        $room = $this->setState($room, ['draw_pile' => ['money_1_2', 'money_1_3', 'money_1_4']]);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'draw']);
+
+        $this->assertCount(3, $state['hands'][$p1]);
+        $this->assertCount(1, $state['draw_pile']);
+        $this->assertTrue($state['has_drawn_this_turn']);
+    }
+
+    public function test_draw_gives_five_cards_when_hand_was_empty(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, [
+            'draw_pile' => ['money_1_1', 'money_1_2', 'money_1_3', 'money_1_4', 'money_1_5', 'money_1_6'],
+        ]);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'draw']);
+
+        $this->assertCount(5, $state['hands'][$p1]);
+        $this->assertCount(1, $state['draw_pile']);
+    }
+
+    public function test_cannot_draw_twice_in_one_turn(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['draw_pile' => ['money_1_1', 'money_1_2', 'money_1_3', 'money_1_4']]);
+
+        $game = new MasrawyDealGame();
+        $state = $game->submitAction($room, User::find($p1), ['type' => 'draw']);
+        $room->update(['game_state' => $state]);
+        $room->refresh();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $game->submitAction($room, User::find($p1), ['type' => 'draw']);
+    }
+
+    public function test_draw_reshuffles_discard_pile_when_draw_pile_runs_out(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, [
+            'draw_pile' => ['money_1_1'],
+            'discard_pile' => ['money_1_2', 'money_1_3'],
+        ]);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'draw']);
+
+        $this->assertCount(2, $state['hands'][$p1]);
+        $this->assertCount(0, $state['discard_pile']);
+    }
+
+    public function test_only_the_current_player_can_act(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1, $p2] = $room->game_state['turn_order'];
+
+        $this->expectException(\InvalidArgumentException::class);
+        (new MasrawyDealGame())->submitAction($room, User::find($p2), ['type' => 'draw']);
+    }
+
+    public function test_no_action_allowed_once_the_game_has_a_winner(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['winner' => $p1]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'draw']);
+    }
+
+    // --- Playing money ----------------------------------------------------
+
+    public function test_play_money_moves_the_card_to_the_bank(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setHand($room, $p1, ['money_1_1']);
+        $room = $this->setState($room, ['has_drawn_this_turn' => true]);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'play_money',
+            'card_id' => 'money_1_1',
+        ]);
+
+        $this->assertEquals([], $state['hands'][$p1]);
+        $this->assertEquals(['money_1_1'], $state['banks'][$p1]);
+        $this->assertEquals(1, $state['cards_played_this_turn']);
+    }
+
+    public function test_cannot_play_money_before_drawing(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setHand($room, $p1, ['money_1_1']);
+
+        $this->expectException(\InvalidArgumentException::class);
+        (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'play_money',
+            'card_id' => 'money_1_1',
+        ]);
+    }
+
+    public function test_cannot_play_a_property_card_as_money(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setHand($room, $p1, ['prop_green_1']);
+        $room = $this->setState($room, ['has_drawn_this_turn' => true]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'play_money',
+            'card_id' => 'prop_green_1',
+        ]);
+    }
+
+    public function test_cannot_play_more_than_three_cards_per_turn(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setHand($room, $p1, ['money_1_1', 'money_1_2', 'money_1_3', 'money_1_4']);
+        $room = $this->setState($room, ['has_drawn_this_turn' => true]);
+
+        $game = new MasrawyDealGame();
+
+        foreach (['money_1_1', 'money_1_2', 'money_1_3'] as $cardId) {
+            $state = $game->submitAction($room, User::find($p1), ['type' => 'play_money', 'card_id' => $cardId]);
+            $room->update(['game_state' => $state]);
+            $room->refresh();
+        }
+
+        $this->expectException(\InvalidArgumentException::class);
+        $game->submitAction($room, User::find($p1), ['type' => 'play_money', 'card_id' => 'money_1_4']);
+    }
+
+    // --- Playing properties -----------------------------------------------
+
+    public function test_play_property_adds_the_card_to_the_correct_color_group(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setHand($room, $p1, ['prop_green_1']);
+        $room = $this->setState($room, ['has_drawn_this_turn' => true]);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'play_property',
+            'card_id' => 'prop_green_1',
+        ]);
+
+        $this->assertEquals(['prop_green_1'], $state['properties'][$p1]['green']['cards']);
+    }
+
+    public function test_two_color_wildcard_requires_a_valid_color_choice(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setHand($room, $p1, ['wild_dark_blue_green_1']);
+        $room = $this->setState($room, ['has_drawn_this_turn' => true]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'play_property',
+            'card_id' => 'wild_dark_blue_green_1',
+            'color' => 'red', // not one of this wildcard's two colors
+        ]);
+    }
+
+    public function test_two_color_wildcard_played_as_one_of_its_valid_colors(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setHand($room, $p1, ['wild_dark_blue_green_1']);
+        $room = $this->setState($room, ['has_drawn_this_turn' => true]);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'play_property',
+            'card_id' => 'wild_dark_blue_green_1',
+            'color' => 'green',
+        ]);
+
+        $this->assertEquals(['wild_dark_blue_green_1'], $state['properties'][$p1]['green']['cards']);
+    }
+
+    public function test_completing_a_third_set_wins_the_game(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+
+        // Already own 2 complete sets (brown needs 2, utility needs 2);
+        // the third card played this turn completes green (needs 3).
+        $room = $this->setState($room, [
+            'has_drawn_this_turn' => true,
+            'properties' => [
+                (string) $p1 => [
+                    'brown' => ['cards' => ['prop_brown_1', 'prop_brown_2'], 'house' => null, 'hotel' => null],
+                    'utility' => ['cards' => ['prop_utility_1', 'prop_utility_2'], 'house' => null, 'hotel' => null],
+                    'green' => ['cards' => ['prop_green_1', 'prop_green_2'], 'house' => null, 'hotel' => null],
+                ],
+            ],
+        ]);
+        $room = $this->setHand($room, $p1, ['prop_green_3']);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'play_property',
+            'card_id' => 'prop_green_3',
+        ]);
+
+        $this->assertEquals((string) $p1, (string) $state['winner']);
+    }
+
+    public function test_two_multicolor_wildcards_alone_do_not_complete_a_set(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        // Utility needs only 2 — both from EL BOB (any_color) wildcards.
+        $room = $this->setState($room, [
+            'has_drawn_this_turn' => true,
+            'properties' => [
+                (string) $p1 => [
+                    'utility' => ['cards' => ['wild_any_1'], 'house' => null, 'hotel' => null],
+                ],
+            ],
+        ]);
+        $room = $this->setHand($room, $p1, ['wild_any_2']);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'play_property',
+            'card_id' => 'wild_any_2',
+            'color' => 'utility',
+        ]);
+
+        $this->assertNull($state['winner']);
+    }
+
+    // --- Banking action/rent cards -----------------------------------------
+
+    public function test_bank_card_moves_an_action_card_to_the_bank_at_face_value(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setHand($room, $p1, ['action_deal_breaker_1']);
+        $room = $this->setState($room, ['has_drawn_this_turn' => true]);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'bank_card',
+            'card_id' => 'action_deal_breaker_1',
+        ]);
+
+        $this->assertEquals(['action_deal_breaker_1'], $state['banks'][$p1]);
+    }
+
+    public function test_cannot_bank_a_property_card(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setHand($room, $p1, ['prop_green_1']);
+        $room = $this->setState($room, ['has_drawn_this_turn' => true]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'bank_card',
+            'card_id' => 'prop_green_1',
+        ]);
+    }
+
+    // --- GARAB 7AZAK / Pass Go -----------------------------------------
+
+    public function test_pass_go_discards_itself_and_draws_two(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setHand($room, $p1, ['action_pass_go_1']);
+        $room = $this->setState($room, [
+            'has_drawn_this_turn' => true,
+            'draw_pile' => ['money_1_1', 'money_1_2'],
+        ]);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'play_pass_go',
+            'card_id' => 'action_pass_go_1',
+        ]);
+
+        $this->assertEquals(['money_1_1', 'money_1_2'], $state['hands'][$p1]);
+        $this->assertEquals(['action_pass_go_1'], $state['discard_pile']);
+    }
+
+    // --- SHISHA / WIL3A -----------------------------------------------
+
+    public function test_shisha_requires_a_complete_set(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, [
+            'has_drawn_this_turn' => true,
+            'properties' => [
+                (string) $p1 => [
+                    'brown' => ['cards' => ['prop_brown_1'], 'house' => null, 'hotel' => null], // needs 2
+                ],
+            ],
+        ]);
+        $room = $this->setHand($room, $p1, ['action_house_1']);
+
+        $this->expectException(\InvalidArgumentException::class);
+        (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'play_shisha',
+            'card_id' => 'action_house_1',
+            'color' => 'brown',
+        ]);
+    }
+
+    public function test_shisha_placed_on_a_complete_set(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, [
+            'has_drawn_this_turn' => true,
+            'properties' => [
+                (string) $p1 => [
+                    'brown' => ['cards' => ['prop_brown_1', 'prop_brown_2'], 'house' => null, 'hotel' => null],
+                ],
+            ],
+        ]);
+        $room = $this->setHand($room, $p1, ['action_house_1']);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'play_shisha',
+            'card_id' => 'action_house_1',
+            'color' => 'brown',
+        ]);
+
+        $this->assertEquals('action_house_1', $state['properties'][$p1]['brown']['house']);
+    }
+
+    public function test_wil3a_requires_a_shisha_first(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, [
+            'has_drawn_this_turn' => true,
+            'properties' => [
+                (string) $p1 => [
+                    'brown' => ['cards' => ['prop_brown_1', 'prop_brown_2'], 'house' => null, 'hotel' => null],
+                ],
+            ],
+        ]);
+        $room = $this->setHand($room, $p1, ['action_hotel_1']);
+
+        $this->expectException(\InvalidArgumentException::class);
+        (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'play_wil3a',
+            'card_id' => 'action_hotel_1',
+            'color' => 'brown',
+        ]);
+    }
+
+    public function test_wil3a_placed_after_shisha(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, [
+            'has_drawn_this_turn' => true,
+            'properties' => [
+                (string) $p1 => [
+                    'brown' => ['cards' => ['prop_brown_1', 'prop_brown_2'], 'house' => 'action_house_1', 'hotel' => null],
+                ],
+            ],
+        ]);
+        $room = $this->setHand($room, $p1, ['action_hotel_1']);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'play_wil3a',
+            'card_id' => 'action_hotel_1',
+            'color' => 'brown',
+        ]);
+
+        $this->assertEquals('action_hotel_1', $state['properties'][$p1]['brown']['hotel']);
+    }
+
+    // --- Discard --------------------------------------------------------
+
+    public function test_discard_only_allowed_over_the_hand_limit(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setHand($room, $p1, ['money_1_1', 'money_1_2']); // only 2 cards
+        $room = $this->setState($room, ['has_drawn_this_turn' => true]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'discard',
+            'card_id' => 'money_1_1',
+        ]);
+    }
+
+    public function test_discard_removes_the_card_and_sends_it_to_the_discard_pile(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $hand = ['money_1_1', 'money_1_2', 'money_1_3', 'money_1_4', 'money_1_5', 'money_1_6', 'money_2_1', 'money_2_2'];
+        $room = $this->setHand($room, $p1, $hand);
+        $room = $this->setState($room, ['has_drawn_this_turn' => true]);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+            'type' => 'discard',
+            'card_id' => 'money_2_2',
+        ]);
+
+        $this->assertCount(7, $state['hands'][$p1]);
+        $this->assertNotContains('money_2_2', $state['hands'][$p1]);
+        $this->assertEquals(['money_2_2'], $state['discard_pile']);
+    }
+
+    // --- End turn --------------------------------------------------------
+
+    public function test_cannot_end_turn_before_drawing(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+
+        $this->expectException(\InvalidArgumentException::class);
+        (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'end_turn']);
+    }
+
+    public function test_cannot_end_turn_while_over_the_hand_limit(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $hand = ['money_1_1', 'money_1_2', 'money_1_3', 'money_1_4', 'money_1_5', 'money_1_6', 'money_2_1', 'money_2_2'];
+        $room = $this->setHand($room, $p1, $hand);
+        $room = $this->setState($room, ['has_drawn_this_turn' => true]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'end_turn']);
+    }
+
+    public function test_end_turn_advances_to_the_next_player_and_resets_turn_state(): void
+    {
+        $room = $this->makeInProgressRoom(3);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['has_drawn_this_turn' => true, 'cards_played_this_turn' => 2]);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'end_turn']);
+
+        $this->assertEquals($p2, $state['current_player_id']);
+        $this->assertFalse($state['has_drawn_this_turn']);
+        $this->assertEquals(0, $state['cards_played_this_turn']);
+    }
+
+    public function test_end_turn_wraps_around_from_the_last_player_to_the_first(): void
+    {
+        $room = $this->makeInProgressRoom(3);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['current_player_id' => $p3, 'has_drawn_this_turn' => true]);
+
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($p3), ['type' => 'end_turn']);
+
+        $this->assertEquals($p1, $state['current_player_id']);
+    }
 }
