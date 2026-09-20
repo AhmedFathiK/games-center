@@ -546,6 +546,10 @@ class MasrawyDealGameTest extends TestCase
     {
         $room = $this->makeInProgressRoom(2);
         [$p1] = $room->game_state['turn_order'];
+        // A non-empty starting hand is essential here — an empty hand
+        // would trigger the 5-card draw rule instead of the normal
+        // 2-card draw this test is actually about.
+        $room = $this->setHand($room, $p1, ['money_1_4']);
         $room = $this->setState($room, [
             'draw_pile' => ['money_1_1'],
             'discard_pile' => ['money_1_2', 'money_1_3'],
@@ -553,7 +557,10 @@ class MasrawyDealGameTest extends TestCase
 
         $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'draw']);
 
-        $this->assertCount(2, $state['hands'][$p1]);
+        // 1 starting + 2 drawn (1 from draw_pile, then the discard pile
+        // reshuffles in and 1 more is drawn from it).
+        $this->assertCount(3, $state['hands'][$p1]);
+        $this->assertCount(1, $state['draw_pile']);
         $this->assertCount(0, $state['discard_pile']);
     }
 
