@@ -29,7 +29,8 @@ namespace App\Games\MasrawyDeal;
  * Property cards ALSO carry a `value` — unlike money/action/rent
  * cards, this isn't a bankable amount (property cards can never be
  * put in the bank), it's the printed face value used when a player
- * pays a rent/debt with property instead of cash. Rent and wildcard
+ * pays a rent/debt with property instead of cash. Wildcards carry one
+ * for the same reason (see WILDCARD_VALUE). Rent and wildcard
  * cards deliberately do NOT bake a color name into `label` — e.g. a
  * rent card's label is just "ELBIS!" regardless of which color pair
  * it covers, with the actual color(s) staying in the structured
@@ -109,6 +110,29 @@ class CardCatalog
         'railroad' => 2,
         'utility' => 2,
     ];
+
+    /**
+     * Printed face value (in $M) of each two-color wildcard, keyed
+     * "{colorA}_{colorB}" exactly as wildcardCards() lists the pair —
+     * like FACE_VALUE, used only when a wildcard is paid as rent/debt,
+     * never banked. These are the official Monopoly Deal values,
+     * adopted as the default in Phase 3 because the catalog had no
+     * wildcard values at all; not yet cross-checked against Ahmed's
+     * card studio, so treat as easy to change. The multicolor (EL BOB)
+     * wildcard is worth nothing (ANY_WILDCARD_VALUE).
+     */
+    public const WILDCARD_VALUE = [
+        'dark_blue_green' => 4,
+        'green_railroad' => 4,
+        'utility_railroad' => 2,
+        'light_blue_railroad' => 4,
+        'light_blue_brown' => 1,
+        'pink_orange' => 2,
+        'red_yellow' => 3,
+    ];
+
+    /** The multicolor (EL BOB) wildcard has no monetary value. */
+    public const ANY_WILDCARD_VALUE = 0;
 
     /**
      * SHISHA rent bonus (Masrawy Deal's reskin of the official "House"
@@ -296,6 +320,7 @@ class CardCatalog
                     'description' => null,
                     'colors' => [$colorA, $colorB],
                     'any_color' => false,
+                    'value' => self::WILDCARD_VALUE["{$colorA}_{$colorB}"],
                 ];
             }
         }
@@ -313,6 +338,7 @@ class CardCatalog
                 'description' => '7ot el bob 3ala kol lon ya batista',
                 'colors' => self::COLORS,
                 'any_color' => true,
+                'value' => self::ANY_WILDCARD_VALUE,
             ];
         }
 

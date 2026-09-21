@@ -333,6 +333,34 @@ class MasrawyDealGameTest extends TestCase
         }
     }
 
+    public function test_two_color_wildcards_carry_their_official_face_values(): void
+    {
+        // Phase 3 needs a value on every wildcard so it can be paid as
+        // rent/debt. These are the official Monopoly Deal values, not
+        // yet cross-checked against Ahmed's card studio.
+        $expected = [
+            'wild_dark_blue_green_1' => 4,
+            'wild_green_railroad_1' => 4,
+            'wild_utility_railroad_1' => 2,
+            'wild_light_blue_railroad_1' => 4,
+            'wild_light_blue_brown_1' => 1,
+            'wild_pink_orange_1' => 2,
+            'wild_pink_orange_2' => 2,
+            'wild_red_yellow_1' => 3,
+            'wild_red_yellow_2' => 3,
+        ];
+
+        foreach ($expected as $cardId => $value) {
+            $this->assertEquals($value, CardCatalog::get($cardId)['value'], $cardId);
+        }
+    }
+
+    public function test_multicolor_wildcards_are_worth_nothing(): void
+    {
+        $this->assertEquals(0, CardCatalog::get('wild_any_1')['value']);
+        $this->assertEquals(0, CardCatalog::get('wild_any_2')['value']);
+    }
+
     // --- Game definition -------------------------------------------------
 
     public function test_host_is_a_player(): void
@@ -970,5 +998,2448 @@ class MasrawyDealGameTest extends TestCase
         $state = (new MasrawyDealGame())->submitAction($room, User::find($p3), ['type' => 'end_turn']);
 
         $this->assertEquals($p1, $state['current_player_id']);
+    }
+
+    // ==================================================================
+    // Phase 3, slice 1: pending actions, Just Say No, payment,
+    // HAT 5 FI KEES (Debt Collector)
+    // ==================================================================
+
+    /**
+     * Runs one action through the real game and saves the result back
+     * onto the room — the round trip through the database (JSON) also
+     * catches any array-key type surprises a raw return value would hide.
+     */
+    protected function act(Room $room, int $userId, array $payload): Room
+    {
+        $state = (new MasrawyDealGame())->submitAction($room, User::find($userId), $payload);
+        $room->update(['game_state' => $state]);
+
+        return $room->fresh();
+    }
+
+    protected function assertRejected(Room $room, int $userId, array $payload, ?string $messageFragment = null): void
+    {
+        try {
+            (new MasrawyDealGame())->submitAction($room, User::find($userId), $payload);
+        } catch (\InvalidArgumentException $e) {
+            if ($messageFragment !== null) {
+                $this->assertStringContainsString($messageFragment, $e->getMessage());
+            }
+
+            return;
+        }
+
+        $this->fail('Expected the action to be rejected, but it was accepted.');
+    }
+
+    /**
+     * Every card id anywhere in the game (piles, hands, banks,
+     * properties, buildings), sorted — for asserting that nothing is
+     * ever created or destroyed by an action.
+     *
+     * @return array<int, string>
+     */
+    protected function allCardIds(Room $room): array
+    {
+        $state = $room->game_state;
+        $ids = array_merge($state['draw_pile'], $state['discard_pile']);
+
+        foreach ($state['hands'] as $hand) {
+            $ids = array_merge($ids, $hand);
+        }
+
+        foreach ($state['banks'] as $bank) {
+            $ids = array_merge($ids, $bank);
+        }
+
+        foreach ($state['properties'] as $groups) {
+            foreach ($groups as $group) {
+                $ids = array_merge($ids, $group['cards']);
+
+                foreach (['house', 'hotel'] as $building) {
+                    if ($group[$building] !== null) {
+                        $ids[] = $group[$building];
+                    }
+                }
+            }
+        }
+
+        sort($ids);
+
+        return $ids;
+    }
+
+    protected function group(array $cards, ?string $house = null, ?string $hotel = null): array
+    {
+        return ['cards' => $cards, 'house' => $house, 'hotel' => $hotel];
+    }
+
+    /**
+     * An in-progress room where the current player (p1) has already
+     * drawn and holds a HAT 5 FI KEES (plus whatever else is passed),
+     * and the target (p2) has exactly the given hand/bank/properties.
+     * Everything else is empty. Play the card with playDebtCollector().
+     */
+    protected function debtCollectorRoom(
+        array $targetHand = [],
+        array $targetBank = [],
+        array $targetProperties = [],
+        array $sourceHand = [],
+        array $sourceProperties = [],
+        int $playerCount = 2,
+    ): Room {
+        $room = $this->makeInProgressRoom($playerCount);
+        [$p1, $p2] = $room->game_state['turn_order'];
+
+        $state = $room->game_state;
+        $state['has_drawn_this_turn'] = true;
+        $state['hands'][$p1] = array_merge(['action_debt_collector_1'], $sourceHand);
+        $state['hands'][$p2] = $targetHand;
+        $state['banks'][$p2] = $targetBank;
+        $state['properties'][$p2] = $targetProperties;
+        $state['properties'][$p1] = $sourceProperties;
+        $room->update(['game_state' => $state]);
+
+        return $room->fresh();
+    }
+
+    protected function playDebtCollector(Room $room, int $sourceId, int $targetId): Room
+    {
+        return $this->act($room, $sourceId, [
+            'type' => 'play_debt_collector',
+            'card_id' => 'action_debt_collector_1',
+            'target_id' => $targetId,
+        ]);
+    }
+
+    // --- Playing HAT 5 FI KEES ------------------------------------------
+
+    public function test_debt_collector_goes_to_the_discard_pile_counts_as_a_play_and_opens_a_pending_action(): void
+    {
+        // The target holds a Just Say No, so the charge has to wait for them.
+        $room = $this->debtCollectorRoom(targetHand: ['action_just_say_no_1'], targetBank: ['money_5_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+
+        $room = $this->playDebtCollector($room, $p1, $p2);
+        $state = $room->game_state;
+
+        $this->assertNotContains('action_debt_collector_1', $state['hands'][$p1]);
+        $this->assertContains('action_debt_collector_1', $state['discard_pile']);
+        $this->assertEquals(1, $state['cards_played_this_turn']);
+        $this->assertEquals('debt_collector', $state['pending']['kind']);
+        $this->assertEquals($p1, $state['pending']['source_id']);
+        $this->assertEquals('action_debt_collector_1', $state['pending']['card_id']);
+        $this->assertCount(1, $state['pending']['charges']);
+        $this->assertEquals('responding', $state['pending']['charges'][$p2]['phase']);
+        $this->assertEquals(5, $state['pending']['charges'][$p2]['owed']);
+        $this->assertEquals([], $state['pending']['charges'][$p2]['chain']);
+    }
+
+    public function test_debt_collector_needs_a_draw_first(): void
+    {
+        $room = $this->debtCollectorRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['has_drawn_this_turn' => false]);
+
+        $this->assertRejected($room, $p1, [
+            'type' => 'play_debt_collector',
+            'card_id' => 'action_debt_collector_1',
+            'target_id' => $p2,
+        ], 'Draw before playing');
+    }
+
+    public function test_debt_collector_cannot_target_yourself(): void
+    {
+        $room = $this->debtCollectorRoom();
+        [$p1] = $room->game_state['turn_order'];
+
+        $this->assertRejected($room, $p1, [
+            'type' => 'play_debt_collector',
+            'card_id' => 'action_debt_collector_1',
+            'target_id' => $p1,
+        ], 'yourself');
+    }
+
+    public function test_debt_collector_needs_a_real_opponent_as_target(): void
+    {
+        $room = $this->debtCollectorRoom();
+        [$p1] = $room->game_state['turn_order'];
+
+        $this->assertRejected($room, $p1, [
+            'type' => 'play_debt_collector',
+            'card_id' => 'action_debt_collector_1',
+            'target_id' => 999999,
+        ], 'another player');
+
+        $this->assertRejected($room, $p1, [
+            'type' => 'play_debt_collector',
+            'card_id' => 'action_debt_collector_1',
+        ], 'another player');
+    }
+
+    public function test_debt_collector_rejects_a_card_that_is_not_one(): void
+    {
+        $room = $this->debtCollectorRoom(sourceHand: ['money_1_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+
+        $this->assertRejected($room, $p1, [
+            'type' => 'play_debt_collector',
+            'card_id' => 'money_1_1',
+            'target_id' => $p2,
+        ], 'HAT 5 FI KEES');
+    }
+
+    public function test_debt_collector_counts_toward_the_three_card_limit(): void
+    {
+        $room = $this->debtCollectorRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['cards_played_this_turn' => 3]);
+
+        $this->assertRejected($room, $p1, [
+            'type' => 'play_debt_collector',
+            'card_id' => 'action_debt_collector_1',
+            'target_id' => $p2,
+        ], '3 cards');
+    }
+
+    // --- Auto-resolution when nobody can respond ---------------------------
+
+    public function test_target_without_a_just_say_no_goes_straight_to_paying(): void
+    {
+        $room = $this->debtCollectorRoom(targetBank: ['money_5_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+
+        $state = $this->playDebtCollector($room, $p1, $p2)->game_state;
+
+        $this->assertEquals('paying', $state['pending']['charges'][$p2]['phase']);
+        $this->assertEquals([], $state['pending']['charges'][$p2]['chain']);
+    }
+
+    public function test_target_with_nothing_to_pay_owes_nothing_and_pending_clears(): void
+    {
+        $room = $this->debtCollectorRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+
+        $state = $this->playDebtCollector($room, $p1, $p2)->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertContains('action_debt_collector_1', $state['discard_pile']);
+    }
+
+    public function test_a_target_holding_only_a_zero_value_wildcard_owes_nothing(): void
+    {
+        $room = $this->debtCollectorRoom(targetProperties: ['green' => $this->group(['wild_any_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+
+        $state = $this->playDebtCollector($room, $p1, $p2)->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertEquals(['wild_any_1'], $state['properties'][$p2]['green']['cards']);
+    }
+
+    // --- The game is frozen while something is pending -----------------------
+
+    public function test_the_source_cannot_do_anything_else_while_an_action_is_pending(): void
+    {
+        $room = $this->debtCollectorRoom(targetHand: ['action_just_say_no_1'], sourceHand: ['money_1_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        $this->assertRejected($room, $p1, ['type' => 'play_money', 'card_id' => 'money_1_1'], 'Waiting');
+        $this->assertRejected($room, $p1, ['type' => 'end_turn'], 'Waiting');
+        $this->assertRejected($room, $p1, ['type' => 'draw'], 'Waiting');
+        $this->assertRejected($room, $p1, ['type' => 'discard', 'card_id' => 'money_1_1'], 'Waiting');
+    }
+
+    public function test_only_the_targeted_player_can_pay(): void
+    {
+        $room = $this->debtCollectorRoom(targetBank: ['money_5_1'], playerCount: 3);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        $this->assertRejected($room, $p1, ['type' => 'pay', 'card_ids' => ['money_5_1']], 'owe');
+        $this->assertRejected($room, $p3, ['type' => 'pay', 'card_ids' => ['money_5_1']], 'owe');
+    }
+
+    public function test_responses_are_rejected_when_nothing_is_pending(): void
+    {
+        $room = $this->debtCollectorRoom(targetHand: ['action_just_say_no_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+
+        $this->assertRejected($room, $p1, ['type' => 'decline'], 'nothing to respond to');
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => ['money_1_1']], 'nothing to respond to');
+        $this->assertRejected($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1'], 'nothing to respond to');
+    }
+
+    // --- Just Say No chain ---------------------------------------------------
+
+    public function test_the_target_can_cancel_the_charge_with_a_just_say_no(): void
+    {
+        $room = $this->debtCollectorRoom(targetHand: ['action_just_say_no_1'], targetBank: ['money_5_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+        $state = $room->game_state;
+
+        // Source holds no Just Say No, so the cancellation stands at once.
+        $this->assertNull($state['pending']);
+        $this->assertContains('action_just_say_no_1', $state['discard_pile']);
+        $this->assertNotContains('action_just_say_no_1', $state['hands'][$p2]);
+        $this->assertEquals(['money_5_1'], $state['banks'][$p2]);
+        $this->assertEquals([], $state['banks'][$p1]);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_the_source_can_counter_a_no_with_their_own_no(): void
+    {
+        $room = $this->debtCollectorRoom(
+            targetHand: ['action_just_say_no_1'],
+            targetBank: ['money_5_1'],
+            sourceHand: ['action_just_say_no_2'],
+        );
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+
+        // The source holds a No, so it is now their move to answer.
+        $charge = $room->game_state['pending']['charges'][$p2];
+        $this->assertEquals('responding', $charge['phase']);
+        $this->assertCount(1, $charge['chain']);
+        $this->assertEquals($p2, $charge['chain'][0]['player_id']);
+
+        $room = $this->act($room, $p1, [
+            'type' => 'respond_no',
+            'card_id' => 'action_just_say_no_2',
+            'target_id' => $p2,
+        ]);
+
+        // The target has no further No, so the charge now goes through.
+        $charge = $room->game_state['pending']['charges'][$p2];
+        $this->assertEquals('paying', $charge['phase']);
+        $this->assertCount(2, $charge['chain']);
+        $this->assertEquals($p1, $charge['chain'][1]['player_id']);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_a_no_chain_can_go_three_deep_and_ends_cancelled(): void
+    {
+        $room = $this->debtCollectorRoom(
+            targetHand: ['action_just_say_no_1', 'action_just_say_no_3'],
+            targetBank: ['money_5_1'],
+            sourceHand: ['action_just_say_no_2'],
+        );
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+        $room = $this->act($room, $p1, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_2', 'target_id' => $p2]);
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_3']);
+
+        $state = $room->game_state;
+        $this->assertNull($state['pending']);
+        $this->assertEquals(['money_5_1'], $state['banks'][$p2]);
+
+        foreach (['action_just_say_no_1', 'action_just_say_no_2', 'action_just_say_no_3'] as $cardId) {
+            $this->assertContains($cardId, $state['discard_pile']);
+        }
+    }
+
+    public function test_declining_the_no_window_lets_the_charge_through(): void
+    {
+        $room = $this->debtCollectorRoom(targetHand: ['action_just_say_no_1'], targetBank: ['money_5_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        $room = $this->act($room, $p2, ['type' => 'decline']);
+
+        $this->assertEquals('paying', $room->game_state['pending']['charges'][$p2]['phase']);
+        $this->assertContains('action_just_say_no_1', $room->game_state['hands'][$p2]);
+    }
+
+    public function test_the_source_declining_to_counter_leaves_the_cancellation_standing(): void
+    {
+        $room = $this->debtCollectorRoom(
+            targetHand: ['action_just_say_no_1'],
+            targetBank: ['money_5_1'],
+            sourceHand: ['action_just_say_no_2'],
+        );
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+
+        $room = $this->act($room, $p1, ['type' => 'decline', 'target_id' => $p2]);
+
+        $this->assertNull($room->game_state['pending']);
+        $this->assertEquals(['money_5_1'], $room->game_state['banks'][$p2]);
+        $this->assertContains('action_just_say_no_2', $room->game_state['hands'][$p1]);
+    }
+
+    public function test_respond_no_needs_an_actual_just_say_no_card(): void
+    {
+        $room = $this->debtCollectorRoom(targetHand: ['action_just_say_no_1', 'money_1_1'], targetBank: ['money_5_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        $this->assertRejected($room, $p2, ['type' => 'respond_no', 'card_id' => 'money_1_1'], 'DA 3AND OMMO');
+        $this->assertRejected($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_2'], 'not in your hand');
+    }
+
+    public function test_only_the_player_being_waited_on_can_respond(): void
+    {
+        $room = $this->debtCollectorRoom(
+            targetHand: ['action_just_say_no_1'],
+            targetBank: ['money_5_1'],
+            sourceHand: ['action_just_say_no_2'],
+        );
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        // First it is the target's move, not the source's.
+        $this->assertRejected($room, $p1, [
+            'type' => 'respond_no',
+            'card_id' => 'action_just_say_no_2',
+            'target_id' => $p2,
+        ], 'not your turn to respond');
+        $this->assertRejected($room, $p1, ['type' => 'decline', 'target_id' => $p2], 'not your turn to respond');
+
+        // After the target's No, it is the source's move, not the target's.
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+        $this->assertRejected($room, $p2, ['type' => 'decline'], 'not your turn to respond');
+    }
+
+    public function test_just_say_no_never_counts_toward_the_three_card_limit(): void
+    {
+        $room = $this->debtCollectorRoom(
+            targetHand: ['action_just_say_no_1'],
+            targetBank: ['money_5_1'],
+            sourceHand: ['action_just_say_no_2'],
+        );
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['cards_played_this_turn' => 2]);
+
+        $room = $this->playDebtCollector($room, $p1, $p2);
+        $this->assertEquals(3, $room->game_state['cards_played_this_turn']);
+
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+        $room = $this->act($room, $p1, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_2', 'target_id' => $p2]);
+
+        // Both Nos were played with the limit already used up.
+        $this->assertEquals(3, $room->game_state['cards_played_this_turn']);
+        $this->assertEquals('paying', $room->game_state['pending']['charges'][$p2]['phase']);
+    }
+
+    // --- Payment ------------------------------------------------------------
+
+    public function test_paying_the_exact_amount_moves_the_cards_to_the_sources_bank(): void
+    {
+        $room = $this->debtCollectorRoom(targetBank: ['money_2_1', 'money_3_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['money_2_1', 'money_3_1']]);
+        $state = $room->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertEquals([], $state['banks'][$p2]);
+        $this->assertEqualsCanonicalizing(['money_2_1', 'money_3_1'], $state['banks'][$p1]);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_overpaying_with_a_single_larger_card_is_fine_and_gives_no_change(): void
+    {
+        $room = $this->debtCollectorRoom(targetBank: ['money_10_1', 'money_1_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['money_10_1']]);
+
+        $this->assertEquals(['money_10_1'], $room->game_state['banks'][$p1]);
+        $this->assertEquals(['money_1_1'], $room->game_state['banks'][$p2]);
+    }
+
+    public function test_paying_too_little_is_rejected_when_you_can_afford_more(): void
+    {
+        $room = $this->debtCollectorRoom(targetBank: ['money_2_1', 'money_3_1', 'money_1_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => ['money_2_1']], 'does not cover');
+    }
+
+    public function test_paying_with_more_cards_than_needed_is_rejected(): void
+    {
+        $room = $this->debtCollectorRoom(targetBank: ['money_5_1', 'money_1_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => ['money_5_1', 'money_1_1']], 'more cards than needed');
+    }
+
+    public function test_a_player_who_cannot_cover_the_debt_must_pay_everything(): void
+    {
+        $room = $this->debtCollectorRoom(targetBank: ['money_2_1', 'money_1_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => ['money_2_1']], 'everything you have');
+
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['money_2_1', 'money_1_1']]);
+
+        $this->assertNull($room->game_state['pending']);
+        $this->assertEquals([], $room->game_state['banks'][$p2]);
+        $this->assertEqualsCanonicalizing(['money_2_1', 'money_1_1'], $room->game_state['banks'][$p1]);
+    }
+
+    public function test_you_can_only_pay_with_cards_from_your_bank_or_properties(): void
+    {
+        $room = $this->debtCollectorRoom(targetHand: ['money_10_1'], targetBank: ['money_5_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        // Hand cards, the source's cards and made-up ids are all refused.
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => ['money_10_1']], 'cannot be used');
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => ['money_5_2']], 'cannot be used');
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => ['nonsense']], 'cannot be used');
+    }
+
+    public function test_the_same_card_cannot_be_listed_twice_and_a_selection_is_required(): void
+    {
+        $room = $this->debtCollectorRoom(targetBank: ['money_2_1', 'money_3_1', 'money_1_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => ['money_3_1', 'money_3_1']], 'only be used once');
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => []], 'Choose the cards');
+        $this->assertRejected($room, $p2, ['type' => 'pay'], 'Choose the cards');
+    }
+
+    public function test_a_wildcard_with_no_value_cannot_be_used_to_pay(): void
+    {
+        $room = $this->debtCollectorRoom(
+            targetBank: ['money_5_1'],
+            targetProperties: ['green' => $this->group(['wild_any_1'])],
+        );
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => ['wild_any_1']], 'cannot be used');
+    }
+
+    public function test_a_property_payment_lands_in_the_sources_matching_color_group(): void
+    {
+        $room = $this->debtCollectorRoom(targetProperties: ['green' => $this->group(['prop_green_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+        $before = $this->allCardIds($room);
+
+        // 4M is short of the 5M owed, so it is paid whole.
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['prop_green_1']]);
+        $state = $room->game_state;
+
+        $this->assertEquals(['prop_green_1'], $state['properties'][$p1]['green']['cards']);
+        $this->assertArrayNotHasKey('green', $state['properties'][$p2]);
+        $this->assertNull($state['pending']);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_a_paid_wildcard_keeps_the_color_it_was_sitting_in(): void
+    {
+        $room = $this->debtCollectorRoom(targetProperties: ['green' => $this->group(['wild_dark_blue_green_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['wild_dark_blue_green_1']]);
+
+        $this->assertEquals(['wild_dark_blue_green_1'], $room->game_state['properties'][$p1]['green']['cards']);
+    }
+
+    public function test_receiving_the_last_property_of_a_third_set_wins_the_game(): void
+    {
+        $room = $this->debtCollectorRoom(
+            targetProperties: ['dark_blue' => $this->group(['prop_dark_blue_2'])],
+            sourceProperties: [
+                'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+                'utility' => $this->group(['prop_utility_1', 'prop_utility_2']),
+                'dark_blue' => $this->group(['prop_dark_blue_1']),
+            ],
+        );
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['prop_dark_blue_2']]);
+
+        $this->assertEquals($p1, $room->game_state['winner']);
+        $this->assertNull($room->game_state['pending']);
+    }
+
+    public function test_a_shisha_can_be_paid_and_goes_to_the_receivers_bank(): void
+    {
+        $greens = ['prop_green_1', 'prop_green_2', 'prop_green_3'];
+        $room = $this->debtCollectorRoom(
+            targetBank: ['money_2_1'],
+            targetProperties: ['green' => $this->group($greens, 'action_house_1')],
+        );
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+        $before = $this->allCardIds($room);
+
+        // SHISHA 3M + 2M bank = exactly 5M.
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['action_house_1', 'money_2_1']]);
+        $state = $room->game_state;
+
+        $this->assertEqualsCanonicalizing(['action_house_1', 'money_2_1'], $state['banks'][$p1]);
+        $this->assertNull($state['properties'][$p2]['green']['house']);
+        $this->assertEquals($greens, $state['properties'][$p2]['green']['cards']);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_a_wil3a_must_be_paid_before_the_shisha_underneath_it(): void
+    {
+        $greens = ['prop_green_1', 'prop_green_2', 'prop_green_3'];
+        $room = $this->debtCollectorRoom(
+            targetBank: ['money_2_1'],
+            targetProperties: ['green' => $this->group($greens, 'action_house_1', 'action_hotel_1')],
+        );
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        // SHISHA + 2M would cover it, but the WIL3A sits on top of it.
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => ['action_house_1', 'money_2_1']], 'WIL3A');
+
+        // Paying the WIL3A (4M) + 2M works and leaves the SHISHA in place.
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['action_hotel_1', 'money_2_1']]);
+        $state = $room->game_state;
+
+        $this->assertContains('action_hotel_1', $state['banks'][$p1]);
+        $this->assertNull($state['properties'][$p2]['green']['hotel']);
+        $this->assertEquals('action_house_1', $state['properties'][$p2]['green']['house']);
+    }
+
+    public function test_paying_a_property_out_of_a_set_leaves_its_shisha_on_that_color(): void
+    {
+        $greens = ['prop_green_1', 'prop_green_2', 'prop_green_3'];
+        $room = $this->debtCollectorRoom(
+            targetBank: ['money_1_1'],
+            targetProperties: ['green' => $this->group($greens, 'action_house_1')],
+        );
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        // Green property 4M + 1M bank = exactly 5M.
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['prop_green_1', 'money_1_1']]);
+        $group = $room->game_state['properties'][$p2]['green'];
+
+        $this->assertEquals(['prop_green_2', 'prop_green_3'], $group['cards']);
+        $this->assertEquals('action_house_1', $group['house']);
+    }
+
+    // --- After the charge ---------------------------------------------------
+
+    public function test_the_source_carries_on_with_their_turn_once_the_charge_resolves(): void
+    {
+        $room = $this->debtCollectorRoom(targetBank: ['money_5_1'], sourceHand: ['money_1_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['money_5_1']]);
+
+        $room = $this->act($room, $p1, ['type' => 'play_money', 'card_id' => 'money_1_1']);
+
+        $this->assertEquals(2, $room->game_state['cards_played_this_turn']);
+        $this->assertEquals($p1, $room->game_state['current_player_id']);
+
+        $room = $this->act($room, $p1, ['type' => 'end_turn']);
+
+        $this->assertEquals($p2, $room->game_state['current_player_id']);
+    }
+
+    // ==================================================================
+    // Phase 3, slice 2: 3ID MILADY YA KELAB (Birthday)
+    // ==================================================================
+
+    /**
+     * An in-progress room where the current player (p1) has already
+     * drawn and holds a 3ID MILADY YA KELAB (plus whatever else is
+     * passed). Everyone else starts empty — give them cards with equip().
+     */
+    protected function birthdayRoom(int $playerCount = 3, array $sourceHand = [], array $sourceProperties = []): Room
+    {
+        $room = $this->makeInProgressRoom($playerCount);
+        [$p1] = $room->game_state['turn_order'];
+
+        $state = $room->game_state;
+        $state['has_drawn_this_turn'] = true;
+        $state['hands'][$p1] = array_merge(['action_birthday_1'], $sourceHand);
+        $state['properties'][$p1] = $sourceProperties;
+        $room->update(['game_state' => $state]);
+
+        return $room->fresh();
+    }
+
+    /** Sets exactly what one player holds; anything omitted becomes empty. */
+    protected function equip(Room $room, int $userId, array $hand = [], array $bank = [], array $properties = []): Room
+    {
+        $state = $room->game_state;
+        $state['hands'][$userId] = $hand;
+        $state['banks'][$userId] = $bank;
+        $state['properties'][$userId] = $properties;
+        $room->update(['game_state' => $state]);
+
+        return $room->fresh();
+    }
+
+    protected function playBirthday(Room $room, int $sourceId): Room
+    {
+        return $this->act($room, $sourceId, ['type' => 'play_birthday', 'card_id' => 'action_birthday_1']);
+    }
+
+    // --- Playing 3ID MILADY YA KELAB -----------------------------------------
+
+    public function test_birthday_opens_a_charge_for_every_opponent_and_counts_as_one_play(): void
+    {
+        $room = $this->birthdayRoom(4);
+        [$p1, $p2, $p3, $p4] = $room->game_state['turn_order'];
+
+        // Every opponent holds a Just Say No (so no charge auto-settles)
+        // and 2M to pay with.
+        foreach ([$p2, $p3, $p4] as $i => $target) {
+            $room = $this->equip($room, $target, hand: ['action_just_say_no_' . ($i + 1)], bank: ['money_2_' . ($i + 1)]);
+        }
+
+        $room = $this->playBirthday($room, $p1);
+        $state = $room->game_state;
+
+        $this->assertNotContains('action_birthday_1', $state['hands'][$p1]);
+        $this->assertContains('action_birthday_1', $state['discard_pile']);
+        $this->assertEquals(1, $state['cards_played_this_turn']);
+        $this->assertEquals('birthday', $state['pending']['kind']);
+        $this->assertEquals($p1, $state['pending']['source_id']);
+        $this->assertCount(3, $state['pending']['charges']);
+        $this->assertArrayNotHasKey($p1, $state['pending']['charges']);
+
+        foreach ([$p2, $p3, $p4] as $target) {
+            $this->assertEquals('responding', $state['pending']['charges'][$target]['phase']);
+            $this->assertEquals(2, $state['pending']['charges'][$target]['owed']);
+        }
+    }
+
+    public function test_birthday_rejects_a_card_that_is_not_one(): void
+    {
+        $room = $this->birthdayRoom(2, sourceHand: ['money_1_1']);
+        [$p1] = $room->game_state['turn_order'];
+
+        $this->assertRejected($room, $p1, ['type' => 'play_birthday', 'card_id' => 'money_1_1'], '3ID MILADY');
+    }
+
+    public function test_birthday_needs_a_draw_first(): void
+    {
+        $room = $this->birthdayRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['has_drawn_this_turn' => false]);
+
+        $this->assertRejected($room, $p1, ['type' => 'play_birthday', 'card_id' => 'action_birthday_1'], 'Draw before playing');
+    }
+
+    public function test_birthday_counts_toward_the_three_card_limit(): void
+    {
+        $room = $this->birthdayRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['cards_played_this_turn' => 3]);
+
+        $this->assertRejected($room, $p1, ['type' => 'play_birthday', 'card_id' => 'action_birthday_1'], '3 cards');
+    }
+
+    // --- Independent charges ----------------------------------------------------
+
+    public function test_each_opponent_is_settled_independently_at_the_start(): void
+    {
+        $room = $this->birthdayRoom();
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        // p2 has no Just Say No and can pay; p3 holds a Just Say No.
+        $room = $this->equip($room, $p2, bank: ['money_2_1']);
+        $room = $this->equip($room, $p3, hand: ['action_just_say_no_1'], bank: ['money_2_2']);
+
+        $state = $this->playBirthday($room, $p1)->game_state;
+
+        $this->assertEquals('paying', $state['pending']['charges'][$p2]['phase']);
+        $this->assertEquals('responding', $state['pending']['charges'][$p3]['phase']);
+    }
+
+    public function test_everyone_pays_and_pending_clears_only_after_the_last_payment(): void
+    {
+        $room = $this->birthdayRoom();
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_2_1', 'money_1_1']);
+        $room = $this->equip($room, $p3, bank: ['money_2_2']);
+        $room = $this->playBirthday($room, $p1);
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['money_2_1']]);
+
+        $this->assertEquals('done', $room->game_state['pending']['charges'][$p2]['phase']);
+        $this->assertEquals('paying', $room->game_state['pending']['charges'][$p3]['phase']);
+
+        $room = $this->act($room, $p3, ['type' => 'pay', 'card_ids' => ['money_2_2']]);
+        $state = $room->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertEqualsCanonicalizing(['money_2_1', 'money_2_2'], $state['banks'][$p1]);
+        $this->assertEquals(['money_1_1'], $state['banks'][$p2]);
+        $this->assertEquals([], $state['banks'][$p3]);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_a_player_cannot_pay_twice_or_pay_for_someone_else(): void
+    {
+        $room = $this->birthdayRoom();
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_2_1', 'money_2_3']);
+        $room = $this->equip($room, $p3, bank: ['money_2_2']);
+        $room = $this->playBirthday($room, $p1);
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['money_2_1']]);
+
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => ['money_2_3']], 'owe');
+        $this->assertRejected($room, $p1, ['type' => 'pay', 'card_ids' => ['money_2_2']], 'owe');
+    }
+
+    public function test_a_no_from_one_player_cancels_only_that_players_payment(): void
+    {
+        $room = $this->birthdayRoom();
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], bank: ['money_2_1']);
+        $room = $this->equip($room, $p3, bank: ['money_2_2']);
+        $room = $this->playBirthday($room, $p1);
+
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+
+        $charges = $room->game_state['pending']['charges'];
+        $this->assertEquals('done', $charges[$p2]['phase']);
+        $this->assertEquals('cancelled', $charges[$p2]['outcome']);
+        $this->assertEquals('paying', $charges[$p3]['phase']);
+
+        $room = $this->act($room, $p3, ['type' => 'pay', 'card_ids' => ['money_2_2']]);
+
+        $this->assertNull($room->game_state['pending']);
+        $this->assertEquals(['money_2_1'], $room->game_state['banks'][$p2]);
+        $this->assertEquals(['money_2_2'], $room->game_state['banks'][$p1]);
+    }
+
+    public function test_one_player_cannot_answer_another_players_no_window(): void
+    {
+        $room = $this->birthdayRoom();
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], bank: ['money_2_1']);
+        $room = $this->equip($room, $p3, hand: ['action_just_say_no_2'], bank: ['money_2_2']);
+        $room = $this->playBirthday($room, $p1);
+
+        $this->assertRejected($room, $p3, [
+            'type' => 'respond_no',
+            'card_id' => 'action_just_say_no_2',
+            'target_id' => $p2,
+        ], 'not your turn to respond');
+        $this->assertRejected($room, $p3, ['type' => 'decline', 'target_id' => $p2], 'not your turn to respond');
+    }
+
+    public function test_a_source_with_one_no_can_counter_only_one_of_two_nos(): void
+    {
+        $room = $this->birthdayRoom(3, sourceHand: ['action_just_say_no_3']);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], bank: ['money_2_1']);
+        $room = $this->equip($room, $p3, hand: ['action_just_say_no_2'], bank: ['money_2_2']);
+        $room = $this->playBirthday($room, $p1);
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+        $room = $this->act($room, $p3, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_2']);
+        $before = $this->allCardIds($room);
+
+        // Both charges now wait on the source, who holds a single No.
+        $charges = $room->game_state['pending']['charges'];
+        $this->assertEquals('responding', $charges[$p2]['phase']);
+        $this->assertEquals('responding', $charges[$p3]['phase']);
+
+        $room = $this->act($room, $p1, [
+            'type' => 'respond_no',
+            'card_id' => 'action_just_say_no_3',
+            'target_id' => $p2,
+        ]);
+
+        // p2's payment is back on (their No was countered) ...
+        $charges = $room->game_state['pending']['charges'];
+        $this->assertEquals('paying', $charges[$p2]['phase']);
+        // ... and with the source's No spent, p3's cancellation stands.
+        $this->assertEquals('done', $charges[$p3]['phase']);
+        $this->assertEquals('cancelled', $charges[$p3]['outcome']);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_the_source_can_choose_not_to_counter_a_no(): void
+    {
+        $room = $this->birthdayRoom(3, sourceHand: ['action_just_say_no_3']);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], bank: ['money_2_1']);
+        $room = $this->equip($room, $p3, bank: ['money_2_2']);
+        $room = $this->playBirthday($room, $p1);
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+
+        $room = $this->act($room, $p1, ['type' => 'decline', 'target_id' => $p2]);
+
+        $charges = $room->game_state['pending']['charges'];
+        $this->assertEquals('cancelled', $charges[$p2]['outcome']);
+        $this->assertEquals('paying', $charges[$p3]['phase']);
+        $this->assertContains('action_just_say_no_3', $room->game_state['hands'][$p1]);
+    }
+
+    // --- Edge cases -------------------------------------------------------------
+
+    public function test_opponents_with_nothing_to_pay_owe_nothing(): void
+    {
+        $room = $this->birthdayRoom();
+        [$p1] = $room->game_state['turn_order'];
+
+        $state = $this->playBirthday($room, $p1)->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertContains('action_birthday_1', $state['discard_pile']);
+    }
+
+    public function test_a_broke_opponent_is_skipped_while_a_solvent_one_still_pays(): void
+    {
+        $room = $this->birthdayRoom();
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p3, bank: ['money_2_2']);
+
+        $state = $this->playBirthday($room, $p1)->game_state;
+
+        $this->assertEquals('done', $state['pending']['charges'][$p2]['phase']);
+        $this->assertEquals('paying', $state['pending']['charges'][$p3]['phase']);
+    }
+
+    public function test_a_player_who_owns_less_than_2m_pays_everything_they_have(): void
+    {
+        $room = $this->birthdayRoom(2);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_1_1']);
+        $room = $this->playBirthday($room, $p1);
+
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['money_1_1']]);
+
+        $this->assertNull($room->game_state['pending']);
+        $this->assertEquals(['money_1_1'], $room->game_state['banks'][$p1]);
+    }
+
+    public function test_paying_two_ones_for_a_birthday_is_allowed_but_a_third_card_is_not(): void
+    {
+        $room = $this->birthdayRoom(2);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_1_1', 'money_1_2', 'money_1_3']);
+        $room = $this->playBirthday($room, $p1);
+
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => ['money_1_1', 'money_1_2', 'money_1_3']], 'more cards than needed');
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => ['money_1_1']], 'does not cover');
+
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['money_1_1', 'money_1_2']]);
+
+        $this->assertNull($room->game_state['pending']);
+        $this->assertEquals(['money_1_3'], $room->game_state['banks'][$p2]);
+    }
+
+    public function test_a_payment_that_gives_the_source_a_third_set_ends_the_game_immediately(): void
+    {
+        $room = $this->birthdayRoom(3, sourceProperties: [
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+            'utility' => $this->group(['prop_utility_1', 'prop_utility_2']),
+            'dark_blue' => $this->group(['prop_dark_blue_1']),
+        ]);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['dark_blue' => $this->group(['prop_dark_blue_2'])]);
+        $room = $this->equip($room, $p3, bank: ['money_2_2']);
+        $room = $this->playBirthday($room, $p1);
+
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['prop_dark_blue_2']]);
+
+        // p3 has not paid yet, but the game is already over.
+        $this->assertEquals($p1, $room->game_state['winner']);
+        $this->assertNull($room->game_state['pending']);
+        $this->assertRejected($room, $p3, ['type' => 'pay', 'card_ids' => ['money_2_2']], 'already ended');
+    }
+
+    public function test_the_source_carries_on_after_every_birthday_charge_resolves(): void
+    {
+        $room = $this->birthdayRoom(3, sourceHand: ['money_1_1']);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_2_1']);
+        $room = $this->equip($room, $p3, bank: ['money_2_2']);
+        $room = $this->playBirthday($room, $p1);
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['money_2_1']]);
+        $room = $this->act($room, $p3, ['type' => 'pay', 'card_ids' => ['money_2_2']]);
+
+        $room = $this->act($room, $p1, ['type' => 'play_money', 'card_id' => 'money_1_1']);
+        $room = $this->act($room, $p1, ['type' => 'end_turn']);
+
+        $this->assertEquals($p2, $room->game_state['current_player_id']);
+        $this->assertEqualsCanonicalizing(['money_2_1', 'money_2_2', 'money_1_1'], $room->game_state['banks'][$p1]);
+    }
+
+    // ==================================================================
+    // Phase 3, slice 3: ELBIS! (rent) and ELBIS X 2 (Double The Rent)
+    // ==================================================================
+
+    /**
+     * An in-progress room where the current player (p1) has already
+     * drawn and holds exactly $sourceHand, with exactly
+     * $sourceProperties on the table. Everyone else starts empty — give
+     * them cards with equip().
+     */
+    protected function rentRoom(int $playerCount, array $sourceHand, array $sourceProperties = []): Room
+    {
+        $room = $this->makeInProgressRoom($playerCount);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['has_drawn_this_turn' => true]);
+
+        return $this->equip($room, $p1, hand: $sourceHand, properties: $sourceProperties);
+    }
+
+    protected function rentPayload(string $cardId, string $color, array $extra = []): array
+    {
+        return array_merge(['type' => 'play_rent', 'card_id' => $cardId, 'color' => $color], $extra);
+    }
+
+    /** @return array<string, array{0: string, 1: string, 2: array<int, string>, 3: int}> */
+    public static function rentAmounts(): array
+    {
+        return [
+            'green, 1 card' => ['rent_dark_blue_green_1', 'green', ['prop_green_1'], 2],
+            'green, 2 cards' => ['rent_dark_blue_green_1', 'green', ['prop_green_1', 'prop_green_2'], 4],
+            'green, full set' => ['rent_dark_blue_green_1', 'green', ['prop_green_1', 'prop_green_2', 'prop_green_3'], 7],
+            'dark blue, 1 card' => ['rent_dark_blue_green_1', 'dark_blue', ['prop_dark_blue_1'], 3],
+            'dark blue, full set' => ['rent_dark_blue_green_1', 'dark_blue', ['prop_dark_blue_1', 'prop_dark_blue_2'], 8],
+            'brown, 1 card' => ['rent_light_blue_brown_1', 'brown', ['prop_brown_1'], 1],
+            'brown, full set' => ['rent_light_blue_brown_1', 'brown', ['prop_brown_1', 'prop_brown_2'], 2],
+            'light blue, 2 cards' => ['rent_light_blue_brown_1', 'light_blue', ['prop_light_blue_1', 'prop_light_blue_2'], 2],
+            'red, 2 cards' => ['rent_red_yellow_1', 'red', ['prop_red_1', 'prop_red_2'], 3],
+            'yellow, full set' => ['rent_red_yellow_1', 'yellow', ['prop_yellow_1', 'prop_yellow_2', 'prop_yellow_3'], 6],
+            'pink, full set' => ['rent_pink_orange_1', 'pink', ['prop_pink_1', 'prop_pink_2', 'prop_pink_3'], 4],
+            'orange, full set' => ['rent_pink_orange_1', 'orange', ['prop_orange_1', 'prop_orange_2', 'prop_orange_3'], 5],
+            'railroad, 2 cards' => ['rent_railroad_utility_1', 'railroad', ['prop_railroad_1', 'prop_railroad_2'], 2],
+            'railroad, full set' => ['rent_railroad_utility_1', 'railroad', ['prop_railroad_1', 'prop_railroad_2', 'prop_railroad_3', 'prop_railroad_4'], 4],
+            'utility, 1 card' => ['rent_railroad_utility_1', 'utility', ['prop_utility_1'], 1],
+            'a wildcard counts as a card' => ['rent_dark_blue_green_1', 'green', ['prop_green_1', 'wild_dark_blue_green_1'], 4],
+            'an EL BOB wildcard counts as a card too' => ['rent_dark_blue_green_1', 'green', ['prop_green_1', 'wild_any_1'], 4],
+            'cards beyond a full set still pay the full-set rate' => ['rent_dark_blue_green_1', 'green', ['prop_green_1', 'prop_green_2', 'prop_green_3', 'wild_dark_blue_green_1'], 7],
+        ];
+    }
+
+    #[DataProvider('rentAmounts')]
+    public function test_rent_follows_the_color_chart_for_the_number_of_cards_owned(
+        string $rentCardId,
+        string $color,
+        array $groupCards,
+        int $expectedRent,
+    ): void {
+        $room = $this->rentRoom(2, [$rentCardId], [$color => $this->group($groupCards)]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_10_1']);
+
+        $state = $this->act($room, $p1, $this->rentPayload($rentCardId, $color))->game_state;
+
+        $this->assertEquals($expectedRent, $state['pending']['charges'][$p2]['owed']);
+    }
+
+    // --- Buildings ------------------------------------------------------------
+
+    public function test_a_shisha_and_a_wil3a_add_to_a_complete_sets_rent(): void
+    {
+        $greens = ['prop_green_1', 'prop_green_2', 'prop_green_3'];
+
+        $room = $this->rentRoom(2, ['rent_dark_blue_green_1'], ['green' => $this->group($greens, 'action_house_1')]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_10_1']);
+        $state = $this->act($room, $p1, $this->rentPayload('rent_dark_blue_green_1', 'green'))->game_state;
+
+        // 7 + 3
+        $this->assertEquals(10, $state['pending']['charges'][$p2]['owed']);
+    }
+
+    public function test_a_shisha_and_wil3a_together_add_seven(): void
+    {
+        $greens = ['prop_green_1', 'prop_green_2', 'prop_green_3'];
+
+        $room = $this->rentRoom(2, ['rent_dark_blue_green_1'], ['green' => $this->group($greens, 'action_house_1', 'action_hotel_1')]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_10_1']);
+        $state = $this->act($room, $p1, $this->rentPayload('rent_dark_blue_green_1', 'green'))->game_state;
+
+        // 7 + 3 + 4
+        $this->assertEquals(14, $state['pending']['charges'][$p2]['owed']);
+    }
+
+    public function test_a_shisha_left_on_a_broken_set_adds_nothing(): void
+    {
+        // Only 2 of green's 3 cards remain (e.g. one was paid away), so
+        // the set is not complete and its SHISHA does not count.
+        $room = $this->rentRoom(2, ['rent_dark_blue_green_1'], [
+            'green' => $this->group(['prop_green_1', 'prop_green_2'], 'action_house_1'),
+        ]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_10_1']);
+        $state = $this->act($room, $p1, $this->rentPayload('rent_dark_blue_green_1', 'green'))->game_state;
+
+        $this->assertEquals(4, $state['pending']['charges'][$p2]['owed']);
+    }
+
+    // --- Doubling ---------------------------------------------------------------
+
+    public function test_one_elbis_x_2_doubles_the_rent_and_costs_a_second_play(): void
+    {
+        $room = $this->rentRoom(2, ['rent_dark_blue_green_1', 'action_double_rent_1'], [
+            'green' => $this->group(['prop_green_1', 'prop_green_2', 'prop_green_3']),
+        ]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_10_1']);
+
+        $state = $this->act($room, $p1, $this->rentPayload('rent_dark_blue_green_1', 'green', [
+            'double_rent_card_ids' => ['action_double_rent_1'],
+        ]))->game_state;
+
+        $this->assertEquals(14, $state['pending']['charges'][$p2]['owed']);
+        $this->assertEquals(2, $state['pending']['multiplier']);
+        $this->assertEquals(2, $state['cards_played_this_turn']);
+        $this->assertEquals([], $state['hands'][$p1]);
+        $this->assertContains('rent_dark_blue_green_1', $state['discard_pile']);
+        $this->assertContains('action_double_rent_1', $state['discard_pile']);
+    }
+
+    public function test_two_elbis_x_2_quadruple_the_rent_and_use_all_three_plays(): void
+    {
+        $room = $this->rentRoom(2, ['rent_dark_blue_green_1', 'action_double_rent_1', 'action_double_rent_2'], [
+            'green' => $this->group(['prop_green_1', 'prop_green_2']),
+        ]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_10_1']);
+
+        $state = $this->act($room, $p1, $this->rentPayload('rent_dark_blue_green_1', 'green', [
+            'double_rent_card_ids' => ['action_double_rent_1', 'action_double_rent_2'],
+        ]))->game_state;
+
+        $this->assertEquals(16, $state['pending']['charges'][$p2]['owed']);
+        $this->assertEquals(4, $state['pending']['multiplier']);
+        $this->assertEquals(3, $state['cards_played_this_turn']);
+    }
+
+    public function test_doubling_is_rejected_when_there_are_not_enough_plays_left(): void
+    {
+        $room = $this->rentRoom(2, ['rent_dark_blue_green_1', 'action_double_rent_1'], [
+            'green' => $this->group(['prop_green_1']),
+        ]);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['cards_played_this_turn' => 2]);
+
+        // Rent + ELBIS X 2 = 2 plays, but only 1 is left.
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_dark_blue_green_1', 'green', [
+            'double_rent_card_ids' => ['action_double_rent_1'],
+        ]), '3 cards');
+
+        // The rent alone still fits.
+        $state = $this->act($room, $p1, $this->rentPayload('rent_dark_blue_green_1', 'green'))->game_state;
+        $this->assertEquals(3, $state['cards_played_this_turn']);
+    }
+
+    public function test_elbis_x_2_must_be_a_distinct_elbis_x_2_from_your_hand(): void
+    {
+        $room = $this->rentRoom(2, ['rent_dark_blue_green_1', 'action_double_rent_1', 'money_1_1'], [
+            'green' => $this->group(['prop_green_1']),
+        ]);
+        [$p1] = $room->game_state['turn_order'];
+
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_dark_blue_green_1', 'green', [
+            'double_rent_card_ids' => ['action_double_rent_1', 'action_double_rent_1'],
+        ]), 'only be used once');
+
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_dark_blue_green_1', 'green', [
+            'double_rent_card_ids' => ['money_1_1'],
+        ]), 'ELBIS X 2');
+
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_dark_blue_green_1', 'green', [
+            'double_rent_card_ids' => ['action_double_rent_2'],
+        ]), 'not in your hand');
+
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_dark_blue_green_1', 'green', [
+            'double_rent_card_ids' => 'action_double_rent_1',
+        ]), 'Choose which');
+    }
+
+    // --- Who is charged ---------------------------------------------------------
+
+    public function test_a_regular_rent_card_charges_every_opponent(): void
+    {
+        $room = $this->rentRoom(4, ['rent_red_yellow_1'], ['red' => $this->group(['prop_red_1', 'prop_red_2'])]);
+        [$p1, $p2, $p3, $p4] = $room->game_state['turn_order'];
+
+        foreach ([$p2, $p3, $p4] as $target) {
+            $room = $this->equip($room, $target, bank: ['money_10_1']);
+        }
+
+        // Any target_id is ignored: a regular rent card always hits everyone.
+        $state = $this->act($room, $p1, $this->rentPayload('rent_red_yellow_1', 'red', ['target_id' => $p2]))->game_state;
+
+        $this->assertEquals('rent', $state['pending']['kind']);
+        $this->assertEquals('red', $state['pending']['color']);
+        $this->assertEquals(1, $state['pending']['multiplier']);
+        $this->assertCount(3, $state['pending']['charges']);
+        $this->assertArrayNotHasKey($p1, $state['pending']['charges']);
+
+        foreach ([$p2, $p3, $p4] as $target) {
+            $this->assertEquals(3, $state['pending']['charges'][$target]['owed']);
+            $this->assertEquals('paying', $state['pending']['charges'][$target]['phase']);
+        }
+
+        $this->assertContains('rent_red_yellow_1', $state['discard_pile']);
+        $this->assertEquals(1, $state['cards_played_this_turn']);
+    }
+
+    public function test_a_wild_rent_card_charges_only_the_chosen_opponent(): void
+    {
+        $room = $this->rentRoom(3, ['rent_any_1'], ['brown' => $this->group(['prop_brown_1', 'prop_brown_2'])]);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_5_1']);
+        $room = $this->equip($room, $p3, bank: ['money_5_2']);
+
+        $state = $this->act($room, $p1, $this->rentPayload('rent_any_1', 'brown', ['target_id' => $p3]))->game_state;
+
+        $this->assertCount(1, $state['pending']['charges']);
+        $this->assertEquals(2, $state['pending']['charges'][$p3]['owed']);
+    }
+
+    public function test_a_wild_rent_card_needs_a_valid_opponent_as_target(): void
+    {
+        $room = $this->rentRoom(3, ['rent_any_1'], ['brown' => $this->group(['prop_brown_1'])]);
+        [$p1] = $room->game_state['turn_order'];
+
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_any_1', 'brown'), 'another player');
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_any_1', 'brown', ['target_id' => $p1]), 'yourself');
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_any_1', 'brown', ['target_id' => 999999]), 'another player');
+    }
+
+    public function test_a_wild_rent_card_can_charge_any_color_you_own(): void
+    {
+        $room = $this->rentRoom(2, ['rent_any_1'], ['dark_blue' => $this->group(['prop_dark_blue_1', 'prop_dark_blue_2'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_10_1']);
+
+        $state = $this->act($room, $p1, $this->rentPayload('rent_any_1', 'dark_blue', ['target_id' => $p2]))->game_state;
+
+        $this->assertEquals(8, $state['pending']['charges'][$p2]['owed']);
+    }
+
+    // --- Validation -------------------------------------------------------------
+
+    public function test_a_regular_rent_card_only_covers_its_own_two_colors(): void
+    {
+        $room = $this->rentRoom(2, ['rent_red_yellow_1'], ['green' => $this->group(['prop_green_1'])]);
+        [$p1] = $room->game_state['turn_order'];
+
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_red_yellow_1', 'green'), 'one of this card');
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_red_yellow_1', ''), 'one of this card');
+    }
+
+    public function test_you_cannot_charge_rent_on_a_color_you_do_not_own(): void
+    {
+        $room = $this->rentRoom(2, ['rent_red_yellow_1'], ['red' => $this->group(['prop_red_1'])]);
+        [$p1] = $room->game_state['turn_order'];
+
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_red_yellow_1', 'yellow'), 'no properties of that color');
+    }
+
+    public function test_a_set_of_only_el_bob_wildcards_earns_no_rent(): void
+    {
+        $room = $this->rentRoom(2, ['rent_any_1'], ['green' => $this->group(['wild_any_1', 'wild_any_2'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_any_1', 'green', ['target_id' => $p2]), 'EL BOB');
+    }
+
+    public function test_a_color_kept_alive_only_by_a_shisha_earns_no_rent(): void
+    {
+        $room = $this->rentRoom(2, ['rent_dark_blue_green_1'], ['green' => $this->group([], 'action_house_1')]);
+        [$p1] = $room->game_state['turn_order'];
+
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_dark_blue_green_1', 'green'), 'no properties of that color');
+    }
+
+    public function test_rent_rejects_a_card_that_is_not_a_rent_card(): void
+    {
+        $room = $this->rentRoom(2, ['money_1_1'], ['green' => $this->group(['prop_green_1'])]);
+        [$p1] = $room->game_state['turn_order'];
+
+        $this->assertRejected($room, $p1, $this->rentPayload('money_1_1', 'green'), 'ELBIS!');
+    }
+
+    public function test_rent_needs_a_draw_first(): void
+    {
+        $room = $this->rentRoom(2, ['rent_red_yellow_1'], ['red' => $this->group(['prop_red_1'])]);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['has_drawn_this_turn' => false]);
+
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_red_yellow_1', 'red'), 'Draw before playing');
+    }
+
+    public function test_rent_counts_toward_the_three_card_limit(): void
+    {
+        $room = $this->rentRoom(2, ['rent_red_yellow_1'], ['red' => $this->group(['prop_red_1'])]);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['cards_played_this_turn' => 3]);
+
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_red_yellow_1', 'red'), '3 cards');
+    }
+
+    public function test_a_rejected_rent_play_changes_nothing(): void
+    {
+        $room = $this->rentRoom(2, ['rent_dark_blue_green_1', 'action_double_rent_1'], ['green' => $this->group(['prop_green_1'])]);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['cards_played_this_turn' => 2]);
+        $before = $room->game_state;
+
+        $this->assertRejected($room, $p1, $this->rentPayload('rent_dark_blue_green_1', 'green', [
+            'double_rent_card_ids' => ['action_double_rent_1'],
+        ]));
+
+        $this->assertEquals($before, $room->fresh()->game_state);
+    }
+
+    // --- Interrupts and payment on rent ---------------------------------------------
+
+    public function test_a_no_cancels_the_rent_and_wastes_the_doubles(): void
+    {
+        $room = $this->rentRoom(2, ['rent_dark_blue_green_1', 'action_double_rent_1'], [
+            'green' => $this->group(['prop_green_1', 'prop_green_2', 'prop_green_3']),
+        ]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], bank: ['money_10_1']);
+        $room = $this->act($room, $p1, $this->rentPayload('rent_dark_blue_green_1', 'green', [
+            'double_rent_card_ids' => ['action_double_rent_1'],
+        ]));
+
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+        $state = $room->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertEquals(['money_10_1'], $state['banks'][$p2]);
+        $this->assertEquals([], $state['banks'][$p1]);
+        $this->assertContains('action_double_rent_1', $state['discard_pile']);
+    }
+
+    public function test_a_no_only_protects_the_player_who_played_it(): void
+    {
+        $room = $this->rentRoom(3, ['rent_red_yellow_1'], ['red' => $this->group(['prop_red_1', 'prop_red_2'])]);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], bank: ['money_5_1']);
+        $room = $this->equip($room, $p3, bank: ['money_5_2']);
+        $room = $this->act($room, $p1, $this->rentPayload('rent_red_yellow_1', 'red'));
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+        $room = $this->act($room, $p3, ['type' => 'pay', 'card_ids' => ['money_5_2']]);
+        $state = $room->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertEquals(['money_5_1'], $state['banks'][$p2]);
+        $this->assertEquals(['money_5_2'], $state['banks'][$p1]);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_rent_can_be_paid_with_a_mix_of_money_and_property(): void
+    {
+        $room = $this->rentRoom(2, ['rent_red_yellow_1'], [
+            'red' => $this->group(['prop_red_1', 'prop_red_2', 'prop_red_3']),
+        ]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_1_1'], properties: ['brown' => $this->group(['prop_brown_1'])]);
+        $room = $this->act($room, $p1, $this->rentPayload('rent_red_yellow_1', 'red'));
+        $before = $this->allCardIds($room);
+
+        // Full red set = 6M. p2 owns only 2M in total, so pays everything.
+        $this->assertRejected($room, $p2, ['type' => 'pay', 'card_ids' => ['money_1_1']], 'everything you have');
+
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['money_1_1', 'prop_brown_1']]);
+        $state = $room->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertEquals(['money_1_1'], $state['banks'][$p1]);
+        $this->assertEquals(['prop_brown_1'], $state['properties'][$p1]['brown']['cards']);
+        $this->assertEquals([], $state['banks'][$p2]);
+        $this->assertEquals([], $state['properties'][$p2]);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_a_rent_payment_can_give_the_source_a_third_set_and_win(): void
+    {
+        $room = $this->rentRoom(2, ['rent_any_1'], [
+            'red' => $this->group(['prop_red_1', 'prop_red_2', 'prop_red_3']),
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+            'dark_blue' => $this->group(['prop_dark_blue_1']),
+        ]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['dark_blue' => $this->group(['prop_dark_blue_2'])]);
+        $room = $this->act($room, $p1, $this->rentPayload('rent_any_1', 'red', ['target_id' => $p2]));
+
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['prop_dark_blue_2']]);
+
+        $this->assertEquals($p1, $room->game_state['winner']);
+        $this->assertNull($room->game_state['pending']);
+    }
+
+    public function test_the_source_carries_on_after_rent_resolves_and_the_play_count_holds(): void
+    {
+        $room = $this->rentRoom(2, ['rent_red_yellow_1', 'action_double_rent_1', 'money_1_1', 'money_1_2'], [
+            'red' => $this->group(['prop_red_1']),
+        ]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_4_1']);
+        $room = $this->act($room, $p1, $this->rentPayload('rent_red_yellow_1', 'red', [
+            'double_rent_card_ids' => ['action_double_rent_1'],
+        ]));
+
+        // 2M doubled = 4M.
+        $room = $this->act($room, $p2, ['type' => 'pay', 'card_ids' => ['money_4_1']]);
+        $room = $this->act($room, $p1, ['type' => 'play_money', 'card_id' => 'money_1_1']);
+
+        $this->assertEquals(3, $room->game_state['cards_played_this_turn']);
+        $this->assertEquals(['money_4_1', 'money_1_1'], $room->game_state['banks'][$p1]);
+
+        // Rent + ELBIS X 2 + money = 3 plays; a fourth is refused.
+        $this->assertRejected($room, $p1, ['type' => 'play_money', 'card_id' => 'money_1_2'], '3 cards');
+    }
+
+    // ==================================================================
+    // Phase 3, slice 4: KHOD AMA 2OLAK (Sly Deal)
+    // ==================================================================
+
+    /**
+     * A room where the current player (p1) has already drawn and holds
+     * a KHOD AMA 2OLAK plus $sourceHand, with $sourceProperties on the
+     * table. Give the opponents their cards with equip().
+     */
+    protected function slyDealRoom(int $playerCount = 2, array $sourceProperties = [], array $sourceHand = []): Room
+    {
+        return $this->rentRoom($playerCount, array_merge(['action_sly_deal_1'], $sourceHand), $sourceProperties);
+    }
+
+    protected function slyDealPayload(int $targetId, string $takenCardId, array $extra = []): array
+    {
+        return array_merge([
+            'type' => 'play_sly_deal',
+            'card_id' => 'action_sly_deal_1',
+            'target_id' => $targetId,
+            'target_card_id' => $takenCardId,
+        ], $extra);
+    }
+
+    // --- Taking a property --------------------------------------------------------
+
+    public function test_sly_deal_takes_the_chosen_property_when_the_target_cannot_say_no(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1', 'prop_green_2'])]);
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p1, $this->slyDealPayload($p2, 'prop_green_1'));
+        $state = $room->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertEquals(['prop_green_1'], $state['properties'][$p1]['green']['cards']);
+        $this->assertEquals(['prop_green_2'], $state['properties'][$p2]['green']['cards']);
+        $this->assertContains('action_sly_deal_1', $state['discard_pile']);
+        $this->assertNotContains('action_sly_deal_1', $state['hands'][$p1]);
+        $this->assertEquals(1, $state['cards_played_this_turn']);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_sly_deal_adds_to_a_group_the_source_already_has(): void
+    {
+        $room = $this->slyDealRoom(2, ['green' => $this->group(['prop_green_3'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1', 'prop_green_2'])]);
+
+        $state = $this->act($room, $p1, $this->slyDealPayload($p2, 'prop_green_2'))->game_state;
+
+        $this->assertEquals(['prop_green_3', 'prop_green_2'], $state['properties'][$p1]['green']['cards']);
+    }
+
+    public function test_taking_a_groups_last_card_removes_the_empty_group(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['red' => $this->group(['prop_red_1'])]);
+
+        $state = $this->act($room, $p1, $this->slyDealPayload($p2, 'prop_red_1'))->game_state;
+
+        $this->assertArrayNotHasKey('red', $state['properties'][$p2]);
+        $this->assertEquals(['prop_red_1'], $state['properties'][$p1]['red']['cards']);
+    }
+
+    public function test_a_shisha_left_on_a_broken_set_stays_behind_when_its_last_card_is_taken(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'], 'action_house_1')]);
+
+        $state = $this->act($room, $p1, $this->slyDealPayload($p2, 'prop_green_1'))->game_state;
+
+        $this->assertEquals([], $state['properties'][$p2]['green']['cards']);
+        $this->assertEquals('action_house_1', $state['properties'][$p2]['green']['house']);
+    }
+
+    public function test_sly_deal_can_pick_one_of_several_opponents(): void
+    {
+        $room = $this->slyDealRoom(3);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['red' => $this->group(['prop_red_1'])]);
+        $room = $this->equip($room, $p3, properties: ['yellow' => $this->group(['prop_yellow_1'])]);
+
+        $state = $this->act($room, $p1, $this->slyDealPayload($p3, 'prop_yellow_1'))->game_state;
+
+        $this->assertEquals(['prop_yellow_1'], $state['properties'][$p1]['yellow']['cards']);
+        $this->assertEquals(['prop_red_1'], $state['properties'][$p2]['red']['cards']);
+    }
+
+    // --- What cannot be taken ------------------------------------------------------
+
+    public function test_a_property_in_a_complete_set_cannot_be_taken(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['brown' => $this->group(['prop_brown_1', 'prop_brown_2'])]);
+
+        $this->assertRejected($room, $p1, $this->slyDealPayload($p2, 'prop_brown_1'), 'complete set');
+    }
+
+    public function test_a_set_completed_with_a_wildcard_cannot_be_raided_but_a_lone_el_bob_can(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: [
+            'utility' => $this->group(['prop_utility_1', 'wild_any_1']),
+            'green' => $this->group(['wild_any_2']),
+        ]);
+
+        $this->assertRejected($room, $p1, $this->slyDealPayload($p2, 'wild_any_1'), 'complete set');
+
+        // A lone EL BOB never completes anything, so that one can be taken.
+        $state = $this->act($room, $p1, $this->slyDealPayload($p2, 'wild_any_2'))->game_state;
+        $this->assertEquals(['wild_any_2'], $state['properties'][$p1]['green']['cards']);
+    }
+
+    public function test_only_the_targets_own_properties_can_be_taken(): void
+    {
+        $room = $this->slyDealRoom(3, ['red' => $this->group(['prop_red_1'])], ['money_1_1']);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['prop_green_1'], bank: ['money_2_1'], properties: [
+            'green' => $this->group(['prop_green_2', 'prop_green_3'], 'action_house_1'),
+        ]);
+        $room = $this->equip($room, $p3, properties: ['yellow' => $this->group(['prop_yellow_1'])]);
+
+        // Own property, another opponent's property, a hand card, a bank
+        // card, a building, and a made-up id are all refused.
+        foreach (['prop_red_1', 'prop_yellow_1', 'prop_green_1', 'money_2_1', 'action_house_1', 'nonsense', ''] as $cardId) {
+            $this->assertRejected($room, $p1, $this->slyDealPayload($p2, $cardId), 'Choose one of');
+        }
+    }
+
+    public function test_sly_deal_needs_a_valid_opponent(): void
+    {
+        $room = $this->slyDealRoom(2, ['red' => $this->group(['prop_red_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'])]);
+
+        $this->assertRejected($room, $p1, $this->slyDealPayload($p1, 'prop_red_1'), 'yourself');
+        $this->assertRejected($room, $p1, $this->slyDealPayload(999999, 'prop_green_1'), 'another player');
+        $this->assertRejected($room, $p1, ['type' => 'play_sly_deal', 'card_id' => 'action_sly_deal_1', 'target_card_id' => 'prop_green_1'], 'another player');
+    }
+
+    public function test_sly_deal_rejects_a_card_that_is_not_one(): void
+    {
+        $room = $this->slyDealRoom(2, [], ['money_1_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'])]);
+
+        $this->assertRejected($room, $p1, $this->slyDealPayload($p2, 'prop_green_1', ['card_id' => 'money_1_1']), 'KHOD AMA 2OLAK');
+    }
+
+    public function test_sly_deal_needs_a_draw_first(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'])]);
+        $room = $this->setState($room, ['has_drawn_this_turn' => false]);
+
+        $this->assertRejected($room, $p1, $this->slyDealPayload($p2, 'prop_green_1'), 'Draw before playing');
+    }
+
+    public function test_sly_deal_counts_toward_the_three_card_limit(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'])]);
+        $room = $this->setState($room, ['cards_played_this_turn' => 3]);
+
+        $this->assertRejected($room, $p1, $this->slyDealPayload($p2, 'prop_green_1'), '3 cards');
+    }
+
+    // --- Wildcards ------------------------------------------------------------------
+
+    public function test_a_stolen_wildcard_keeps_its_current_color_by_default(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['wild_dark_blue_green_1'])]);
+
+        $state = $this->act($room, $p1, $this->slyDealPayload($p2, 'wild_dark_blue_green_1'))->game_state;
+
+        $this->assertEquals(['wild_dark_blue_green_1'], $state['properties'][$p1]['green']['cards']);
+    }
+
+    public function test_a_stolen_wildcard_can_be_placed_under_another_of_its_colors(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['wild_dark_blue_green_1'])]);
+
+        $state = $this->act($room, $p1, $this->slyDealPayload($p2, 'wild_dark_blue_green_1', ['color' => 'dark_blue']))->game_state;
+
+        $this->assertEquals(['wild_dark_blue_green_1'], $state['properties'][$p1]['dark_blue']['cards']);
+        $this->assertArrayNotHasKey('green', $state['properties'][$p1]);
+    }
+
+    public function test_a_stolen_el_bob_can_be_placed_under_any_color(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['wild_any_1'])]);
+
+        $state = $this->act($room, $p1, $this->slyDealPayload($p2, 'wild_any_1', ['color' => 'railroad']))->game_state;
+
+        $this->assertEquals(['wild_any_1'], $state['properties'][$p1]['railroad']['cards']);
+    }
+
+    public function test_a_stolen_wildcard_cannot_be_placed_under_a_color_it_does_not_have(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['wild_dark_blue_green_1'])]);
+
+        $this->assertRejected($room, $p1, $this->slyDealPayload($p2, 'wild_dark_blue_green_1', ['color' => 'red']), 'valid colors');
+    }
+
+    public function test_a_plain_property_always_goes_under_its_own_color(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'])]);
+
+        $state = $this->act($room, $p1, $this->slyDealPayload($p2, 'prop_green_1', ['color' => 'red']))->game_state;
+
+        $this->assertEquals(['prop_green_1'], $state['properties'][$p1]['green']['cards']);
+        $this->assertArrayNotHasKey('red', $state['properties'][$p1]);
+    }
+
+    // --- Just Say No ------------------------------------------------------------------
+
+    public function test_the_target_holding_a_no_gets_a_window_before_anything_moves(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], properties: ['green' => $this->group(['prop_green_1'])]);
+
+        $room = $this->act($room, $p1, $this->slyDealPayload($p2, 'prop_green_1'));
+        $state = $room->game_state;
+
+        $this->assertEquals('sly_deal', $state['pending']['kind']);
+        $this->assertEquals('prop_green_1', $state['pending']['target_card_id']);
+        $this->assertEquals('responding', $state['pending']['charges'][$p2]['phase']);
+        $this->assertEquals(['prop_green_1'], $state['properties'][$p2]['green']['cards']);
+        $this->assertArrayNotHasKey('green', $state['properties'][$p1]);
+        $this->assertRejected($room, $p1, ['type' => 'end_turn'], 'Waiting');
+    }
+
+    public function test_a_no_saves_the_property(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], properties: ['green' => $this->group(['prop_green_1'])]);
+        $room = $this->act($room, $p1, $this->slyDealPayload($p2, 'prop_green_1'));
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+        $state = $room->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertEquals(['prop_green_1'], $state['properties'][$p2]['green']['cards']);
+        $this->assertContains('action_sly_deal_1', $state['discard_pile']);
+        $this->assertContains('action_just_say_no_1', $state['discard_pile']);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_the_source_can_counter_a_no_and_still_take_the_property(): void
+    {
+        $room = $this->slyDealRoom(2, [], ['action_just_say_no_2']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], properties: ['green' => $this->group(['prop_green_1'])]);
+        $room = $this->act($room, $p1, $this->slyDealPayload($p2, 'prop_green_1'));
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p1, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_2', 'target_id' => $p2]);
+        $state = $room->game_state;
+
+        // The target holds no further No, so the steal now goes through.
+        $this->assertNull($state['pending']);
+        $this->assertEquals(['prop_green_1'], $state['properties'][$p1]['green']['cards']);
+        $this->assertArrayNotHasKey('green', $state['properties'][$p2]);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_the_target_declining_the_no_window_lets_the_steal_through(): void
+    {
+        $room = $this->slyDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], properties: ['green' => $this->group(['prop_green_1'])]);
+        $room = $this->act($room, $p1, $this->slyDealPayload($p2, 'prop_green_1'));
+
+        $room = $this->act($room, $p2, ['type' => 'decline']);
+
+        $this->assertNull($room->game_state['pending']);
+        $this->assertEquals(['prop_green_1'], $room->game_state['properties'][$p1]['green']['cards']);
+        $this->assertContains('action_just_say_no_1', $room->game_state['hands'][$p2]);
+    }
+
+    // --- Winning and carrying on ---------------------------------------------------------
+
+    public function test_taking_the_last_property_of_a_third_set_wins_the_game(): void
+    {
+        $room = $this->slyDealRoom(2, [
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+            'utility' => $this->group(['prop_utility_1', 'prop_utility_2']),
+            'dark_blue' => $this->group(['prop_dark_blue_1']),
+        ]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['dark_blue' => $this->group(['prop_dark_blue_2'])]);
+
+        $room = $this->act($room, $p1, $this->slyDealPayload($p2, 'prop_dark_blue_2'));
+
+        $this->assertEquals($p1, $room->game_state['winner']);
+        $this->assertNull($room->game_state['pending']);
+    }
+
+    public function test_a_win_after_a_countered_no_also_ends_the_game(): void
+    {
+        $room = $this->slyDealRoom(2, [
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+            'utility' => $this->group(['prop_utility_1', 'prop_utility_2']),
+            'dark_blue' => $this->group(['prop_dark_blue_1']),
+        ], ['action_just_say_no_2']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], properties: ['dark_blue' => $this->group(['prop_dark_blue_2'])]);
+        $room = $this->act($room, $p1, $this->slyDealPayload($p2, 'prop_dark_blue_2'));
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+
+        $room = $this->act($room, $p1, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_2', 'target_id' => $p2]);
+
+        $this->assertEquals($p1, $room->game_state['winner']);
+        $this->assertNull($room->game_state['pending']);
+    }
+
+    public function test_the_source_carries_on_after_a_sly_deal(): void
+    {
+        $room = $this->slyDealRoom(2, [], ['money_1_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'])]);
+        $room = $this->act($room, $p1, $this->slyDealPayload($p2, 'prop_green_1'));
+
+        $room = $this->act($room, $p1, ['type' => 'play_money', 'card_id' => 'money_1_1']);
+        $room = $this->act($room, $p1, ['type' => 'end_turn']);
+
+        $this->assertEquals($p2, $room->game_state['current_player_id']);
+    }
+
+    // ==================================================================
+    // Phase 3, slice 5: MA.. TEEGY WANA AGY! (Forced Deal)
+    // ==================================================================
+
+    /**
+     * A room where the current player (p1) has already drawn and holds
+     * a MA.. TEEGY WANA AGY! plus $sourceHand, with $sourceProperties on
+     * the table. Give the opponents their cards with equip().
+     */
+    protected function forcedDealRoom(int $playerCount = 2, array $sourceProperties = [], array $sourceHand = []): Room
+    {
+        return $this->rentRoom($playerCount, array_merge(['action_forced_deal_1'], $sourceHand), $sourceProperties);
+    }
+
+    protected function forcedDealPayload(int $targetId, string $takenCardId, string $givenCardId, array $extra = []): array
+    {
+        return array_merge([
+            'type' => 'play_forced_deal',
+            'card_id' => 'action_forced_deal_1',
+            'target_id' => $targetId,
+            'target_card_id' => $takenCardId,
+            'give_card_id' => $givenCardId,
+        ], $extra);
+    }
+
+    // --- The swap -----------------------------------------------------------------
+
+    public function test_forced_deal_swaps_the_two_properties_when_the_target_cannot_say_no(): void
+    {
+        $room = $this->forcedDealRoom(2, ['red' => $this->group(['prop_red_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1', 'prop_green_2'])]);
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', 'prop_red_1'));
+        $state = $room->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertEquals(['prop_green_1'], $state['properties'][$p1]['green']['cards']);
+        $this->assertArrayNotHasKey('red', $state['properties'][$p1]);
+        $this->assertEquals(['prop_green_2'], $state['properties'][$p2]['green']['cards']);
+        $this->assertEquals(['prop_red_1'], $state['properties'][$p2]['red']['cards']);
+        $this->assertContains('action_forced_deal_1', $state['discard_pile']);
+        $this->assertNotContains('action_forced_deal_1', $state['hands'][$p1]);
+        $this->assertEquals(1, $state['cards_played_this_turn']);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_a_swap_between_two_groups_of_the_same_color_works(): void
+    {
+        $room = $this->forcedDealRoom(2, ['green' => $this->group(['prop_green_3'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1', 'prop_green_2'])]);
+
+        $state = $this->act($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', 'prop_green_3'))->game_state;
+
+        $this->assertEquals(['prop_green_1'], $state['properties'][$p1]['green']['cards']);
+        $this->assertEqualsCanonicalizing(['prop_green_2', 'prop_green_3'], $state['properties'][$p2]['green']['cards']);
+    }
+
+    public function test_a_swap_can_pick_one_of_several_opponents(): void
+    {
+        $room = $this->forcedDealRoom(3, ['red' => $this->group(['prop_red_1'])]);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['yellow' => $this->group(['prop_yellow_1'])]);
+        $room = $this->equip($room, $p3, properties: ['pink' => $this->group(['prop_pink_1'])]);
+
+        $state = $this->act($room, $p1, $this->forcedDealPayload($p3, 'prop_pink_1', 'prop_red_1'))->game_state;
+
+        $this->assertEquals(['prop_pink_1'], $state['properties'][$p1]['pink']['cards']);
+        $this->assertEquals(['prop_red_1'], $state['properties'][$p3]['red']['cards']);
+        $this->assertEquals(['prop_yellow_1'], $state['properties'][$p2]['yellow']['cards']);
+    }
+
+    // --- What cannot be swapped ------------------------------------------------------
+
+    public function test_the_card_you_want_cannot_come_from_a_complete_set(): void
+    {
+        $room = $this->forcedDealRoom(2, ['red' => $this->group(['prop_red_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['brown' => $this->group(['prop_brown_1', 'prop_brown_2'])]);
+
+        $this->assertRejected($room, $p1, $this->forcedDealPayload($p2, 'prop_brown_1', 'prop_red_1'), 'take a property from a complete set');
+    }
+
+    public function test_the_card_you_give_cannot_come_from_your_own_complete_set(): void
+    {
+        $room = $this->forcedDealRoom(2, ['brown' => $this->group(['prop_brown_1', 'prop_brown_2'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'])]);
+
+        $this->assertRejected($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', 'prop_brown_1'), 'give up a property from a complete set');
+    }
+
+    public function test_the_card_you_give_must_be_one_of_your_own_properties(): void
+    {
+        $room = $this->forcedDealRoom(3, ['red' => $this->group(['prop_red_1'], 'action_house_1')], ['prop_yellow_1']);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, bank: ['money_1_1'], properties: ['green' => $this->group(['prop_green_1'])]);
+        $room = $this->equip($room, $p3, properties: ['pink' => $this->group(['prop_pink_1'])]);
+
+        // A hand card, the target's own card, another player's card, a
+        // building, and a made-up id are all refused (the SHISHA sits on
+        // p1's red set but is not one of their property cards).
+        foreach (['prop_yellow_1', 'prop_green_1', 'prop_pink_1', 'action_house_1', 'nonsense', ''] as $givenCardId) {
+            $this->assertRejected($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', $givenCardId), 'your own properties');
+        }
+    }
+
+    public function test_forced_deal_needs_you_to_own_a_property_to_give(): void
+    {
+        $room = $this->forcedDealRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'])]);
+
+        $this->assertRejected($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', 'prop_red_1'), 'your own properties');
+    }
+
+    public function test_the_card_you_want_must_be_one_of_the_targets_properties(): void
+    {
+        $room = $this->forcedDealRoom(3, ['red' => $this->group(['prop_red_1'])]);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['prop_green_1'], bank: ['money_2_1'], properties: [
+            'green' => $this->group(['prop_green_2', 'prop_green_3'], 'action_house_1'),
+        ]);
+        $room = $this->equip($room, $p3, properties: ['yellow' => $this->group(['prop_yellow_1'])]);
+
+        foreach (['prop_red_1', 'prop_yellow_1', 'prop_green_1', 'money_2_1', 'action_house_1', 'nonsense', ''] as $takenCardId) {
+            $this->assertRejected($room, $p1, $this->forcedDealPayload($p2, $takenCardId, 'prop_red_1'), 'Choose one of');
+        }
+    }
+
+    public function test_forced_deal_needs_a_valid_opponent(): void
+    {
+        $room = $this->forcedDealRoom(2, ['red' => $this->group(['prop_red_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'])]);
+
+        $this->assertRejected($room, $p1, $this->forcedDealPayload($p1, 'prop_red_1', 'prop_red_1'), 'yourself');
+        $this->assertRejected($room, $p1, $this->forcedDealPayload(999999, 'prop_green_1', 'prop_red_1'), 'another player');
+    }
+
+    public function test_forced_deal_rejects_a_card_that_is_not_one(): void
+    {
+        $room = $this->forcedDealRoom(2, ['red' => $this->group(['prop_red_1'])], ['money_1_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'])]);
+
+        $this->assertRejected($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', 'prop_red_1', ['card_id' => 'money_1_1']), 'MA.. TEEGY WANA AGY!');
+    }
+
+    public function test_forced_deal_needs_a_draw_first(): void
+    {
+        $room = $this->forcedDealRoom(2, ['red' => $this->group(['prop_red_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'])]);
+        $room = $this->setState($room, ['has_drawn_this_turn' => false]);
+
+        $this->assertRejected($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', 'prop_red_1'), 'Draw before playing');
+    }
+
+    public function test_forced_deal_counts_toward_the_three_card_limit(): void
+    {
+        $room = $this->forcedDealRoom(2, ['red' => $this->group(['prop_red_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'])]);
+        $room = $this->setState($room, ['cards_played_this_turn' => 3]);
+
+        $this->assertRejected($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', 'prop_red_1'), '3 cards');
+    }
+
+    // --- Wildcards ------------------------------------------------------------------------
+
+    public function test_a_wildcard_you_receive_keeps_its_color_by_default_or_goes_where_you_choose(): void
+    {
+        $room = $this->forcedDealRoom(2, ['red' => $this->group(['prop_red_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['wild_dark_blue_green_1'])]);
+
+        $this->assertRejected($room, $p1, $this->forcedDealPayload($p2, 'wild_dark_blue_green_1', 'prop_red_1', ['color' => 'red']), 'valid colors');
+
+        $state = $this->act($room, $p1, $this->forcedDealPayload($p2, 'wild_dark_blue_green_1', 'prop_red_1', ['color' => 'dark_blue']))->game_state;
+
+        $this->assertEquals(['wild_dark_blue_green_1'], $state['properties'][$p1]['dark_blue']['cards']);
+    }
+
+    public function test_a_wildcard_you_give_keeps_the_color_it_was_sitting_in(): void
+    {
+        $room = $this->forcedDealRoom(2, ['dark_blue' => $this->group(['wild_dark_blue_green_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['red' => $this->group(['prop_red_1'])]);
+
+        $state = $this->act($room, $p1, $this->forcedDealPayload($p2, 'prop_red_1', 'wild_dark_blue_green_1'))->game_state;
+
+        $this->assertEquals(['wild_dark_blue_green_1'], $state['properties'][$p2]['dark_blue']['cards']);
+        $this->assertEquals(['prop_red_1'], $state['properties'][$p1]['red']['cards']);
+    }
+
+    // --- Just Say No ------------------------------------------------------------------------
+
+    public function test_the_target_holding_a_no_gets_a_window_before_anything_is_swapped(): void
+    {
+        $room = $this->forcedDealRoom(2, ['red' => $this->group(['prop_red_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], properties: ['green' => $this->group(['prop_green_1'])]);
+
+        $room = $this->act($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', 'prop_red_1'));
+        $state = $room->game_state;
+
+        $this->assertEquals('forced_deal', $state['pending']['kind']);
+        $this->assertEquals('prop_green_1', $state['pending']['target_card_id']);
+        $this->assertEquals('prop_red_1', $state['pending']['give_card_id']);
+        $this->assertEquals('responding', $state['pending']['charges'][$p2]['phase']);
+        $this->assertEquals(['prop_red_1'], $state['properties'][$p1]['red']['cards']);
+        $this->assertEquals(['prop_green_1'], $state['properties'][$p2]['green']['cards']);
+        $this->assertRejected($room, $p1, ['type' => 'end_turn'], 'Waiting');
+    }
+
+    public function test_a_no_stops_the_swap(): void
+    {
+        $room = $this->forcedDealRoom(2, ['red' => $this->group(['prop_red_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], properties: ['green' => $this->group(['prop_green_1'])]);
+        $room = $this->act($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', 'prop_red_1'));
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+        $state = $room->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertEquals(['prop_red_1'], $state['properties'][$p1]['red']['cards']);
+        $this->assertEquals(['prop_green_1'], $state['properties'][$p2]['green']['cards']);
+        $this->assertContains('action_forced_deal_1', $state['discard_pile']);
+        $this->assertContains('action_just_say_no_1', $state['discard_pile']);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_the_source_can_counter_a_no_and_the_swap_still_happens(): void
+    {
+        $room = $this->forcedDealRoom(2, ['red' => $this->group(['prop_red_1'])], ['action_just_say_no_2']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], properties: ['green' => $this->group(['prop_green_1'])]);
+        $room = $this->act($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', 'prop_red_1'));
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p1, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_2', 'target_id' => $p2]);
+        $state = $room->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertEquals(['prop_green_1'], $state['properties'][$p1]['green']['cards']);
+        $this->assertEquals(['prop_red_1'], $state['properties'][$p2]['red']['cards']);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_the_target_declining_the_no_window_lets_the_swap_through(): void
+    {
+        $room = $this->forcedDealRoom(2, ['red' => $this->group(['prop_red_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], properties: ['green' => $this->group(['prop_green_1'])]);
+        $room = $this->act($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', 'prop_red_1'));
+
+        $room = $this->act($room, $p2, ['type' => 'decline']);
+
+        $this->assertNull($room->game_state['pending']);
+        $this->assertEquals(['prop_green_1'], $room->game_state['properties'][$p1]['green']['cards']);
+        $this->assertEquals(['prop_red_1'], $room->game_state['properties'][$p2]['red']['cards']);
+    }
+
+    // --- Winning -------------------------------------------------------------------------------
+
+    public function test_a_swap_that_completes_the_sources_third_set_wins(): void
+    {
+        $room = $this->forcedDealRoom(2, [
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+            'utility' => $this->group(['prop_utility_1', 'prop_utility_2']),
+            'dark_blue' => $this->group(['prop_dark_blue_1']),
+            'red' => $this->group(['prop_red_1']),
+        ]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['dark_blue' => $this->group(['prop_dark_blue_2'])]);
+
+        $room = $this->act($room, $p1, $this->forcedDealPayload($p2, 'prop_dark_blue_2', 'prop_red_1'));
+
+        $this->assertEquals($p1, $room->game_state['winner']);
+        $this->assertNull($room->game_state['pending']);
+    }
+
+    public function test_a_swap_that_completes_only_the_targets_third_set_makes_the_target_win(): void
+    {
+        $room = $this->forcedDealRoom(2, [
+            'dark_blue' => $this->group(['prop_dark_blue_1']),
+        ]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: [
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+            'utility' => $this->group(['prop_utility_1', 'prop_utility_2']),
+            'dark_blue' => $this->group(['prop_dark_blue_2']),
+            'red' => $this->group(['prop_red_1']),
+        ]);
+
+        // p1 takes p2's red card and hands over the dark blue that completes p2's set.
+        $room = $this->act($room, $p1, $this->forcedDealPayload($p2, 'prop_red_1', 'prop_dark_blue_1'));
+
+        $this->assertEquals($p2, $room->game_state['winner']);
+        $this->assertNull($room->game_state['pending']);
+    }
+
+    public function test_when_both_sides_finish_a_third_set_the_player_whose_turn_it_is_wins(): void
+    {
+        $room = $this->forcedDealRoom(2, [
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+            'utility' => $this->group(['prop_utility_1', 'prop_utility_2']),
+            'green' => $this->group(['prop_green_1', 'prop_green_2']),
+            'red' => $this->group(['prop_red_1']),
+        ]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: [
+            'yellow' => $this->group(['prop_yellow_1', 'prop_yellow_2', 'prop_yellow_3']),
+            'pink' => $this->group(['prop_pink_1', 'prop_pink_2', 'prop_pink_3']),
+            'red' => $this->group(['prop_red_2', 'prop_red_3']),
+            'green' => $this->group(['prop_green_3']),
+        ]);
+
+        // p1 completes green with p2's green; p2 completes red with p1's red.
+        $room = $this->act($room, $p1, $this->forcedDealPayload($p2, 'prop_green_3', 'prop_red_1'));
+
+        $this->assertEquals($p1, $room->game_state['winner']);
+        $this->assertNull($room->game_state['pending']);
+    }
+
+    public function test_the_source_carries_on_after_a_forced_deal(): void
+    {
+        $room = $this->forcedDealRoom(2, ['red' => $this->group(['prop_red_1'])], ['money_1_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'])]);
+        $room = $this->act($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', 'prop_red_1'));
+
+        $room = $this->act($room, $p1, ['type' => 'play_money', 'card_id' => 'money_1_1']);
+        $room = $this->act($room, $p1, ['type' => 'end_turn']);
+
+        $this->assertEquals($p2, $room->game_state['current_player_id']);
+    }
+
+    // ==================================================================
+    // Phase 3, slice 6: HAT wa lamo2akhza EL SHORT! (Deal Breaker)
+    // ==================================================================
+
+    /**
+     * A room where the current player (p1) has already drawn and holds
+     * a HAT wa lamo2akhza EL SHORT! plus $sourceHand, with
+     * $sourceProperties on the table. Give the opponents their cards
+     * with equip().
+     */
+    protected function dealBreakerRoom(int $playerCount = 2, array $sourceProperties = [], array $sourceHand = []): Room
+    {
+        return $this->rentRoom($playerCount, array_merge(['action_deal_breaker_1'], $sourceHand), $sourceProperties);
+    }
+
+    protected function dealBreakerPayload(int $targetId, string $color, array $extra = []): array
+    {
+        return array_merge([
+            'type' => 'play_deal_breaker',
+            'card_id' => 'action_deal_breaker_1',
+            'target_id' => $targetId,
+            'target_color' => $color,
+        ], $extra);
+    }
+
+    // --- Taking a set ----------------------------------------------------------------
+
+    public function test_deal_breaker_takes_a_whole_complete_set_when_the_target_cannot_say_no(): void
+    {
+        $room = $this->dealBreakerRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: [
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+            'red' => $this->group(['prop_red_1']),
+        ]);
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p1, $this->dealBreakerPayload($p2, 'brown'));
+        $state = $room->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertEquals(['prop_brown_1', 'prop_brown_2'], $state['properties'][$p1]['brown']['cards']);
+        $this->assertArrayNotHasKey('brown', $state['properties'][$p2]);
+        // Their other properties are untouched.
+        $this->assertEquals(['prop_red_1'], $state['properties'][$p2]['red']['cards']);
+        $this->assertContains('action_deal_breaker_1', $state['discard_pile']);
+        $this->assertNotContains('action_deal_breaker_1', $state['hands'][$p1]);
+        $this->assertEquals(1, $state['cards_played_this_turn']);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_the_shisha_and_wil3a_come_with_the_set(): void
+    {
+        $room = $this->dealBreakerRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: [
+            'green' => $this->group(['prop_green_1', 'prop_green_2', 'prop_green_3'], 'action_house_1', 'action_hotel_1'),
+        ]);
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p1, $this->dealBreakerPayload($p2, 'green'));
+        $group = $room->game_state['properties'][$p1]['green'];
+
+        $this->assertEquals(['prop_green_1', 'prop_green_2', 'prop_green_3'], $group['cards']);
+        $this->assertEquals('action_house_1', $group['house']);
+        $this->assertEquals('action_hotel_1', $group['hotel']);
+        $this->assertArrayNotHasKey('green', $room->game_state['properties'][$p2]);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_wildcards_in_the_set_move_with_it(): void
+    {
+        $room = $this->dealBreakerRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['utility' => $this->group(['prop_utility_1', 'wild_any_1'])]);
+
+        $state = $this->act($room, $p1, $this->dealBreakerPayload($p2, 'utility'))->game_state;
+
+        $this->assertEquals(['prop_utility_1', 'wild_any_1'], $state['properties'][$p1]['utility']['cards']);
+    }
+
+    public function test_deal_breaker_can_pick_one_of_several_opponents(): void
+    {
+        $room = $this->dealBreakerRoom(3);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['brown' => $this->group(['prop_brown_1', 'prop_brown_2'])]);
+        $room = $this->equip($room, $p3, properties: ['utility' => $this->group(['prop_utility_1', 'prop_utility_2'])]);
+
+        $state = $this->act($room, $p1, $this->dealBreakerPayload($p3, 'utility'))->game_state;
+
+        $this->assertArrayHasKey('utility', $state['properties'][$p1]);
+        $this->assertArrayHasKey('brown', $state['properties'][$p2]);
+    }
+
+    // --- Merging with a color you already have -------------------------------------------
+
+    public function test_a_taken_set_merges_into_a_group_of_the_same_color_you_already_have(): void
+    {
+        $room = $this->dealBreakerRoom(2, ['green' => $this->group(['prop_green_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: [
+            'green' => $this->group(['prop_green_2', 'prop_green_3', 'wild_dark_blue_green_1'], 'action_house_1'),
+        ]);
+
+        $group = $this->act($room, $p1, $this->dealBreakerPayload($p2, 'green'))->game_state['properties'][$p1]['green'];
+
+        $this->assertEquals(['prop_green_1', 'prop_green_2', 'prop_green_3', 'wild_dark_blue_green_1'], $group['cards']);
+        $this->assertEquals('action_house_1', $group['house']);
+        $this->assertNull($group['hotel']);
+    }
+
+    public function test_a_building_that_has_no_free_slot_after_a_merge_goes_to_the_sources_bank(): void
+    {
+        $room = $this->dealBreakerRoom(2, [
+            'green' => $this->group(['prop_green_1', 'prop_green_2', 'prop_green_3'], 'action_house_1'),
+        ]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: [
+            'green' => $this->group(['wild_dark_blue_green_1', 'wild_green_railroad_1', 'wild_any_1'], 'action_house_2', 'action_hotel_1'),
+        ]);
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p1, $this->dealBreakerPayload($p2, 'green'));
+        $state = $room->game_state;
+        $group = $state['properties'][$p1]['green'];
+
+        // Their SHISHA has nowhere to sit (mine is already there), so it is
+        // banked; their WIL3A fills the free slot.
+        $this->assertCount(6, $group['cards']);
+        $this->assertEquals('action_house_1', $group['house']);
+        $this->assertEquals('action_hotel_1', $group['hotel']);
+        $this->assertContains('action_house_2', $state['banks'][$p1]);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    // --- What cannot be taken ----------------------------------------------------------------
+
+    public function test_an_incomplete_set_cannot_be_taken(): void
+    {
+        $room = $this->dealBreakerRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1', 'prop_green_2'])]);
+
+        $this->assertRejected($room, $p1, $this->dealBreakerPayload($p2, 'green'), 'complete sets');
+    }
+
+    public function test_a_set_of_only_el_bob_wildcards_is_not_a_complete_set(): void
+    {
+        $room = $this->dealBreakerRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['utility' => $this->group(['wild_any_1', 'wild_any_2'])]);
+
+        $this->assertRejected($room, $p1, $this->dealBreakerPayload($p2, 'utility'), 'complete sets');
+    }
+
+    public function test_a_color_the_target_does_not_have_or_a_bad_color_is_rejected(): void
+    {
+        $room = $this->dealBreakerRoom(2, ['brown' => $this->group(['prop_brown_1', 'prop_brown_2'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['utility' => $this->group(['prop_utility_1', 'prop_utility_2'])]);
+
+        // My own complete set, a color nobody has, and junk are all refused.
+        foreach (['brown', 'red', 'nonsense', ''] as $color) {
+            $this->assertRejected($room, $p1, $this->dealBreakerPayload($p2, $color), 'complete sets');
+        }
+
+        $this->assertRejected($room, $p1, ['type' => 'play_deal_breaker', 'card_id' => 'action_deal_breaker_1', 'target_id' => $p2], 'complete sets');
+    }
+
+    public function test_deal_breaker_needs_a_valid_opponent(): void
+    {
+        $room = $this->dealBreakerRoom(2, ['brown' => $this->group(['prop_brown_1', 'prop_brown_2'])]);
+        [$p1] = $room->game_state['turn_order'];
+
+        $this->assertRejected($room, $p1, $this->dealBreakerPayload($p1, 'brown'), 'yourself');
+        $this->assertRejected($room, $p1, $this->dealBreakerPayload(999999, 'brown'), 'another player');
+    }
+
+    public function test_deal_breaker_rejects_a_card_that_is_not_one(): void
+    {
+        $room = $this->dealBreakerRoom(2, [], ['money_1_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['brown' => $this->group(['prop_brown_1', 'prop_brown_2'])]);
+
+        $this->assertRejected($room, $p1, $this->dealBreakerPayload($p2, 'brown', ['card_id' => 'money_1_1']), 'HAT wa lamo2akhza EL SHORT!');
+    }
+
+    public function test_deal_breaker_needs_a_draw_first(): void
+    {
+        $room = $this->dealBreakerRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['brown' => $this->group(['prop_brown_1', 'prop_brown_2'])]);
+        $room = $this->setState($room, ['has_drawn_this_turn' => false]);
+
+        $this->assertRejected($room, $p1, $this->dealBreakerPayload($p2, 'brown'), 'Draw before playing');
+    }
+
+    public function test_deal_breaker_counts_toward_the_three_card_limit(): void
+    {
+        $room = $this->dealBreakerRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['brown' => $this->group(['prop_brown_1', 'prop_brown_2'])]);
+        $room = $this->setState($room, ['cards_played_this_turn' => 3]);
+
+        $this->assertRejected($room, $p1, $this->dealBreakerPayload($p2, 'brown'), '3 cards');
+    }
+
+    // --- Just Say No ---------------------------------------------------------------------------
+
+    public function test_the_target_holding_a_no_gets_a_window_before_the_set_moves(): void
+    {
+        $room = $this->dealBreakerRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], properties: [
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+        ]);
+
+        $room = $this->act($room, $p1, $this->dealBreakerPayload($p2, 'brown'));
+        $state = $room->game_state;
+
+        $this->assertEquals('deal_breaker', $state['pending']['kind']);
+        $this->assertEquals('brown', $state['pending']['color']);
+        $this->assertEquals('responding', $state['pending']['charges'][$p2]['phase']);
+        $this->assertArrayHasKey('brown', $state['properties'][$p2]);
+        $this->assertArrayNotHasKey('brown', $state['properties'][$p1]);
+        $this->assertRejected($room, $p1, ['type' => 'end_turn'], 'Waiting');
+    }
+
+    public function test_a_no_saves_the_set(): void
+    {
+        $room = $this->dealBreakerRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], properties: [
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+        ]);
+        $room = $this->act($room, $p1, $this->dealBreakerPayload($p2, 'brown'));
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+        $state = $room->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertEquals(['prop_brown_1', 'prop_brown_2'], $state['properties'][$p2]['brown']['cards']);
+        $this->assertContains('action_deal_breaker_1', $state['discard_pile']);
+        $this->assertContains('action_just_say_no_1', $state['discard_pile']);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_the_source_can_counter_a_no_and_still_take_the_set(): void
+    {
+        $room = $this->dealBreakerRoom(2, [], ['action_just_say_no_2']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], properties: [
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+        ]);
+        $room = $this->act($room, $p1, $this->dealBreakerPayload($p2, 'brown'));
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p1, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_2', 'target_id' => $p2]);
+        $state = $room->game_state;
+
+        $this->assertNull($state['pending']);
+        $this->assertEquals(['prop_brown_1', 'prop_brown_2'], $state['properties'][$p1]['brown']['cards']);
+        $this->assertArrayNotHasKey('brown', $state['properties'][$p2]);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_the_target_declining_the_no_window_lets_the_set_go(): void
+    {
+        $room = $this->dealBreakerRoom();
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], properties: [
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+        ]);
+        $room = $this->act($room, $p1, $this->dealBreakerPayload($p2, 'brown'));
+
+        $room = $this->act($room, $p2, ['type' => 'decline']);
+
+        $this->assertNull($room->game_state['pending']);
+        $this->assertArrayHasKey('brown', $room->game_state['properties'][$p1]);
+        $this->assertContains('action_just_say_no_1', $room->game_state['hands'][$p2]);
+    }
+
+    // --- Winning and carrying on ------------------------------------------------------------------
+
+    public function test_taking_a_set_that_makes_a_third_wins_the_game(): void
+    {
+        $room = $this->dealBreakerRoom(2, [
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+            'utility' => $this->group(['prop_utility_1', 'prop_utility_2']),
+        ]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['dark_blue' => $this->group(['prop_dark_blue_1', 'prop_dark_blue_2'])]);
+
+        $room = $this->act($room, $p1, $this->dealBreakerPayload($p2, 'dark_blue'));
+
+        $this->assertEquals($p1, $room->game_state['winner']);
+        $this->assertNull($room->game_state['pending']);
+    }
+
+    public function test_a_set_win_after_a_countered_no_also_ends_the_game(): void
+    {
+        $room = $this->dealBreakerRoom(2, [
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+            'utility' => $this->group(['prop_utility_1', 'prop_utility_2']),
+        ], ['action_just_say_no_2']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], properties: [
+            'dark_blue' => $this->group(['prop_dark_blue_1', 'prop_dark_blue_2']),
+        ]);
+        $room = $this->act($room, $p1, $this->dealBreakerPayload($p2, 'dark_blue'));
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+
+        $room = $this->act($room, $p1, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_2', 'target_id' => $p2]);
+
+        $this->assertEquals($p1, $room->game_state['winner']);
+        $this->assertNull($room->game_state['pending']);
+    }
+
+    public function test_the_source_carries_on_after_a_deal_breaker(): void
+    {
+        $room = $this->dealBreakerRoom(2, [], ['money_1_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, properties: ['brown' => $this->group(['prop_brown_1', 'prop_brown_2'])]);
+        $room = $this->act($room, $p1, $this->dealBreakerPayload($p2, 'brown'));
+
+        $room = $this->act($room, $p1, ['type' => 'play_money', 'card_id' => 'money_1_1']);
+        $room = $this->act($room, $p1, ['type' => 'end_turn']);
+
+        $this->assertEquals($p2, $room->game_state['current_player_id']);
     }
 }
