@@ -41,6 +41,10 @@ use App\Models\User;
  * complete set, buildings and all, from an opponent. That completes
  * the Phase 3 card list.
  *
+ * `move_wildcard` (official rule: on your turn, rearrange a wildcard
+ * between your own sets for free) is a small addition on top: it is
+ * not a card play, so it never counts toward the 3-per-turn limit.
+ *
  * Pending actions
  * ---------------
  * A card that targets other players does not resolve on the spot. It
@@ -233,10 +237,87 @@ class MasrawyDealGame extends AbstractGame
             'play_sly_deal' => $this->handlePlaySlyDeal($state, $user, $payload),
             'play_forced_deal' => $this->handlePlayForcedDeal($state, $user, $payload),
             'play_deal_breaker' => $this->handlePlayDealBreaker($state, $user, $payload),
+            'move_wildcard' => $this->handleMoveWildcard($state, $user, $payload),
             'discard' => $this->handleDiscard($state, $user, $payload),
             'end_turn' => $this->handleEndTurn($state, $user),
             default => throw new \InvalidArgumentException('Unknown action type.'),
         };
+    }
+
+    // --- What each player is allowed to see ------------------------------------
+
+    /**
+     * What $viewer's browser receives for a Masrawy Deal room. Banks,
+     * properties, the discard pile and any pending action are all face
+     * up on the table, so everyone gets them; what stays private is
+     * every hand but the viewer's own, and the order and contents of the
+     * draw pile (only its size is sent). Once the game is over (won or
+     * cancelled) there is nothing left to protect, so all hands are
+     * revealed to everyone, the same rule Mafia applies to its roles.
+     *
+     * `you` also carries what the viewer is being waited on for, worked
+     * out here (who they may answer, what they owe and what they could
+     * pay with) so the client never has to re-derive the Just Say No
+     * chain rules itself.
+     *
+     * @return array<string, mixed>
+     */
+    public function viewFor(Room $room, User $viewer): array
+    {
+        $state = $room->game_state;
+
+        if ($state === null) {
+            return ['you' => null, 'table' => null];
+        }
+
+        $viewerId = (int) $viewer->id;
+        $pending = $state['pending'] ?? null;
+        $revealHands = ($state['winner'] ?? null) !== null || $room->status === 'cancelled';
+
+        $seats = [];
+
+        foreach ($state['turn_order'] as $playerId) {
+            $seats[] = [
+                'id' => (int) $playerId,
+                'hand_count' => count($state['hands'][$playerId] ?? []),
+                'hand' => $revealHands ? ($state['hands'][$playerId] ?? []) : null,
+                'bank' => $state['banks'][$playerId] ?? [],
+                'properties' => $state['properties'][$playerId] ?? [],
+            ];
+        }
+
+        $you = [
+            'hand' => $state['hands'][$viewerId] ?? [],
+            'responding_to' => [],
+            'owes' => null,
+            'payable_assets' => null,
+        ];
+
+        foreach ($pending['charges'] ?? [] as $targetId => $charge) {
+            $targetId = (int) $targetId;
+
+            if ($charge['phase'] === 'responding' && $this->responderId($pending, $targetId) === $viewerId) {
+                $you['responding_to'][] = $targetId;
+            }
+
+            if ($charge['phase'] === 'paying' && $targetId === $viewerId) {
+                $you['owes'] = $charge['owed'];
+                $you['payable_assets'] = $this->payableAssets($state, $viewerId);
+            }
+        }
+
+        return [
+            'you' => $you,
+            'table' => [
+                'current_player_id' => (int) $state['current_player_id'],
+                'has_drawn_this_turn' => $state['has_drawn_this_turn'],
+                'cards_played_this_turn' => $state['cards_played_this_turn'],
+                'draw_pile_count' => count($state['draw_pile']),
+                'discard_pile' => $state['discard_pile'],
+                'players' => $seats,
+                'pending' => $pending,
+            ],
+        ];
     }
 
     // --- Draw ---------------------------------------------------------
@@ -317,6 +398,53 @@ class MasrawyDealGame extends AbstractGame
         $state = $this->checkWinCondition($state, (string) $user->id);
 
         return $state;
+    }
+
+    /**
+     * Rearranges one of your own wildcards under another of its colors.
+     * Official rules allow this any time during your own turn, as often
+     * as you like, for free — so it is not a card play: it does not
+     * count toward the 3-card limit and does not need a draw first.
+     *
+     * Payload: `card_id` (a wildcard already on your table) and `color`
+     * (where to put it — one of that wildcard's valid colors, and not the
+     * color it is already under). Moving it out of a set can break that
+     * set; any SHISHA/WIL3A on it stays with the color and stops counting
+     * until the set is complete again. Moving it into a set can complete
+     * a third one, which wins immediately.
+     */
+    protected function handleMoveWildcard(array $state, User $user, array $payload): array
+    {
+        $userId = (int) $user->id;
+        $cardId = (string) ($payload['card_id'] ?? '');
+        $fromColor = null;
+
+        foreach ($state['properties'][$userId] ?? [] as $color => $group) {
+            if (in_array($cardId, $group['cards'], true)) {
+                $fromColor = $color;
+                break;
+            }
+        }
+
+        if ($fromColor === null) {
+            throw new \InvalidArgumentException('Choose one of your own properties to move.');
+        }
+
+        $card = CardCatalog::get($cardId);
+
+        if ($card['type'] !== 'wildcard') {
+            throw new \InvalidArgumentException('Only wildcards can be moved.');
+        }
+
+        $toColor = $this->resolvePropertyColor($card, $payload);
+
+        if ($toColor === $fromColor) {
+            throw new \InvalidArgumentException('That wildcard is already in that color.');
+        }
+
+        $state = $this->moveProperty($state, $userId, $fromColor, $userId, $toColor, $cardId);
+
+        return $this->checkWinCondition($state, (string) $userId);
     }
 
     /**

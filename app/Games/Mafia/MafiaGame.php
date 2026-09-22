@@ -2,6 +2,9 @@
 
 namespace App\Games\Mafia;
 
+use App\Events\HostNightActionUpdated;
+use App\Events\NightActionUpdated;
+use App\Events\VoteUpdated;
 use App\Games\AbstractGame;
 use App\Models\Room;
 use App\Models\User;
@@ -409,6 +412,122 @@ class MafiaGame extends AbstractGame
         }
 
         return $this->checkWinCondition($state);
+    }
+
+    /**
+     * Day voting is public and has its own event; every night action
+     * (mafia, doctor, detective) notifies both the mafia channel and the
+     * host channel so each sees the picks it is allowed to see.
+     */
+    public function eventsAfterAction(Room $room, array $payload): array
+    {
+        if (in_array($payload['type'] ?? null, ['vote_select', 'vote_confirm'], true)) {
+            return [new VoteUpdated($room)];
+        }
+
+        return [
+            new NightActionUpdated($room),
+            new HostNightActionUpdated($room),
+        ];
+    }
+
+    public function playerAttributes(Room $room, User $player): array
+    {
+        return [
+            'alive' => $room->game_state['alive'][$player->id] ?? true,
+        ];
+    }
+
+    /**
+     * What $viewer may see of a Mafia game. Roles are private during
+     * play; that protection drops once there is nothing left to protect
+     * — the game truly ended (winner set) or was cancelled mid-game — so
+     * everyone gets the same reveal and no admin is needed to settle a
+     * dispute afterwards.
+     */
+    public function viewFor(Room $room, User $viewer): array
+    {
+        $state = $room->game_state;
+        $revealed = ($state['winner'] ?? null) !== null || $room->status === 'cancelled';
+
+        $view = [
+            'phase' => $state['phase'] ?? null,
+            'round' => $state['round'] ?? null,
+            'night_step' => $state['night_step'] ?? null,
+
+            // Day voting is public by design — everyone in the room
+            // sees the same selections/confirmations.
+            'day_votes' => $state['day_votes'] ?? null,
+
+            'role_reveal' => $revealed ? ($state['roles'] ?? null) : null,
+            'you' => null,
+            'host_view' => null,
+        ];
+
+        if ($state === null) {
+            return $view;
+        }
+
+        $role = $state['roles'][$viewer->id] ?? null;
+
+        // The viewer's own in-progress night-action state. Every
+        // select/confirm submission redirects back through the room
+        // page, so this is the only way a player recovers "I already
+        // picked someone, awaiting confirmation" after that round-trip.
+        //
+        // Mafia is a coordinated role: members are shown the full mafia
+        // night_actions tree (everyone's picks/confirmations), matching
+        // what the `rooms.{id}.mafia` channel broadcasts live.
+        // Doctor/detective only ever see their own selection.
+        $nightAction = null;
+
+        if ($role === 'mafia') {
+            $nightAction = $state['night_actions']['mafia'] ?? null;
+        } elseif (in_array($role, ['doctor', 'detective'], true)) {
+            $nightAction = [
+                'selected_target_id' => $state['night_actions'][$role]['selections'][$viewer->id] ?? null,
+                'confirmed' => $state['night_actions'][$role]['confirmed'][$viewer->id] ?? false,
+            ];
+        }
+
+        $mafiaTeam = null;
+
+        if ($role === 'mafia') {
+            $teammateIds = collect($state['roles'])
+                ->filter(fn($r, $id) => $r === 'mafia' && (int) $id !== (int) $viewer->id)
+                ->keys();
+
+            $mafiaTeam = $room->players
+                ->whereIn('id', $teammateIds)
+                ->map(fn($player) => [
+                    'id' => $player->id,
+                    'name' => $player->name,
+                ])
+                ->values();
+        }
+
+        $view['you'] = [
+            'role' => $role,
+            'alive' => $state['alive'][$viewer->id] ?? null,
+            'detective_result' => $role === 'detective'
+                ? ($state['night_actions']['detective']['results'][$viewer->id] ?? null)
+                : null,
+            'night_action' => $nightAction,
+            'mafia_team' => $mafiaTeam,
+        ];
+
+        // The host sees everything: all mafia/doctor/detective picks,
+        // via a key that is only ever populated for the actual host. The
+        // role map is included too so the host UI can label whose pick is
+        // whose — safe, since only the host receives this key.
+        if ($room->host_id === $viewer->id) {
+            $view['host_view'] = [
+                'roles' => $state['roles'] ?? null,
+                'night_actions' => $state['night_actions'] ?? null,
+            ];
+        }
+
+        return $view;
     }
 
     protected function checkWinCondition(array $state): array

@@ -2,6 +2,7 @@
 
 namespace App\Games;
 
+use App\Events\GameStateChanged;
 use App\Games\Contracts\GameDefinition;
 use App\Models\Room;
 use App\Models\User;
@@ -41,5 +42,20 @@ abstract class AbstractGame implements GameDefinition
     public function executePlayer(Room $room, ?string $targetId): array
     {
         throw new \RuntimeException('This game does not support execution.');
+    }
+
+    public function eventsAfterAction(Room $room, array $payload): array
+    {
+        return [new GameStateChanged($room)];
+    }
+
+    public function viewFor(Room $room, User $viewer): array
+    {
+        return [];
+    }
+
+    public function playerAttributes(Room $room, User $player): array
+    {
+        return [];
     }
 }

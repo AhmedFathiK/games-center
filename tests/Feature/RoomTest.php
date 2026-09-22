@@ -2023,4 +2023,181 @@ class RoomTest extends TestCase
                     ->where('active_room.player_count', 3)
             );
     }
+
+    // --- A second game through the same, game-agnostic endpoints ---------------------
+
+    protected function seedMasrawyDeal(): Game
+    {
+        return Game::create([
+            'name' => 'Masrawy Deal',
+            'slug' => 'masrawy-deal',
+            'enabled' => true,
+        ]);
+    }
+
+    /**
+     * A started two-player Masrawy Deal room (its host plays too, unlike
+     * Mafia), started through the real start endpoint.
+     *
+     * @return array{0: Room, 1: User, 2: User}
+     */
+    protected function startedMasrawyRoom(): array
+    {
+        $game = $this->seedMasrawyDeal();
+        $host = User::factory()->create();
+        $guest = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'MD1234',
+            'max_players' => 5,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $room->players()->attach([$host->id, $guest->id]);
+
+        $this->actingAs($host)->post("/rooms/{$room->id}/start")->assertRedirect();
+
+        return [$room->fresh(), $host, $guest];
+    }
+
+    public function test_a_masrawy_deal_room_page_has_no_game_view_before_the_game_starts(): void
+    {
+        $game = $this->seedMasrawyDeal();
+        $host = User::factory()->create();
+
+        $room = Room::create([
+            'game_id' => $game->id,
+            'host_id' => $host->id,
+            'code' => 'MD1234',
+            'max_players' => 5,
+            'configuration' => [],
+            'status' => 'waiting',
+        ]);
+
+        $room->players()->attach($host->id);
+
+        $this->actingAs($host)->get("/rooms/{$room->code}")
+            ->assertOk()
+            ->assertInertia(
+                fn($page) => $page
+                    ->component('Rooms/Show')
+                    ->where('room.game.slug', 'masrawy-deal')
+                    ->where('room.you', null)
+                    ->where('room.table', null)
+            );
+    }
+
+    public function test_each_masrawy_deal_player_only_ever_sees_their_own_hand(): void
+    {
+        [$room, $host, $guest] = $this->startedMasrawyRoom();
+        $state = $room->game_state;
+
+        $this->assertCount(5, $state['hands'][$host->id]);
+        $this->assertCount(5, $state['hands'][$guest->id]);
+
+        foreach ([$host, $guest] as $viewer) {
+            $this->actingAs($viewer)->get("/rooms/{$room->code}")
+                ->assertOk()
+                ->assertInertia(
+                    fn($page) => $page
+                        ->component('Rooms/Show')
+                        ->where('room.status', 'in_progress')
+                        ->where('room.you.hand', $state['hands'][$viewer->id])
+                        // Nobody's hand rides along on the table — only its size —
+                        // and the draw pile is never sent, just how many are left.
+                        ->where('room.table.players.0.hand', null)
+                        ->where('room.table.players.1.hand', null)
+                        ->where('room.table.players.0.hand_count', 5)
+                        ->where('room.table.players.1.hand_count', 5)
+                        ->missing('room.table.draw_pile')
+                        ->where('room.table.draw_pile_count', count($state['draw_pile']))
+                );
+        }
+    }
+
+    public function test_a_masrawy_deal_action_goes_through_the_actions_endpoint_with_a_generic_broadcast(): void
+    {
+        Event::fake([
+            \App\Events\GameStateChanged::class,
+            \App\Events\NightActionUpdated::class,
+            \App\Events\HostNightActionUpdated::class,
+            \App\Events\VoteUpdated::class,
+        ]);
+
+        [$room, $host, $guest] = $this->startedMasrawyRoom();
+        $current = User::find($room->game_state['current_player_id']);
+
+        $this->actingAs($current)
+            ->post("/rooms/{$room->id}/actions", ['type' => 'draw'])
+            ->assertRedirect();
+
+        $this->assertTrue($room->fresh()->game_state['has_drawn_this_turn']);
+
+        Event::assertDispatched(\App\Events\GameStateChanged::class);
+        // None of Mafia's events leak into another game's actions.
+        Event::assertNotDispatched(\App\Events\NightActionUpdated::class);
+        Event::assertNotDispatched(\App\Events\HostNightActionUpdated::class);
+        Event::assertNotDispatched(\App\Events\VoteUpdated::class);
+    }
+
+    public function test_an_illegal_masrawy_deal_action_is_a_validation_error_and_changes_nothing(): void
+    {
+        Event::fake([\App\Events\GameStateChanged::class]);
+
+        [$room, $host, $guest] = $this->startedMasrawyRoom();
+        $stateBefore = $room->game_state;
+        $notCurrent = $room->game_state['current_player_id'] === $host->id ? $guest : $host;
+
+        $this->actingAs($notCurrent)
+            ->post("/rooms/{$room->id}/actions", ['type' => 'draw'])
+            ->assertSessionHasErrors('action');
+
+        $this->assertEquals($stateBefore, $room->fresh()->game_state);
+        Event::assertNotDispatched(\App\Events\GameStateChanged::class);
+    }
+
+    public function test_a_masrawy_deal_action_that_wins_the_game_finishes_the_room(): void
+    {
+        Event::fake([\App\Events\GameEnded::class, \App\Events\GameStateChanged::class]);
+
+        [$room, $host, $guest] = $this->startedMasrawyRoom();
+        $state = $room->game_state;
+        $currentId = $state['current_player_id'];
+
+        // Two complete sets on the table and the last dark blue in hand.
+        $state['has_drawn_this_turn'] = true;
+        $state['hands'][$currentId] = ['prop_dark_blue_2'];
+        $state['properties'][$currentId] = [
+            'brown' => ['cards' => ['prop_brown_1', 'prop_brown_2'], 'house' => null, 'hotel' => null],
+            'utility' => ['cards' => ['prop_utility_1', 'prop_utility_2'], 'house' => null, 'hotel' => null],
+            'dark_blue' => ['cards' => ['prop_dark_blue_1'], 'house' => null, 'hotel' => null],
+        ];
+        $room->update(['game_state' => $state]);
+
+        $this->actingAs(User::find($currentId))
+            ->post("/rooms/{$room->id}/actions", ['type' => 'play_property', 'card_id' => 'prop_dark_blue_2'])
+            ->assertRedirect();
+
+        $room = $room->fresh();
+
+        $this->assertEquals('finished', $room->status);
+        $this->assertEquals((string) $currentId, $room->game_state['winner']);
+        Event::assertDispatched(\App\Events\GameEnded::class);
+
+        // Once it is over every hand is revealed to everyone.
+        $other = $currentId === $host->id ? $guest : $host;
+
+        $this->actingAs($other)->get("/rooms/{$room->code}")
+            ->assertOk()
+            ->assertInertia(
+                fn($page) => $page
+                    ->where('room.status', 'finished')
+                    ->where('room.winner', (string) $currentId)
+                    ->where('room.table.players.0.hand', $room->game_state['hands'][$room->game_state['turn_order'][0]])
+                    ->where('room.table.players.1.hand', $room->game_state['hands'][$room->game_state['turn_order'][1]])
+            );
+    }
 }

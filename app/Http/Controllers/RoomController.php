@@ -12,13 +12,10 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use App\Events\PlayerJoined;
 use App\Events\GameStarted;
-use App\Events\HostNightActionUpdated;
-use App\Events\NightActionUpdated;
 use App\Events\PhaseChanged;
 use App\Events\PlayerExecuted;
 use App\Events\PlayerKicked;
 use App\Events\RoomCancelled;
-use App\Events\VoteUpdated;
 use App\Events\GameEnded;
 use App\Events\PlayerLeft;
 
@@ -493,126 +490,50 @@ class RoomController extends Controller
             'players',
         ]);
 
-        $user = $request->user();
         $gameState = $room->game_state;
-        $isHost = $room->host_id === $user->id;
+        $game = GameRegistry::get($room->game->slug);
 
-        $you = null;
-        $hostView = null;
+        // Only platform-level facts are built here. Everything a game
+        // considers its own — phases, roles, hands, what a given player
+        // may and may not see — comes from the game definition, so this
+        // method never has to learn about any individual game.
+        $platform = [
+            'id' => $room->id,
+            'code' => $room->code,
+            'max_players' => $room->max_players,
+            'status' => $room->status,
+            'configuration' => $room->configuration,
+            'winner' => $gameState['winner'] ?? null,
 
-        if ($gameState !== null) {
-            $role = $gameState['roles'][$user->id] ?? null;
+            // Only meaningful while in progress; lets any non-host
+            // player see that cancelling on the host's behalf has
+            // become available, without exposing the raw timestamp.
+            'host_stale' => $room->isInProgress() && $this->isHostStale($room),
 
-            // The requesting player's own in-progress night-action state.
-            // Every select/confirm submission redirects back through this
-            // endpoint, so this is the only way a player recovers "I already
-            // picked someone, awaiting confirmation" after that round-trip.
-            //
-            // Mafia is a coordinated role: members are shown the full
-            // mafia night_actions tree (everyone's picks/confirmations),
-            // matching what the `rooms.{id}.mafia` channel broadcasts live.
-            // Doctor/detective only ever see their own selection.
-            $nightAction = null;
+            'game' => [
+                'id' => $room->game->id,
+                'name' => $room->game->name,
+                'slug' => $room->game->slug,
+                'minimum_players' => $room->game->minimum_players,
+            ],
 
-            if ($role === 'mafia') {
-                $nightAction = $gameState['night_actions']['mafia'] ?? null;
-            } elseif (in_array($role, ['doctor', 'detective'], true)) {
-                $nightAction = [
-                    'selected_target_id' => $gameState['night_actions'][$role]['selections'][$user->id] ?? null,
-                    'confirmed' => $gameState['night_actions'][$role]['confirmed'][$user->id] ?? false,
-                ];
-            }
+            'host' => [
+                'id' => $room->host->id,
+                'name' => $room->host->name,
+            ],
 
-            $mafiaTeam = null;
-
-            if ($role === 'mafia') {
-                $teammateIds = collect($gameState['roles'])
-                    ->filter(fn($r, $id) => $r === 'mafia' && (int) $id !== (int) $user->id)
-                    ->keys();
-
-                $mafiaTeam = $room->players
-                    ->whereIn('id', $teammateIds)
-                    ->map(fn($player) => [
-                        'id' => $player->id,
-                        'name' => $player->name,
-                    ])
-                    ->values();
-            }
-
-            $you = [
-                'role' => $role,
-                'alive' => $gameState['alive'][$user->id] ?? null,
-                'detective_result' => $role === 'detective'
-                    ? ($gameState['night_actions']['detective']['results'][$user->id] ?? null)
-                    : null,
-                'night_action' => $nightAction,
-                'mafia_team' => $mafiaTeam,
-            ];
-
-            // Host sees everything: all mafia/doctor/detective picks, via
-            // a key that is only ever populated for the actual host. The
-            // role map is included here too so the host UI can label whose
-            // pick is whose — safe, since only the host receives this key.
-            if ($isHost) {
-                $hostView = [
-                    'roles' => $gameState['roles'] ?? null,
-                    'night_actions' => $gameState['night_actions'] ?? null,
-                ];
-            }
-        }
-
-        return Inertia::render('Rooms/Show', [
-            'room' => [
-                'id' => $room->id,
-                'code' => $room->code,
-                'max_players' => $room->max_players,
-                'status' => $room->status,
-                'configuration' => $room->configuration,
-
-                'phase' => $gameState['phase'] ?? null,
-                'round' => $gameState['round'] ?? null,
-                'winner' => $gameState['winner'] ?? null,
-                'night_step' => $gameState['night_step'] ?? null,
-
-                // Roles are private during play. That protection drops
-                // once there's nothing left to protect — either the game
-                // truly ended (winner set) or it was cancelled mid-game,
-                // in which case everyone gets the same reveal a finished
-                // game would show, so no dispute needs an admin to settle.
-                'role_reveal' => (($gameState['winner'] ?? null) !== null || $room->status === 'cancelled')
-                    ? ($gameState['roles'] ?? null)
-                    : null,
-
-                // Day voting is public by design — everyone in the room
-                // sees the same selections/confirmations.
-                'day_votes' => $gameState['day_votes'] ?? null,
-
-                // Only meaningful while in progress; lets any non-host
-                // player see that cancelling on the host's behalf has
-                // become available, without exposing the raw timestamp.
-                'host_stale' => $room->isInProgress() && $this->isHostStale($room),
-
-                'game' => [
-                    'id' => $room->game->id,
-                    'name' => $room->game->name,
-                    'slug' => $room->game->slug,
-                    'minimum_players' => $room->game->minimum_players,
-                ],
-
-                'host' => [
-                    'id' => $room->host->id,
-                    'name' => $room->host->name,
-                ],
-
-                'players' => $room->players->map(fn($player) => [
+            'players' => $room->players->map(fn($player) => array_merge(
+                [
                     'id' => $player->id,
                     'name' => $player->name,
-                    'alive' => $gameState['alive'][$player->id] ?? true,
-                ])->values(),
+                ],
+                $game->playerAttributes($room, $player),
+            ))->values(),
+        ];
 
-                'you' => $you,
-                'host_view' => $hostView,
-            ],
+        return Inertia::render('Rooms/Show', [
+            // Platform keys win over any game key of the same name.
+            'room' => $platform + $game->viewFor($room, $request->user()),
         ]);
     }
 
@@ -732,11 +653,18 @@ class RoomController extends Controller
 
         $room->update(['game_state' => $newState]);
 
-        if (in_array($request->input('type'), ['vote_select', 'vote_confirm'], true)) {
-            broadcast(new VoteUpdated($room));
-        } else {
-            broadcast(new NightActionUpdated($room));
-            broadcast(new HostNightActionUpdated($room));
+        // Which events an action produces is the game's business (a
+        // secret night action and a public move notify different
+        // channels), so the platform just broadcasts what it is given.
+        foreach ($gameDefinition->eventsAfterAction($room, $request->all()) as $event) {
+            broadcast($event);
+        }
+
+        // A game can be won by an ordinary player action (not only by a
+        // host-driven advance/execute), so the finish is handled here too.
+        if (($newState['winner'] ?? null) !== null) {
+            $room->update(['status' => 'finished']);
+            broadcast(new GameEnded($room));
         }
 
         return redirect()->route('rooms.show', $room);

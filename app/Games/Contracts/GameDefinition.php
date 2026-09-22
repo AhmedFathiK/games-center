@@ -52,4 +52,41 @@ interface GameDefinition
      * null (host chooses not to execute anyone this round).
      */
     public function executePlayer(Room $room, ?string $targetId): array;
+
+    /**
+     * The events to broadcast after submitAction() succeeded and its
+     * result has been saved to the room. The platform never inspects
+     * the payload itself, so a game decides here which of its own
+     * events (and channels) an action should notify. Returns broadcast-
+     * able event instances; the default is one generic, data-free
+     * GameStateChanged on the room channel.
+     *
+     * @return array<int, object>
+     */
+    public function eventsAfterAction(Room $room, array $payload): array;
+
+    /**
+     * The game-specific part of what the room page shows $viewer: keys
+     * merged into the `room` Inertia prop next to the platform's own
+     * (id, code, status, winner, players, ...), which always win on a
+     * name clash. This is the ONE place private state is filtered —
+     * anything returned here is sent to $viewer's browser, so a hand,
+     * role or draw pile must only appear if $viewer may see it.
+     *
+     * Called on every room page load, including before the game has
+     * started (game_state is null then), so implementations must handle
+     * a null state.
+     *
+     * @return array<string, mixed>
+     */
+    public function viewFor(Room $room, User $viewer): array;
+
+    /**
+     * Extra game-specific attributes for one entry of the room's player
+     * roster (e.g. Mafia's `alive`), merged into that player's
+     * id/name. Also called before the game starts.
+     *
+     * @return array<string, mixed>
+     */
+    public function playerAttributes(Room $room, User $player): array;
 }

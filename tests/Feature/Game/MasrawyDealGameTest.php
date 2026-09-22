@@ -3442,4 +3442,328 @@ class MasrawyDealGameTest extends TestCase
 
         $this->assertEquals($p2, $room->game_state['current_player_id']);
     }
+
+    // ==================================================================
+    // move_wildcard: rearranging your own wildcards for free
+    // ==================================================================
+
+    public function test_a_wildcard_can_be_moved_to_another_of_its_colors(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p1, properties: [
+            'green' => $this->group(['prop_green_1', 'wild_dark_blue_green_1']),
+        ]);
+        $before = $this->allCardIds($room);
+
+        $room = $this->act($room, $p1, ['type' => 'move_wildcard', 'card_id' => 'wild_dark_blue_green_1', 'color' => 'dark_blue']);
+        $state = $room->game_state;
+
+        $this->assertEquals(['prop_green_1'], $state['properties'][$p1]['green']['cards']);
+        $this->assertEquals(['wild_dark_blue_green_1'], $state['properties'][$p1]['dark_blue']['cards']);
+        $this->assertEquals($before, $this->allCardIds($room));
+    }
+
+    public function test_moving_a_groups_only_card_removes_the_empty_group_and_can_join_an_existing_one(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p1, properties: [
+            'green' => $this->group(['wild_dark_blue_green_1']),
+            'dark_blue' => $this->group(['prop_dark_blue_1']),
+        ]);
+
+        $state = $this->act($room, $p1, ['type' => 'move_wildcard', 'card_id' => 'wild_dark_blue_green_1', 'color' => 'dark_blue'])->game_state;
+
+        $this->assertArrayNotHasKey('green', $state['properties'][$p1]);
+        $this->assertEquals(['prop_dark_blue_1', 'wild_dark_blue_green_1'], $state['properties'][$p1]['dark_blue']['cards']);
+    }
+
+    public function test_an_el_bob_can_be_moved_to_any_color(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p1, properties: ['green' => $this->group(['wild_any_1'])]);
+
+        $state = $this->act($room, $p1, ['type' => 'move_wildcard', 'card_id' => 'wild_any_1', 'color' => 'railroad'])->game_state;
+
+        $this->assertEquals(['wild_any_1'], $state['properties'][$p1]['railroad']['cards']);
+    }
+
+    public function test_moving_a_wildcard_is_free_and_needs_no_draw(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p1, properties: ['green' => $this->group(['wild_dark_blue_green_1'])]);
+        $room = $this->setState($room, ['has_drawn_this_turn' => false, 'cards_played_this_turn' => 3]);
+
+        $room = $this->act($room, $p1, ['type' => 'move_wildcard', 'card_id' => 'wild_dark_blue_green_1', 'color' => 'dark_blue']);
+        $room = $this->act($room, $p1, ['type' => 'move_wildcard', 'card_id' => 'wild_dark_blue_green_1', 'color' => 'green']);
+
+        $this->assertEquals(3, $room->game_state['cards_played_this_turn']);
+        $this->assertEquals(['wild_dark_blue_green_1'], $room->game_state['properties'][$p1]['green']['cards']);
+    }
+
+    public function test_a_wildcard_can_only_go_to_one_of_its_own_colors_and_not_the_one_it_is_in(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p1, properties: ['green' => $this->group(['wild_dark_blue_green_1'])]);
+
+        $this->assertRejected($room, $p1, ['type' => 'move_wildcard', 'card_id' => 'wild_dark_blue_green_1', 'color' => 'red'], 'valid colors');
+        $this->assertRejected($room, $p1, ['type' => 'move_wildcard', 'card_id' => 'wild_dark_blue_green_1', 'color' => ''], 'valid colors');
+        $this->assertRejected($room, $p1, ['type' => 'move_wildcard', 'card_id' => 'wild_dark_blue_green_1', 'color' => 'green'], 'already in that color');
+    }
+
+    public function test_only_wildcards_on_your_own_table_can_be_moved(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p1, hand: ['wild_red_yellow_1'], bank: ['money_1_1'], properties: [
+            'green' => $this->group(['prop_green_1'], 'action_house_1'),
+        ]);
+        $room = $this->equip($room, $p2, properties: ['pink' => $this->group(['wild_pink_orange_1'])]);
+
+        // A plain property, a hand card, a bank card, a building, the
+        // opponent's wildcard, and a made-up id are all refused.
+        foreach (['prop_green_1' => 'Only wildcards', 'wild_red_yellow_1' => 'your own properties', 'money_1_1' => 'your own properties', 'action_house_1' => 'your own properties', 'wild_pink_orange_1' => 'your own properties', 'nonsense' => 'your own properties'] as $cardId => $message) {
+            $this->assertRejected($room, $p1, ['type' => 'move_wildcard', 'card_id' => $cardId, 'color' => 'orange'], $message);
+        }
+    }
+
+    public function test_moving_a_wildcard_is_only_allowed_on_your_own_turn_and_not_while_something_is_pending(): void
+    {
+        $room = $this->rentRoom(2, ['action_debt_collector_1'], ['green' => $this->group(['wild_dark_blue_green_1'])]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['action_just_say_no_1'], bank: ['money_5_1'], properties: [
+            'red' => $this->group(['wild_red_yellow_1']),
+        ]);
+        $move = ['type' => 'move_wildcard', 'card_id' => 'wild_red_yellow_1', 'color' => 'yellow'];
+
+        $this->assertRejected($room, $p2, $move, 'not your turn');
+
+        $room = $this->act($room, $p1, ['type' => 'play_debt_collector', 'card_id' => 'action_debt_collector_1', 'target_id' => $p2]);
+
+        // The game is frozen until the No window closes — even for the target.
+        $this->assertRejected($room, $p2, $move, 'Waiting');
+        $this->assertRejected($room, $p1, ['type' => 'move_wildcard', 'card_id' => 'wild_dark_blue_green_1', 'color' => 'dark_blue'], 'Waiting');
+    }
+
+    public function test_moving_a_wildcard_out_of_a_set_leaves_its_shisha_on_that_color(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p1, properties: [
+            'green' => $this->group(['prop_green_1', 'prop_green_2', 'wild_dark_blue_green_1'], 'action_house_1'),
+        ]);
+
+        $state = $this->act($room, $p1, ['type' => 'move_wildcard', 'card_id' => 'wild_dark_blue_green_1', 'color' => 'dark_blue'])->game_state;
+
+        $this->assertEquals(['prop_green_1', 'prop_green_2'], $state['properties'][$p1]['green']['cards']);
+        $this->assertEquals('action_house_1', $state['properties'][$p1]['green']['house']);
+    }
+
+    public function test_moving_a_wildcard_can_complete_a_third_set_and_win(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p1, properties: [
+            'brown' => $this->group(['prop_brown_1', 'prop_brown_2']),
+            'utility' => $this->group(['prop_utility_1', 'prop_utility_2']),
+            'dark_blue' => $this->group(['prop_dark_blue_1']),
+            'green' => $this->group(['wild_dark_blue_green_1']),
+        ]);
+
+        $room = $this->act($room, $p1, ['type' => 'move_wildcard', 'card_id' => 'wild_dark_blue_green_1', 'color' => 'dark_blue']);
+
+        $this->assertEquals($p1, $room->game_state['winner']);
+    }
+
+    // ==================================================================
+    // What each player is allowed to see (viewFor)
+    // ==================================================================
+
+    protected function viewFor(Room $room, int $userId): array
+    {
+        return (new MasrawyDealGame())->viewFor($room, User::find($userId));
+    }
+
+    public function test_the_view_is_empty_before_the_game_starts(): void
+    {
+        $room = $this->makeRoom(2);
+        [$p1] = $room->players()->pluck('users.id')->values()->all();
+
+        $view = $this->viewFor($room, $p1);
+
+        $this->assertNull($view['you']);
+        $this->assertNull($view['table']);
+    }
+
+    public function test_a_player_sees_their_own_hand_but_only_the_size_of_everyone_elses(): void
+    {
+        $room = $this->makeInProgressRoom(3);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p1, hand: ['money_1_1', 'prop_red_1']);
+        $room = $this->equip($room, $p2, hand: ['money_2_1', 'prop_green_1', 'rent_any_1']);
+        $room = $this->equip($room, $p3, hand: ['action_just_say_no_1']);
+
+        $view = $this->viewFor($room, $p2);
+
+        $this->assertEquals(['money_2_1', 'prop_green_1', 'rent_any_1'], $view['you']['hand']);
+
+        $seats = collect($view['table']['players'])->keyBy('id');
+        $this->assertEquals(2, $seats[$p1]['hand_count']);
+        $this->assertEquals(3, $seats[$p2]['hand_count']);
+        $this->assertEquals(1, $seats[$p3]['hand_count']);
+
+        // Nobody's hand, not even the viewer's own, is repeated on the table.
+        foreach ([$p1, $p2, $p3] as $id) {
+            $this->assertNull($seats[$id]['hand']);
+        }
+
+        $everything = json_encode($view);
+        foreach (['money_1_1', 'prop_red_1', 'action_just_say_no_1'] as $othersCard) {
+            $this->assertFalse(str_contains($everything, '"' . $othersCard . '"'), "$othersCard leaked");
+        }
+    }
+
+    public function test_the_draw_pile_is_never_sent_only_its_size(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+        $room = $this->setState($room, ['draw_pile' => ['prop_pink_3', 'money_10_1', 'rent_any_2']]);
+
+        $view = $this->viewFor($room, $p1);
+
+        $this->assertEquals(3, $view['table']['draw_pile_count']);
+        $this->assertArrayNotHasKey('draw_pile', $view['table']);
+
+        $everything = json_encode($view);
+        foreach (['prop_pink_3', 'money_10_1', 'rent_any_2'] as $cardId) {
+            $this->assertFalse(str_contains($everything, '"' . $cardId . '"'), "$cardId leaked");
+        }
+    }
+
+    public function test_banks_properties_and_the_discard_pile_are_public(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p1, bank: ['money_5_1'], properties: ['red' => $this->group(['prop_red_1'])]);
+        $room = $this->equip($room, $p2, bank: ['money_2_1']);
+        $room = $this->setState($room, ['discard_pile' => ['action_pass_go_1'], 'current_player_id' => $p2, 'has_drawn_this_turn' => true, 'cards_played_this_turn' => 2]);
+
+        $view = $this->viewFor($room, $p2);
+        $seats = collect($view['table']['players'])->keyBy('id');
+
+        $this->assertEquals(['money_5_1'], $seats[$p1]['bank']);
+        $this->assertEquals(['prop_red_1'], $seats[$p1]['properties']['red']['cards']);
+        $this->assertEquals(['money_2_1'], $seats[$p2]['bank']);
+        $this->assertEquals(['action_pass_go_1'], $view['table']['discard_pile']);
+        $this->assertEquals($p2, $view['table']['current_player_id']);
+        $this->assertTrue($view['table']['has_drawn_this_turn']);
+        $this->assertEquals(2, $view['table']['cards_played_this_turn']);
+    }
+
+    public function test_someone_who_is_not_in_the_game_sees_no_hand(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        $outsider = User::factory()->create();
+
+        $view = $this->viewFor($room, $outsider->id);
+
+        $this->assertEquals([], $view['you']['hand']);
+        $this->assertNull($view['table']['players'][0]['hand']);
+    }
+
+    public function test_every_hand_is_revealed_once_the_game_has_a_winner(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p1, hand: ['money_1_1']);
+        $room = $this->equip($room, $p2, hand: ['prop_green_1', 'rent_any_1']);
+        $room = $this->setState($room, ['winner' => (string) $p1]);
+
+        $seats = collect($this->viewFor($room, $p1)['table']['players'])->keyBy('id');
+
+        $this->assertEquals(['money_1_1'], $seats[$p1]['hand']);
+        $this->assertEquals(['prop_green_1', 'rent_any_1'], $seats[$p2]['hand']);
+    }
+
+    public function test_every_hand_is_revealed_when_the_room_was_cancelled(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['prop_green_1']);
+        $room->update(['status' => 'cancelled']);
+
+        $seats = collect($this->viewFor($room->fresh(), $p1)['table']['players'])->keyBy('id');
+
+        $this->assertEquals(['prop_green_1'], $seats[$p2]['hand']);
+    }
+
+    // --- What the viewer is being waited on for -------------------------------------------
+
+    public function test_the_view_tells_a_player_when_they_are_the_one_being_waited_on(): void
+    {
+        $room = $this->debtCollectorRoom(targetHand: ['action_just_say_no_1'], targetBank: ['money_5_1'], sourceHand: ['action_just_say_no_2']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        // First the target may answer; the source is not being waited on.
+        $this->assertEquals([$p2], $this->viewFor($room, $p2)['you']['responding_to']);
+        $this->assertEquals([], $this->viewFor($room, $p1)['you']['responding_to']);
+
+        // After the target's No, it is the source's turn to answer that charge.
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+
+        $this->assertEquals([$p2], $this->viewFor($room, $p1)['you']['responding_to']);
+        $this->assertEquals([], $this->viewFor($room, $p2)['you']['responding_to']);
+    }
+
+    public function test_the_view_tells_the_payer_what_they_owe_and_what_they_could_pay_with(): void
+    {
+        $room = $this->debtCollectorRoom(targetBank: ['money_2_1', 'money_3_1'], targetProperties: [
+            'red' => $this->group(['prop_red_1']),
+            'utility' => $this->group(['wild_any_1']),
+        ]);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+
+        $payer = $this->viewFor($room, $p2)['you'];
+        $other = $this->viewFor($room, $p1)['you'];
+
+        $this->assertEquals(5, $payer['owes']);
+        // The EL BOB is worth nothing, so it is not offered as payment.
+        $this->assertEquals(['money_2_1' => 2, 'money_3_1' => 3, 'prop_red_1' => 3], $payer['payable_assets']);
+        $this->assertNull($other['owes']);
+        $this->assertNull($other['payable_assets']);
+    }
+
+    public function test_the_pending_action_and_its_no_chain_are_visible_to_everyone(): void
+    {
+        $room = $this->debtCollectorRoom(targetHand: ['action_just_say_no_1'], targetBank: ['money_5_1'], sourceHand: ['action_just_say_no_2'], playerCount: 3);
+        [$p1, $p2, $p3] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+
+        // Even the player who is not involved sees what is on the table.
+        $pending = $this->viewFor($room, $p3)['table']['pending'];
+
+        $this->assertEquals('debt_collector', $pending['kind']);
+        $this->assertEquals($p1, $pending['source_id']);
+        $this->assertEquals($p2, $pending['charges'][$p2]['chain'][0]['player_id']);
+        $this->assertEquals('action_just_say_no_1', $pending['charges'][$p2]['chain'][0]['card_id']);
+    }
+
+    public function test_there_is_no_pending_action_in_the_view_when_nothing_is_pending(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+
+        $view = $this->viewFor($room, $p1);
+
+        $this->assertNull($view['table']['pending']);
+        $this->assertEquals([], $view['you']['responding_to']);
+        $this->assertNull($view['you']['owes']);
+    }
 }
