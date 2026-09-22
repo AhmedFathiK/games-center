@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { router } from '@inertiajs/vue3'
-import type { Room, AuthUser } from '@/types/room'
+import type { Room, AuthUser, You } from '@/types/room'
 
 const props = defineProps<{
     room: Room
@@ -9,7 +9,9 @@ const props = defineProps<{
     isHost: boolean
 }>()
 
-const me = computed(() => props.room.you)
+// This component only ever renders for Mafia rooms (Show.vue's
+// room.phase check), so room.you is always Mafia's own You shape here.
+const me = computed(() => props.room.you as You | null)
 const myRole = computed(() => me.value?.role ?? null)
 const amAlive = computed(() => me.value?.alive ?? null)
 const isParticipant = computed(() => myRole.value !== null)

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { router } from '@inertiajs/vue3'
-import type { Room, AuthUser, MafiaNightState, NightActionState } from '@/types/room'
+import type { Room, AuthUser, MafiaNightState, NightActionState, You } from '@/types/room'
 
 const props = defineProps<{
     room: Room
@@ -9,7 +9,9 @@ const props = defineProps<{
     isHost: boolean
 }>()
 
-const me = computed(() => props.room.you)
+// This component only ever renders for Mafia rooms (Show.vue's
+// room.phase check), so room.you is always Mafia's own You shape here.
+const me = computed(() => props.room.you as You | null)
 const myRole = computed(() => me.value?.role ?? null)
 const amAlive = computed(() => me.value?.alive ?? null)
 const isParticipant = computed(() => myRole.value !== null)
@@ -171,7 +173,7 @@ const myMafiaConfirmed = computed(() => mafiaState.value?.confirmed?.[String(pro
 
 const mafiaRoster = computed(() => {
     if (myRole.value !== 'mafia') return []
-    const teammates = props.room.you?.mafia_team ?? []
+    const teammates = me.value?.mafia_team ?? []
     return [{ id: props.auth.user.id, name: 'You' }, ...teammates]
 })
 
@@ -436,9 +438,9 @@ const mafiaTargetTally = computed(() => {
                 <h2 class="np-panel-title">Detective — Investigate a Player</h2>
 
                 <p class="np-status-line">
-                    <template v-if="room.you?.detective_result">
-                        {{ playerName(room.you.detective_result.target_id) }} is
-                        <strong>{{ room.you.detective_result.is_mafia ? 'Mafia' : 'not Mafia' }}</strong>.
+                    <template v-if="me?.detective_result">
+                        {{ playerName(me!.detective_result!.target_id) }} is
+                        <strong>{{ me!.detective_result!.is_mafia ? 'Mafia' : 'not Mafia' }}</strong>.
                     </template>
                     <template v-else-if="!isMyTurn">
                         It's currently {{ currentTurnLabel }}'s turn. Sit tight.
@@ -456,7 +458,7 @@ const mafiaTargetTally = computed(() => {
                         type="button"
                         class="np-target"
                         :class="{ 'np-target--selected': String(pendingTargetId ?? mySoloSelection) === String(p.id) }"
-                        :disabled="selecting || mySoloConfirmed || !!room.you?.detective_result || !isMyTurn"
+                        :disabled="selecting || mySoloConfirmed || !!me?.detective_result || !isMyTurn"
                         @click="submitSelect('detective_select', p.id)"
                     >
                         {{ p.name }}
@@ -464,7 +466,7 @@ const mafiaTargetTally = computed(() => {
                 </div>
 
                 <button
-                    v-if="isMyTurn && mySoloSelection && !mySoloConfirmed && !room.you?.detective_result"
+                    v-if="isMyTurn && mySoloSelection && !mySoloConfirmed && !me?.detective_result"
                     type="button"
                     class="np-btn np-btn--primary"
                     :disabled="confirming"

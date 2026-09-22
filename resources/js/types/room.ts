@@ -55,6 +55,60 @@ export interface DayVotes {
     confirmed: Record<string, boolean>
 }
 
+// --- Masrawy Deal's own view shape --------------------------------------
+// Every game's `viewFor()` may use the `you` key for its own per-viewer
+// payload — Mafia's `You` above is Mafia's shape, this is Masrawy Deal's.
+// See MasrawyDealGame::viewFor() for what each field means server-side.
+
+export interface MasrawyPropertyGroup {
+    cards: string[]
+    house: string | null
+    hotel: string | null
+}
+
+export interface MasrawyChargeEntry {
+    phase: 'responding' | 'paying' | 'done'
+    chain: { player_id: number; card_id: string }[]
+    owed: number
+    outcome: 'applied' | 'cancelled' | null
+}
+
+export interface MasrawyPending {
+    kind: 'debt_collector' | 'birthday' | 'rent' | 'sly_deal' | 'forced_deal' | 'deal_breaker'
+    source_id: number
+    card_id: string
+    color?: string
+    multiplier?: number
+    target_card_id?: string
+    give_card_id?: string
+    charges: Record<string, MasrawyChargeEntry>
+}
+
+export interface MasrawySeat {
+    id: number
+    hand_count: number
+    hand: string[] | null
+    bank: string[]
+    properties: Record<string, MasrawyPropertyGroup>
+}
+
+export interface MasrawyYou {
+    hand: string[]
+    responding_to: number[]
+    owes: number | null
+    payable_assets: Record<string, number> | null
+}
+
+export interface MasrawyTableState {
+    current_player_id: number
+    has_drawn_this_turn: boolean
+    cards_played_this_turn: number
+    draw_pile_count: number
+    discard_pile: string[]
+    players: MasrawySeat[]
+    pending: MasrawyPending | null
+}
+
 export interface Room {
     id: number
     code: string
@@ -70,8 +124,15 @@ export interface Room {
     game: Game
     host: AuthUser
     players: Player[]
-    you: You | null
+    // Polymorphic per-game payload (see GameDefinition::viewFor()) — Mafia
+    // puts its `You` shape here, Masrawy Deal puts `MasrawyYou`. Each
+    // game-specific component casts this to its own game's type rather
+    // than the shared Room type trying to model every game's shape.
+    you: You | MasrawyYou | null
     host_view: HostView | null
+    // Masrawy Deal-only: its viewFor() also returns a `table` key. Absent
+    // (undefined) for any other game.
+    table?: MasrawyTableState | null
     host_stale?: boolean
     player_count?: number
 }

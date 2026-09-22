@@ -7,6 +7,7 @@ import NightPhase from './NightPhase.vue'
 import DayPhase from './DayPhase.vue'
 import GameOver from './GameOver.vue'
 import Cancelled from './Cancelled.vue'
+import MasrawyDealTable from './MasrawyDeal/Table.vue'
 import type { Room, AuthUser } from '@/types/room'
 
 const props = defineProps<{
@@ -656,6 +657,20 @@ onUnmounted(() => {
             <!-- In progress: day phase -->
             <DayPhase
                 v-else-if="room.status === 'in_progress' && room.phase === 'day'"
+                :room="room"
+                :auth="auth"
+                :is-host="isHost"
+            />
+
+            <!-- Masrawy Deal has no night/day phases and no separate
+                 finished/cancelled screen — GameOver/Cancelled below are
+                 Mafia's own role-reveal views and don't fit a game with no
+                 roles, so one component covers in_progress/finished/
+                 cancelled for this game, keyed on the game slug rather
+                 than room.phase (which only Mafia's view sets). Table.vue
+                 itself disables play once room.status leaves in_progress. -->
+            <MasrawyDealTable
+                v-else-if="room.game.slug === 'masrawy-deal' && ['in_progress', 'finished', 'cancelled'].includes(room.status)"
                 :room="room"
                 :auth="auth"
                 :is-host="isHost"
