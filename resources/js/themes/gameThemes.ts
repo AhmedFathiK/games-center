@@ -117,8 +117,51 @@ export const mafiaTheme: GameTheme = {
     },
 }
 
+// Palette/fonts pulled straight from Ahmed's card-studio export (dark
+// slate page, amber accent, Montserrat/EB Garamond/Cinzel) — see
+// monopoly_deal_card_studio-11.html. Card faces themselves (property/
+// wildcard/rent/action/money) are drawn by MasrawyCard.vue reading
+// room.table.catalog, not by these theme vars; this theme covers the
+// shared room chrome (Rooms.vue's waiting room, buttons, panels) that
+// every game gets for free. No `.rc-theme-masrawy-deal .rc-*` overrides
+// exist yet the way Mafia's folder/stamp motifs do — scoped out for now
+// since the colors/fonts alone already replace the plain defaultTheme
+// look; add bespoke chrome later if the plain treatment isn't enough.
+export const masrawyDealTheme: GameTheme = {
+    slug: 'masrawy-deal',
+    colors: {
+        background: '#0f172a', // slate-900, the studio's own page background
+        surface: '#1e293b', // slate-800
+        surfaceAlt: '#334155', // slate-700
+        border: '#475569', // slate-600
+        primary: '#f59e0b', // amber-500, the studio's accent color
+        secondary: '#38bdf8', // sky-400 (also one of the card studio's own property colors)
+        success: '#16a34a',
+        textOnBackground: '#f8fafc',
+        textOnSurface: '#f8fafc',
+        textMuted: '#94a3b8', // slate-400
+    },
+    fonts: {
+        display: "'Cinzel', serif",
+        body: "'Montserrat', sans-serif",
+        mono: "'Oswald', sans-serif",
+    },
+    motifs: {
+        surfaceStyle: 'plain',
+        dividerStyle: 'plain',
+        badgeStyle: 'pill',
+        useIndexNumbers: false,
+    },
+    labels: {
+        hostSectionTitle: 'Host',
+        rosterSectionTitle: 'Players',
+        settingsSectionTitle: 'Game Settings',
+    },
+}
+
 const themes: Record<string, GameTheme> = {
     mafia: mafiaTheme,
+    'masrawy-deal': masrawyDealTheme,
 }
 
 export function themeForGame(slug: string): GameTheme {

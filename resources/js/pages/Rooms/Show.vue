@@ -3,11 +3,11 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import { themeForGame } from '@/themes/gameThemes'
-import NightPhase from './NightPhase.vue'
-import DayPhase from './DayPhase.vue'
-import GameOver from './GameOver.vue'
-import Cancelled from './Cancelled.vue'
-import MasrawyDealTable from './MasrawyDeal/Table.vue'
+import NightPhase from './Mafia/NightPhase.vue'
+import DayPhase from './Mafia/DayPhase.vue'
+import GameOver from './Mafia/GameOver.vue'
+import Cancelled from './Mafia/Cancelled.vue'
+import MasrawyDeal from './MasrawyDeal/Table.vue'
 import type { Room, AuthUser } from '@/types/room'
 
 const props = defineProps<{
@@ -404,6 +404,11 @@ function subscribeToRoomChannel() {
         .listen('.vote.updated', () => router.reload({ only: ['room'] }))
         .listen('.player.executed', () => router.reload({ only: ['room'] }))
         .listen('.game.ended', () => router.reload({ only: ['room'] }))
+        // The generic per-action event every game gets by default
+        // (GameDefinition::eventsAfterAction()'s own default) — Masrawy
+        // Deal doesn't have its own event types the way Mafia does
+        // above, so every draw/play/pay/etc for that game arrives here.
+        .listen('.game.state_changed', () => router.reload({ only: ['room'] }))
 }
 
 watch(canAccessRoomChannel, canAccess => {
@@ -669,7 +674,7 @@ onUnmounted(() => {
                  cancelled for this game, keyed on the game slug rather
                  than room.phase (which only Mafia's view sets). Table.vue
                  itself disables play once room.status leaves in_progress. -->
-            <MasrawyDealTable
+            <MasrawyDeal
                 v-else-if="room.game.slug === 'masrawy-deal' && ['in_progress', 'finished', 'cancelled'].includes(room.status)"
                 :room="room"
                 :auth="auth"

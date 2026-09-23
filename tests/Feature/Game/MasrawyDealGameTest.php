@@ -3766,4 +3766,80 @@ class MasrawyDealGameTest extends TestCase
         $this->assertEquals([], $view['you']['responding_to']);
         $this->assertNull($view['you']['owes']);
     }
+
+    // ==================================================================
+    // viewFor(): table.catalog / rent_chart / set_size
+    // ==================================================================
+
+    public function test_the_catalog_covers_every_card_id_that_actually_appears(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p1, hand: ['money_1_1'], bank: ['money_2_1'], properties: [
+            'green' => $this->group(['prop_green_1'], 'action_house_1'),
+        ]);
+        $room = $this->equip($room, $p2, bank: ['money_3_1']);
+        $room = $this->setState($room, ['discard_pile' => ['action_pass_go_1']]);
+
+        $catalog = $this->viewFor($room, $p1)['table']['catalog'];
+
+        foreach (['money_1_1', 'money_2_1', 'prop_green_1', 'action_house_1', 'money_3_1', 'action_pass_go_1'] as $cardId) {
+            $this->assertArrayHasKey($cardId, $catalog);
+            $this->assertEquals(CardCatalog::get($cardId), $catalog[$cardId]);
+        }
+    }
+
+    public function test_the_catalog_never_includes_cards_the_viewer_cannot_see(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p1, hand: ['money_1_1']);
+        $room = $this->equip($room, $p2, hand: ['money_5_1']);
+
+        $catalog = $this->viewFor($room, $p1)['table']['catalog'];
+
+        $this->assertArrayHasKey('money_1_1', $catalog);
+        $this->assertArrayNotHasKey('money_5_1', $catalog);
+    }
+
+    public function test_the_catalog_covers_cards_referenced_by_a_pending_action(): void
+    {
+        // Every card a pending action can reference — the played card,
+        // a Just Say No in the chain, a mid-steal target/give card — is
+        // already in the discard pile or a properties group by the time
+        // settlePending() runs, so the catalog already covers it without
+        // a dedicated pending scan.
+        $room = $this->debtCollectorRoom(targetHand: ['action_just_say_no_1'], targetBank: ['money_5_1']);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->playDebtCollector($room, $p1, $p2);
+        $room = $this->act($room, $p2, ['type' => 'respond_no', 'card_id' => 'action_just_say_no_1']);
+
+        $catalog = $this->viewFor($room, $p1)['table']['catalog'];
+
+        $this->assertArrayHasKey('action_debt_collector_1', $catalog);
+        $this->assertArrayHasKey('action_just_say_no_1', $catalog);
+    }
+
+    public function test_the_catalog_expands_once_hands_are_revealed_at_the_end(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1, $p2] = $room->game_state['turn_order'];
+        $room = $this->equip($room, $p2, hand: ['money_5_1']);
+        $room = $this->setState($room, ['winner' => (string) $p1]);
+
+        $catalog = $this->viewFor($room, $p1)['table']['catalog'];
+
+        $this->assertArrayHasKey('money_5_1', $catalog);
+    }
+
+    public function test_rent_chart_and_set_size_match_the_catalogs_own_constants(): void
+    {
+        $room = $this->makeInProgressRoom(2);
+        [$p1] = $room->game_state['turn_order'];
+
+        $table = $this->viewFor($room, $p1)['table'];
+
+        $this->assertEquals(CardCatalog::RENT_CHART, $table['rent_chart']);
+        $this->assertEquals(CardCatalog::SET_SIZE, $table['set_size']);
+    }
 }

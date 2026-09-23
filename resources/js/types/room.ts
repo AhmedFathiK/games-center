@@ -84,6 +84,26 @@ export interface MasrawyPending {
     charges: Record<string, MasrawyChargeEntry>
 }
 
+// Mirrors CardCatalog::get()'s shape exactly — the backend sends one of
+// these per card id that actually appears anywhere in the payload (see
+// MasrawyDealGame::viewFor()/collectVisibleCardIds()), so the frontend
+// never has to know card data on its own; it only renders whatever this
+// says. Fields are type-specific: `color` only for property, `colors`/
+// `any_color` for wildcard and rent, `action` for action cards,
+// `charges_all` for rent.
+export interface CardCatalogEntry {
+    id: string
+    type: 'money' | 'property' | 'wildcard' | 'rent' | 'action'
+    label: string
+    description: string | null
+    value: number
+    color?: string
+    colors?: string[]
+    any_color?: boolean
+    action?: string
+    charges_all?: boolean
+}
+
 export interface MasrawySeat {
     id: number
     hand_count: number
@@ -107,6 +127,14 @@ export interface MasrawyTableState {
     discard_pile: string[]
     players: MasrawySeat[]
     pending: MasrawyPending | null
+    // See CardCatalogEntry — one entry per card id visible anywhere in
+    // this payload, never the whole deck.
+    catalog: Record<string, CardCatalogEntry>
+    // Mirrors CardCatalog::RENT_CHART/SET_SIZE — small, fully public,
+    // sent once here rather than duplicated onto every property card's
+    // own catalog entry.
+    rent_chart: Record<string, number[]>
+    set_size: Record<string, number>
 }
 
 export interface Room {

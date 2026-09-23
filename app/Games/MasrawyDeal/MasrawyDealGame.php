@@ -260,6 +260,17 @@ class MasrawyDealGame extends AbstractGame
      * pay with) so the client never has to re-derive the Just Say No
      * chain rules itself.
      *
+     * `table.catalog` carries CardCatalog::get() for every card id that
+     * actually appears anywhere in this payload (hand, banks,
+     * properties, discard pile, pending references) — never the whole
+     * deck. This is the one place card display data (title, color,
+     * value, rules text) reaches the browser: the frontend renders
+     * whatever this says rather than keeping its own copy, so
+     * CardCatalog stays the only source of truth for what a card looks
+     * like or is called. `table.rent_chart`/`table.set_size` mirror
+     * CardCatalog::RENT_CHART/SET_SIZE (small and fully public, so sent
+     * once rather than folded into every property card's own entry).
+     *
      * @return array<string, mixed>
      */
     public function viewFor(Room $room, User $viewer): array
@@ -306,6 +317,13 @@ class MasrawyDealGame extends AbstractGame
             }
         }
 
+        $cardIds = $this->collectVisibleCardIds($you, $seats, $state['discard_pile']);
+        $catalog = [];
+
+        foreach ($cardIds as $cardId) {
+            $catalog[$cardId] = CardCatalog::get($cardId);
+        }
+
         return [
             'you' => $you,
             'table' => [
@@ -316,8 +334,53 @@ class MasrawyDealGame extends AbstractGame
                 'discard_pile' => $state['discard_pile'],
                 'players' => $seats,
                 'pending' => $pending,
+                'catalog' => $catalog,
+                'rent_chart' => CardCatalog::RENT_CHART,
+                'set_size' => CardCatalog::SET_SIZE,
             ],
         ];
+    }
+
+    /**
+     * Every card id visible anywhere in this payload — the "what needs
+     * a catalog entry" list for viewFor() above. Deliberately narrow:
+     * scans exactly the structures already built for this one viewer,
+     * so a hidden opponent hand (hand === null) never leaks its card
+     * ids via the catalog either.
+     *
+     * Pending (a played action's own card_id, a target/give card
+     * mid-charge, a Just Say No in the chain) is NOT scanned separately
+     * here — every card a pending action can reference is already
+     * sitting in the discard pile or in a properties group by the time
+     * settlePending() runs (see handlePlaySlyDeal() and friends), so
+     * those ids are always already covered above. Add a pending scan
+     * if a future card kind ever references one that genuinely isn't
+     * covered by the structures already walked here.
+     *
+     * @param array<string, mixed> $you
+     * @param array<int, array<string, mixed>> $seats
+     * @param array<int, string> $discardPile
+     * @return array<int, string>
+     */
+    protected function collectVisibleCardIds(array $you, array $seats, array $discardPile): array
+    {
+        $ids = array_merge($you['hand'], $discardPile);
+
+        foreach ($seats as $seat) {
+            $ids = array_merge($ids, $seat['hand'] ?? [], $seat['bank']);
+
+            foreach ($seat['properties'] as $group) {
+                $ids = array_merge($ids, $group['cards']);
+
+                foreach (['house', 'hotel'] as $building) {
+                    if ($group[$building] !== null) {
+                        $ids[] = $group[$building];
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($ids));
     }
 
     // --- Draw ---------------------------------------------------------
