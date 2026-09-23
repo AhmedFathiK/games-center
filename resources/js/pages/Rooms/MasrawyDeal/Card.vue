@@ -21,7 +21,7 @@
  * The action-card icons (arrow/cake/flame/hookah) ARE included — small,
  * self-contained SVGs ported directly from the studio.
  */
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 import type { CardCatalogEntry } from '@/types/room'
 
 const props = withDefaults(
@@ -86,6 +86,7 @@ function colorLabel(color: string): string {
 }
 
 const isLg = computed(() => props.size === 'lg')
+const motifId = `mc-art-deco-${useId()}`
 // The studio's own native card is 340x520 (ratio ≈ 0.6538). 'sm' keeps
 // many cards legible side by side; 'lg' is roughly double for a single
 // selected-card detail view.
@@ -170,7 +171,52 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
             <p v-if="isLg" class="mc-rent-desc">{{ entry.description }}</p>
         </div>
 
-        <!-- Action -->
+        <!-- Garab 7azak / Pass Go -->
+        <div v-else-if="entry.type === 'action' && entry.action === 'pass_go'" class="mc-face mc-garab" :style="{ background: ACTION_STYLE[entry.action]?.bg ?? '#e2e8f0' }">
+            <div class="mc-garab-badge mc-garab-badge--top">
+                <span class="mc-garab-mark">M</span>{{ entry.value }}<sub>M</sub>
+            </div>
+            <div class="mc-garab-badge mc-garab-badge--bottom">
+                <span class="mc-garab-mark">M</span>{{ entry.value }}<sub>M</sub>
+            </div>
+
+            <div class="mc-garab-inset">
+                <svg class="mc-garab-frame" viewBox="0 0 310 488" preserveAspectRatio="none" aria-hidden="true">
+                    <defs>
+                        <pattern :id="motifId" width="10" height="10" patternUnits="userSpaceOnUse">
+                            <rect width="10" height="10" fill="#fef0b8" />
+                            <path d="M5 0 L10 5 L5 10 L0 5 Z" fill="none" stroke="#111111" stroke-width="1" />
+                            <path d="M5 2.5 L7.5 5 L5 7.5 L2.5 5 Z" fill="#111111" />
+                        </pattern>
+                    </defs>
+                    <rect x="2" y="2" width="306" height="484" fill="none" stroke="#111111" stroke-width="2" />
+                    <rect x="3" y="3" width="304" height="12" :fill="`url(#${motifId})`" stroke="#111111" stroke-width="0.8" />
+                    <rect x="3" y="473" width="304" height="12" :fill="`url(#${motifId})`" stroke="#111111" stroke-width="0.8" />
+                    <rect x="3" y="3" width="12" height="482" :fill="`url(#${motifId})`" stroke="#111111" stroke-width="0.8" />
+                    <rect x="295" y="3" width="12" height="482" :fill="`url(#${motifId})`" stroke="#111111" stroke-width="0.8" />
+                    <rect x="15" y="15" width="280" height="458" fill="none" stroke="#111111" stroke-width="1.5" />
+                </svg>
+
+                <div class="mc-garab-header">
+                    <span class="mc-category">CART SAYTARA</span>
+                </div>
+
+                <div class="mc-garab-center">
+                    <div class="mc-garab-medallion">
+                        <h3 class="mc-garab-title">{{ entry.label }}</h3>
+                        <svg class="mc-garab-arrow" viewBox="0 0 120 30" fill="none" aria-hidden="true">
+                            <path d="M 5 15 L 35 2 L 35 9 L 105 9 L 115 2 L 115 28 L 105 21 L 35 21 L 35 28 Z" fill="#cc1111" stroke="#111111" stroke-width="2.5" stroke-linejoin="round" />
+                        </svg>
+                    </div>
+                </div>
+
+                <div class="mc-garab-footer">
+                    <p class="mc-garab-description">{{ entry.description }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Other actions -->
         <div v-else-if="entry.type === 'action'" class="mc-face mc-action" :style="{ background: ACTION_STYLE[entry.action ?? '']?.bg ?? '#e2e8f0' }">
             <div class="mc-badge mc-badge--corner">{{ formatValue(entry.value) }}</div>
             <span class="mc-category">CART SAYTARA</span>
@@ -210,6 +256,7 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
     flex-shrink: 0;
     font-family: 'Montserrat', sans-serif;
     color: #111111;
+    container-type: inline-size;
 }
 
 .mc-face {
@@ -486,5 +533,180 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
     width: 2.6em;
     height: auto;
     margin-top: 0.3em;
+}
+
+/* Garab 7azak / Pass Go, following the supplied card-studio reference. */
+.mc-garab {
+    display: block;
+    border: 0.88cqi solid #111111;
+    border-radius: 3.53cqi;
+    padding: 1.76cqi;
+    background: #fef0b8;
+}
+
+.mc-garab-inset {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    padding: 4.52cqi;
+    border: 0.59cqi solid #111111;
+    border-radius: 1.76cqi;
+    background: #fef0b8;
+}
+
+.mc-garab-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.mc-garab-badge {
+    position: absolute;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14.12cqi;
+    aspect-ratio: 1;
+    box-sizing: border-box;
+    border: 0.74cqi solid #111111;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 0.59cqi 1.18cqi rgba(0, 0, 0, 0.15);
+    font-family: 'Montserrat', sans-serif;
+    font-size: 4.41cqi;
+    font-weight: 900;
+    letter-spacing: -0.15cqi;
+    line-height: 1;
+    transform: rotate(-12deg);
+}
+
+.mc-garab-badge::before {
+    position: absolute;
+    inset: 8.33%;
+    border: 0.44cqi solid #111111;
+    border-radius: 50%;
+    content: '';
+}
+
+.mc-garab-badge sub {
+    position: relative;
+    bottom: -0.05em;
+    font-size: 0.65em;
+    line-height: 1;
+}
+
+.mc-garab-mark {
+    position: relative;
+    display: inline-block;
+    line-height: 1;
+}
+
+.mc-garab-mark::before,
+.mc-garab-mark::after {
+    position: absolute;
+    right: -0.08em;
+    left: -0.08em;
+    height: 0.09em;
+    border-radius: 1px;
+    background: currentColor;
+    content: '';
+}
+
+.mc-garab-mark::before {
+    top: 36%;
+}
+
+.mc-garab-mark::after {
+    top: 56%;
+}
+
+.mc-garab-badge--top {
+    top: 2.94cqi;
+    left: 2.94cqi;
+}
+
+.mc-garab-badge--bottom {
+    right: 2.94cqi;
+    bottom: 2.94cqi;
+}
+
+.mc-garab-header,
+.mc-garab-footer {
+    z-index: 10;
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+.mc-garab-header .mc-category {
+    padding: 0;
+    font-size: 5cqi;
+    letter-spacing: 0.35cqi;
+}
+
+.mc-garab-center {
+    z-index: 10;
+    display: flex;
+    flex: 0 0 39%;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+.mc-garab-medallion {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 59%;
+    aspect-ratio: 1;
+    box-sizing: border-box;
+    padding: 3.24cqi;
+    border: 1.76cqi solid #111111;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1.18cqi 2.94cqi rgba(0, 0, 0, 0.15);
+    text-align: center;
+}
+
+.mc-garab-title {
+    margin: 0;
+    color: #111111;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 6.47cqi;
+    font-weight: 900;
+    line-height: 1.1;
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+}
+
+.mc-garab-arrow {
+    display: block;
+    width: 32.35%;
+    height: auto;
+    margin-top: 2.35cqi;
+    flex-shrink: 0;
+}
+
+.mc-garab-description {
+    margin: 0;
+    color: #111111;
+    font-family: 'EB Garamond', serif;
+    font-size: 4.41cqi;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: center;
 }
 </style>

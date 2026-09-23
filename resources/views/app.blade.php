@@ -17,12 +17,15 @@
          requests on every navigation between them. Centralized here as
          a single <link> so it's fetched once and discovered early by
          the browser's preloader, instead of waiting on each component's
-         CSS to parse. Mafia's own fonts (Special Elite / IBM Plex) stay
-         scoped to Rooms/Show.vue since they're genuinely only needed
-         there — see that file's own note about eventually gating them
-         per game slug once a second game exists to gate against. -->
+         CSS to parse. Montserrat / EB Garamond are used by Masrawy Deal
+         card faces. Mafia's own fonts (Special Elite / IBM Plex) stay
+         scoped to Rooms/Show.vue since they're only needed there. -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@500;700&family=Montserrat:wght@400;600;800;900&display=swap"
+        rel="stylesheet"
+    />
     <link
         href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet"
