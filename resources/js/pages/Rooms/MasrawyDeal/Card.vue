@@ -111,6 +111,43 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
         </div>
 
         <!-- Property -->
+        <div v-else-if="entry.type === 'property' && !isRailroadOrUtility(entry.color)" class="mc-face mc-property-reference">
+            <div class="mc-studio-badge mc-property-reference-badge">
+                <span class="mc-studio-mark">M</span>{{ entry.value }}<sub>M</sub>
+            </div>
+            <div class="mc-property-reference-banner" :style="{ background: colorHex(entry.color!) }">
+                <h3>{{ entry.label }}</h3>
+            </div>
+            <div class="mc-property-reference-body">
+                <div class="mc-property-reference-elbis">ELBIS</div>
+                <ul v-if="rentChart" class="mc-property-reference-ladder">
+                    <li v-for="(rent, i) in rentChart" :key="i" class="mc-property-reference-row">
+                        <div class="mc-property-reference-cards">
+                            <div
+                                v-for="cardIndex in i + 1"
+                                :key="cardIndex"
+                                class="mc-property-reference-mini-card"
+                                :style="{
+                                    left: `${(i + 1 - cardIndex) * 1.18}cqi`,
+                                    top: `${(i + 1 - cardIndex) * 0.59}cqi`,
+                                    zIndex: cardIndex,
+                                    '--property-color': colorHex(entry.color!),
+                                }"
+                            >
+                                <span />
+                                <strong>{{ cardIndex === i + 1 ? cardIndex : '' }}</strong>
+                            </div>
+                        </div>
+                        <div class="mc-property-reference-leader">
+                            <span v-if="i === (setSize ?? rentChart.length) - 1" class="mc-property-reference-full-set">MANTI2A KAMLA</span>
+                        </div>
+                        <div class="mc-property-reference-rent"><span class="mc-studio-mark">M</span>{{ rent }}<sub>M</sub></div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Service properties keep their existing specialized banner. -->
         <div v-else-if="entry.type === 'property'" class="mc-face mc-property">
             <div class="mc-badge mc-badge--corner">{{ formatValue(entry.value) }}</div>
             <div class="mc-property-banner" :style="{ background: colorHex(entry.color!) }">
@@ -416,6 +453,160 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
 
 .mc-rent-amount {
     font-weight: 900;
+}
+
+.mc-property-reference {
+    display: flex;
+    border: 0.88cqi solid #111111;
+    border-radius: 3.53cqi;
+    background: #e5edd6;
+}
+
+.mc-property-reference-badge {
+    top: 2.35cqi;
+    left: 2.35cqi;
+}
+
+.mc-property-reference-banner {
+    z-index: 10;
+    display: flex;
+    flex: 0 0 32.35cqi;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 2.94cqi 3.53cqi 2.94cqi 20cqi;
+    border-bottom: 0.88cqi solid #111111;
+    text-align: center;
+}
+
+.mc-property-reference-banner h3 {
+    margin: 0;
+    color: #ffffff;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 5.29cqi;
+    font-weight: 900;
+    line-height: 1.15;
+    text-shadow: 0 0.59cqi 1.18cqi rgba(0, 0, 0, 0.3);
+    text-transform: uppercase;
+}
+
+.mc-property-reference-body {
+    z-index: 10;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 0;
+    padding: 4.7cqi 5.88cqi;
+}
+
+.mc-property-reference-elbis {
+    align-self: stretch;
+    margin: 0 0 4.7cqi;
+    padding: 0 0.59cqi;
+    color: #111111;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 4.41cqi;
+    font-weight: 900;
+    text-align: right;
+}
+
+.mc-property-reference-ladder {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.mc-property-reference-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    margin-bottom: 5.29cqi;
+}
+
+.mc-property-reference-cards {
+    position: relative;
+    flex: 0 0 14.7cqi;
+    height: 13.53cqi;
+}
+
+.mc-property-reference-mini-card {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    width: 8.82cqi;
+    height: 12.35cqi;
+    overflow: hidden;
+    border: 0.44cqi solid #111111;
+    border-radius: 0.88cqi;
+    background: #ffffff;
+    box-shadow: 0.29cqi 0.44cqi 0.88cqi rgba(0, 0, 0, 0.18);
+}
+
+.mc-property-reference-mini-card span {
+    flex: 0 0 28.6%;
+    box-sizing: border-box;
+    border-bottom: 0.35cqi solid #111111;
+    background: var(--property-color);
+}
+
+.mc-property-reference-mini-card strong {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    color: #111111;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 5.29cqi;
+    font-weight: 900;
+}
+
+.mc-property-reference-leader {
+    position: relative;
+    flex: 1;
+    height: 1em;
+    margin: 0 2.35cqi;
+    border-bottom: 0.88cqi dotted #111111;
+}
+
+.mc-property-reference-full-set {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    padding: 0 1.76cqi;
+    background: #e5edd6;
+    color: #111111;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 3.24cqi;
+    font-weight: 900;
+    letter-spacing: 0.15cqi;
+    white-space: nowrap;
+    transform: translate(-50%, -10%);
+}
+
+.mc-property-reference-rent {
+    min-width: 19.1cqi;
+    color: #111111;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 6.47cqi;
+    font-weight: 900;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.mc-property-reference-rent sub {
+    position: relative;
+    bottom: -0.05em;
+    font-size: 0.65em;
 }
 
 /* Wildcard */
