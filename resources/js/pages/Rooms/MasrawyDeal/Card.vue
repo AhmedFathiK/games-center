@@ -153,35 +153,67 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
         </div>
 
         <!-- Rent -->
-        <div v-else-if="entry.type === 'rent'" class="mc-face mc-rent" :style="{ background: RENT_BG }">
-            <div class="mc-badge mc-badge--corner">{{ formatValue(entry.value) }}</div>
-            <span class="mc-category">CART SAYTARA</span>
-            <div class="mc-rent-ring">
-                <template v-if="entry.any_color">
-                    <div class="mc-rent-ring-rainbow"></div>
-                </template>
-                <template v-else>
-                    <div class="mc-rent-ring-half" :style="{ background: colorHex(entry.colors![0]) }"></div>
-                    <div class="mc-rent-ring-half" :style="{ background: colorHex(entry.colors![1]) }"></div>
-                </template>
-                <div class="mc-rent-ring-inner">
-                    <span>{{ entry.label }}</span>
+        <div v-else-if="entry.type === 'rent'" class="mc-face mc-studio mc-rent-reference" :style="{ '--mc-studio-bg': RENT_BG }">
+            <div class="mc-studio-badge mc-studio-badge--top">
+                <span class="mc-studio-mark">M</span>{{ entry.value }}<sub>M</sub>
+            </div>
+            <div class="mc-studio-badge mc-studio-badge--bottom">
+                <span class="mc-studio-mark">M</span>{{ entry.value }}<sub>M</sub>
+            </div>
+
+            <div class="mc-studio-inset">
+                <svg class="mc-studio-frame" viewBox="0 0 310 488" preserveAspectRatio="none" aria-hidden="true">
+                    <defs>
+                        <pattern :id="motifId" width="10" height="10" patternUnits="userSpaceOnUse">
+                            <rect width="10" height="10" :fill="RENT_BG" />
+                            <path d="M5 0 L10 5 L5 10 L0 5 Z" fill="none" stroke="#111111" stroke-width="1" />
+                            <path d="M5 2.5 L7.5 5 L5 7.5 L2.5 5 Z" fill="#111111" />
+                        </pattern>
+                    </defs>
+                    <rect x="2" y="2" width="306" height="484" fill="none" stroke="#111111" stroke-width="2" />
+                    <rect x="3" y="3" width="304" height="12" :fill="`url(#${motifId})`" stroke="#111111" stroke-width="0.8" />
+                    <rect x="3" y="473" width="304" height="12" :fill="`url(#${motifId})`" stroke="#111111" stroke-width="0.8" />
+                    <rect x="3" y="3" width="12" height="482" :fill="`url(#${motifId})`" stroke="#111111" stroke-width="0.8" />
+                    <rect x="295" y="3" width="12" height="482" :fill="`url(#${motifId})`" stroke="#111111" stroke-width="0.8" />
+                    <rect x="15" y="15" width="280" height="458" fill="none" stroke="#111111" stroke-width="1.5" />
+                </svg>
+
+                <div class="mc-studio-header">
+                    <span class="mc-category">CART SAYTARA</span>
+                </div>
+
+                <div class="mc-studio-center">
+                    <div class="mc-rent-reference-orbit">
+                        <template v-if="entry.any_color">
+                            <div class="mc-rent-ring-rainbow"></div>
+                        </template>
+                        <template v-else>
+                            <div class="mc-rent-ring-half" :style="{ background: colorHex(entry.colors![0]) }"></div>
+                            <div class="mc-rent-ring-half" :style="{ background: colorHex(entry.colors![1]) }"></div>
+                        </template>
+                        <div class="mc-rent-reference-medallion">
+                            <h3>{{ entry.label }}</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mc-studio-footer">
+                    <p class="mc-studio-description">{{ entry.description }}</p>
                 </div>
             </div>
-            <p v-if="isLg" class="mc-rent-desc">{{ entry.description }}</p>
         </div>
 
         <!-- Garab 7azak / Pass Go -->
-        <div v-else-if="entry.type === 'action' && entry.action === 'pass_go'" class="mc-face mc-garab" :style="{ background: ACTION_STYLE[entry.action]?.bg ?? '#e2e8f0' }">
-            <div class="mc-garab-badge mc-garab-badge--top">
-                <span class="mc-garab-mark">M</span>{{ entry.value }}<sub>M</sub>
+        <div v-else-if="entry.type === 'action' && entry.action === 'pass_go'" class="mc-face mc-studio" :style="{ '--mc-studio-bg': ACTION_STYLE[entry.action]?.bg ?? '#e2e8f0' }">
+            <div class="mc-studio-badge mc-studio-badge--top">
+                <span class="mc-studio-mark">M</span>{{ entry.value }}<sub>M</sub>
             </div>
-            <div class="mc-garab-badge mc-garab-badge--bottom">
-                <span class="mc-garab-mark">M</span>{{ entry.value }}<sub>M</sub>
+            <div class="mc-studio-badge mc-studio-badge--bottom">
+                <span class="mc-studio-mark">M</span>{{ entry.value }}<sub>M</sub>
             </div>
 
-            <div class="mc-garab-inset">
-                <svg class="mc-garab-frame" viewBox="0 0 310 488" preserveAspectRatio="none" aria-hidden="true">
+            <div class="mc-studio-inset">
+                <svg class="mc-studio-frame" viewBox="0 0 310 488" preserveAspectRatio="none" aria-hidden="true">
                     <defs>
                         <pattern :id="motifId" width="10" height="10" patternUnits="userSpaceOnUse">
                             <rect width="10" height="10" fill="#fef0b8" />
@@ -197,11 +229,11 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
                     <rect x="15" y="15" width="280" height="458" fill="none" stroke="#111111" stroke-width="1.5" />
                 </svg>
 
-                <div class="mc-garab-header">
+                <div class="mc-studio-header">
                     <span class="mc-category">CART SAYTARA</span>
                 </div>
 
-                <div class="mc-garab-center">
+                <div class="mc-studio-center">
                     <div class="mc-garab-medallion">
                         <h3 class="mc-garab-title">{{ entry.label }}</h3>
                         <svg class="mc-garab-arrow" viewBox="0 0 120 30" fill="none" aria-hidden="true">
@@ -210,8 +242,8 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
                     </div>
                 </div>
 
-                <div class="mc-garab-footer">
-                    <p class="mc-garab-description">{{ entry.description }}</p>
+                <div class="mc-studio-footer">
+                    <p class="mc-studio-description">{{ entry.description }}</p>
                 </div>
             </div>
         </div>
@@ -455,7 +487,6 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
 }
 
 .mc-elbob-desc,
-.mc-rent-desc,
 .mc-action-desc {
     font-family: 'EB Garamond', serif;
     font-weight: 700;
@@ -477,19 +508,6 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
     padding-top: 0.5em;
 }
 
-.mc-rent-ring {
-    flex-shrink: 0;
-    width: 55%;
-    aspect-ratio: 1;
-    margin: 0.3em auto;
-    border-radius: 50%;
-    border: 3px solid #111111;
-    position: relative;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-}
-
 .mc-rent-ring-half {
     flex: 1;
 }
@@ -497,21 +515,6 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
 .mc-rent-ring-rainbow {
     flex: 1;
     background: conic-gradient(#dc2626, #ea580c, #d97706, #ca8a04, #65a30d, #16a34a, #0d9488, #0284c7, #2563eb, #9333ea, #dc2626);
-}
-
-.mc-rent-ring-inner {
-    position: absolute;
-    inset: 18%;
-    border-radius: 50%;
-    background: #ffffff;
-    border: 2px solid #111111;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    font-weight: 900;
-    font-size: 0.7em;
-    padding: 0.2em;
 }
 
 /* Action */
@@ -535,16 +538,16 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
     margin-top: 0.3em;
 }
 
-/* Garab 7azak / Pass Go, following the supplied card-studio reference. */
-.mc-garab {
+/* Shared card-studio frame used by Garab 7azak and Rent cards. */
+.mc-studio {
     display: block;
     border: 0.88cqi solid #111111;
     border-radius: 3.53cqi;
     padding: 1.76cqi;
-    background: #fef0b8;
+    background: var(--mc-studio-bg, #fef0b8);
 }
 
-.mc-garab-inset {
+.mc-studio-inset {
     position: relative;
     display: flex;
     flex-direction: column;
@@ -557,10 +560,10 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
     padding: 4.52cqi;
     border: 0.59cqi solid #111111;
     border-radius: 1.76cqi;
-    background: #fef0b8;
+    background: var(--mc-studio-bg, #fef0b8);
 }
 
-.mc-garab-frame {
+.mc-studio-frame {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -569,7 +572,7 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
     pointer-events: none;
 }
 
-.mc-garab-badge {
+.mc-studio-badge {
     position: absolute;
     z-index: 30;
     display: flex;
@@ -590,7 +593,7 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
     transform: rotate(-12deg);
 }
 
-.mc-garab-badge::before {
+.mc-studio-badge::before {
     position: absolute;
     inset: 8.33%;
     border: 0.44cqi solid #111111;
@@ -598,21 +601,21 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
     content: '';
 }
 
-.mc-garab-badge sub {
+.mc-studio-badge sub {
     position: relative;
     bottom: -0.05em;
     font-size: 0.65em;
     line-height: 1;
 }
 
-.mc-garab-mark {
+.mc-studio-mark {
     position: relative;
     display: inline-block;
     line-height: 1;
 }
 
-.mc-garab-mark::before,
-.mc-garab-mark::after {
+.mc-studio-mark::before,
+.mc-studio-mark::after {
     position: absolute;
     right: -0.08em;
     left: -0.08em;
@@ -622,26 +625,26 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
     content: '';
 }
 
-.mc-garab-mark::before {
+.mc-studio-mark::before {
     top: 36%;
 }
 
-.mc-garab-mark::after {
+.mc-studio-mark::after {
     top: 56%;
 }
 
-.mc-garab-badge--top {
+.mc-studio-badge--top {
     top: 2.94cqi;
     left: 2.94cqi;
 }
 
-.mc-garab-badge--bottom {
+.mc-studio-badge--bottom {
     right: 2.94cqi;
     bottom: 2.94cqi;
 }
 
-.mc-garab-header,
-.mc-garab-footer {
+.mc-studio-header,
+.mc-studio-footer {
     z-index: 10;
     display: flex;
     flex: 1;
@@ -650,19 +653,19 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
     width: 100%;
 }
 
-.mc-garab-header .mc-category {
+.mc-studio-header .mc-category {
     padding: 0;
     font-size: 5cqi;
     letter-spacing: 0.35cqi;
 }
 
-.mc-garab-center {
+.mc-studio-center {
     z-index: 10;
     display: flex;
     flex: 0 0 39%;
     align-items: center;
     justify-content: center;
-    width: 100%;
+    width: 61.3%;
 }
 
 .mc-garab-medallion {
@@ -670,7 +673,7 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    width: 59%;
+    width: 96%;
     aspect-ratio: 1;
     box-sizing: border-box;
     padding: 3.24cqi;
@@ -700,7 +703,44 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
     flex-shrink: 0;
 }
 
-.mc-garab-description {
+.mc-rent-reference-orbit {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    width: 82%;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border: 1.76cqi solid #111111;
+    border-radius: 50%;
+}
+
+.mc-rent-reference-medallion {
+    position: absolute;
+    inset: 12.2%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 3cqi;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1.18cqi 2.94cqi rgba(0, 0, 0, 0.15);
+    text-align: center;
+}
+
+.mc-rent-reference-medallion h3 {
+    margin: 0;
+    color: #111111;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 6.47cqi;
+    font-weight: 900;
+    line-height: 1.1;
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+}
+
+.mc-studio-description {
     margin: 0;
     color: #111111;
     font-family: 'EB Garamond', serif;
