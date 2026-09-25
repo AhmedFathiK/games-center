@@ -60,6 +60,26 @@ function setSizeFor(id: string): number | undefined {
         : undefined
 }
 
+function wildRentChartsFor(id: string): number[][] | undefined {
+    const entry = entryFor(id)
+    const colors = entry?.type === 'wildcard' && !entry.any_color && entry.colors?.length === 2
+        ? entry.colors.filter(color => !['railroad', 'utility'].includes(color))
+        : []
+    const charts = colors.map(color => table.value?.rent_chart[color]).filter((chart): chart is number[] => Boolean(chart))
+
+    return colors.length === 2 && charts.length === 2 ? charts : undefined
+}
+
+function wildSetSizesFor(id: string): number[] | undefined {
+    const entry = entryFor(id)
+    const colors = entry?.type === 'wildcard' && !entry.any_color && entry.colors?.length === 2
+        ? entry.colors.filter(color => !['railroad', 'utility'].includes(color))
+        : []
+    const sizes = colors.map(color => table.value?.set_size[color]).filter((size): size is number => typeof size === 'number')
+
+    return colors.length === 2 && sizes.length === 2 ? sizes : undefined
+}
+
 function label(id: string): string {
     return entryFor(id)?.label ?? id
 }
@@ -466,11 +486,11 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
                     <p class="md-seat-hand">Hand: {{ seat.hand_count }} card(s)</p>
 
                     <div v-if="seat.hand" class="md-card-row">
-                        <MasrawyCard v-for="cardId in seat.hand" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" />
+                        <MasrawyCard v-for="cardId in seat.hand" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
                     </div>
 
                     <div v-if="seat.bank.length > 0" class="md-card-row">
-                        <MasrawyCard v-for="cardId in seat.bank" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" />
+                        <MasrawyCard v-for="cardId in seat.bank" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
                     </div>
                     <p v-else class="md-seat-bank">Bank: empty</p>
 
@@ -482,7 +502,7 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
                                 <span v-if="group.hotel"> + WIL3A</span>
                             </p>
                             <div class="md-card-row">
-                                <MasrawyCard v-for="cardId in group.cards" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" />
+                                <MasrawyCard v-for="cardId in group.cards" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
                             </div>
                         </div>
                     </div>
@@ -493,7 +513,7 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
             <section v-if="table.discard_pile.length > 0" class="md-discard">
                 <h3 class="md-section-title">Discard Pile</h3>
                 <div class="md-card-row">
-                    <MasrawyCard v-for="cardId in table.discard_pile" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" />
+                    <MasrawyCard v-for="cardId in table.discard_pile" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
                 </div>
             </section>
 
@@ -529,7 +549,7 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
                         :class="{ 'md-card-btn--selected': selectedCardId === cardId }"
                         @click="selectCard(cardId)"
                     >
-                        <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" />
+                        <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
                     </button>
                 </div>
 
@@ -543,6 +563,8 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
                         size="lg"
                         :rent-chart="rentChartFor(selectedEntry.id)"
                         :set-size="setSizeFor(selectedEntry.id)"
+                        :wild-rent-charts="wildRentChartsFor(selectedEntry.id)"
+                        :wild-set-sizes="wildSetSizesFor(selectedEntry.id)"
                     />
 
                     <div class="md-play-controls">

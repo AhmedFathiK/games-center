@@ -30,8 +30,10 @@ const props = withDefaults(
         size?: 'sm' | 'lg'
         rentChart?: number[]
         setSize?: number
+        wildRentCharts?: number[][]
+        wildSetSizes?: number[]
     }>(),
-    { size: 'sm', rentChart: undefined, setSize: undefined },
+    { size: 'sm', rentChart: undefined, setSize: undefined, wildRentCharts: undefined, wildSetSizes: undefined },
 )
 
 const COLOR_HEX: Record<string, string> = {
@@ -97,6 +99,13 @@ function formatValue(value: number): string {
 }
 
 const isRailroadOrUtility = (color?: string) => color === 'railroad' || color === 'utility'
+
+function isPropertyWildcard(entry: CardCatalogEntry): boolean {
+    return entry.type === 'wildcard'
+        && !entry.any_color
+        && Boolean(entry.colors?.length)
+        && !entry.colors!.some(color => isRailroadOrUtility(color))
+}
 </script>
 
 <template>
@@ -166,7 +175,91 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
             </div>
         </div>
 
-        <!-- Two-color wildcard -->
+        <!-- Two-property wild card -->
+        <div v-else-if="isPropertyWildcard(entry)" class="mc-face mc-double-wild-reference">
+            <div class="mc-studio-badge mc-double-wild-badge--top">
+                <span class="mc-studio-mark">M</span>{{ entry.value }}<sub>M</sub>
+            </div>
+            <div class="mc-studio-badge mc-double-wild-badge--bottom">
+                <span class="mc-studio-mark">M</span>{{ entry.value }}<sub>M</sub>
+            </div>
+
+            <div class="mc-double-wild-banner" :style="{ background: colorHex(entry.colors![0]) }">
+                <div class="mc-double-wild-banner-copy">
+                    <span>MANTI2A</span>
+                    <strong>CART KARBAGA</strong>
+                    <em>(Use card either way up.)</em>
+                </div>
+            </div>
+
+            <div class="mc-double-wild-body">
+                <section class="mc-double-wild-panel">
+                    <h3>ELBIS</h3>
+                    <ul v-if="wildRentCharts?.[0]" class="mc-double-wild-ladder">
+                        <li v-for="(rent, i) in wildRentCharts[0]" :key="i" class="mc-double-wild-row">
+                            <div class="mc-double-wild-cards">
+                                <div
+                                    v-for="cardIndex in i + 1"
+                                    :key="cardIndex"
+                                    class="mc-double-wild-mini-card"
+                                    :style="{
+                                        left: `${(i + 1 - cardIndex) * 1.18}cqi`,
+                                        top: `${(i + 1 - cardIndex) * 0.59}cqi`,
+                                        zIndex: cardIndex,
+                                        '--property-color': colorHex(entry.colors![0]),
+                                    }"
+                                >
+                                    <span />
+                                    <strong>{{ cardIndex === i + 1 ? cardIndex : '' }}</strong>
+                                </div>
+                            </div>
+                            <div class="mc-double-wild-leader">
+                                <span v-if="i === (wildSetSizes?.[0] ?? wildRentCharts[0].length) - 1">MANTI2A KAMLA</span>
+                            </div>
+                            <div class="mc-double-wild-rent"><span class="mc-studio-mark">M</span>{{ rent }}<sub>M</sub></div>
+                        </li>
+                    </ul>
+                </section>
+
+                <section class="mc-double-wild-panel mc-double-wild-panel--bottom">
+                    <h3>ELBIS</h3>
+                    <ul v-if="wildRentCharts?.[1]" class="mc-double-wild-ladder">
+                        <li v-for="(rent, i) in wildRentCharts[1]" :key="i" class="mc-double-wild-row mc-double-wild-row--bottom">
+                            <div class="mc-double-wild-rent"><span class="mc-studio-mark">M</span>{{ rent }}<sub>M</sub></div>
+                            <div class="mc-double-wild-leader">
+                                <span v-if="i === (wildSetSizes?.[1] ?? wildRentCharts[1].length) - 1">MANTI2A KAMLA</span>
+                            </div>
+                            <div class="mc-double-wild-cards">
+                                <div
+                                    v-for="cardIndex in i + 1"
+                                    :key="cardIndex"
+                                    class="mc-double-wild-mini-card"
+                                    :style="{
+                                        left: `${(i + 1 - cardIndex) * 1.18}cqi`,
+                                        top: `${(i + 1 - cardIndex) * 0.59}cqi`,
+                                        zIndex: cardIndex,
+                                        '--property-color': colorHex(entry.colors![1]),
+                                    }"
+                                >
+                                    <span />
+                                    <strong>{{ cardIndex === i + 1 ? cardIndex : '' }}</strong>
+                                </div>
+                            </div>
+                        </li>
+                    </ul>
+                </section>
+            </div>
+
+            <div class="mc-double-wild-banner mc-double-wild-banner--bottom" :style="{ background: colorHex(entry.colors![1]) }">
+                <div class="mc-double-wild-banner-copy">
+                    <span>MANTI2A</span>
+                    <strong>CART KARBAGA</strong>
+                    <em>(Use card either way up.)</em>
+                </div>
+            </div>
+        </div>
+
+        <!-- Wild cards with service colors retain their existing design. -->
         <div v-else-if="entry.type === 'wildcard' && !entry.any_color" class="mc-face mc-wild">
             <div class="mc-badge mc-badge--corner">{{ formatValue(entry.value) }}</div>
             <div class="mc-wild-banner" :style="{ background: colorHex(entry.colors![0]) }">
@@ -604,6 +697,220 @@ const isRailroadOrUtility = (color?: string) => color === 'railroad' || color ==
 }
 
 .mc-property-reference-rent sub {
+    position: relative;
+    bottom: -0.05em;
+    font-size: 0.65em;
+}
+
+.mc-double-wild-reference {
+    display: flex;
+    border: 0.88cqi solid #111111;
+    border-radius: 3.53cqi;
+    background: #ffffff;
+}
+
+.mc-double-wild-badge--top {
+    top: 1.76cqi;
+    left: 1.76cqi;
+    z-index: 40;
+}
+
+.mc-double-wild-badge--bottom {
+    right: 1.76cqi;
+    bottom: 1.76cqi;
+    z-index: 40;
+    transform: rotate(180deg);
+}
+
+.mc-double-wild-banner {
+    z-index: 20;
+    display: flex;
+    flex: 0 0 20cqi;
+    align-items: center;
+    justify-content: space-between;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 1.18cqi 18.24cqi 1.18cqi 17.65cqi;
+    border-bottom: 0.59cqi solid #111111;
+}
+
+.mc-double-wild-banner--bottom {
+    border-top: 0.59cqi solid #111111;
+    border-bottom: 0;
+    transform: rotate(180deg);
+}
+
+.mc-double-wild-banner-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    color: #111111;
+    white-space: nowrap;
+}
+
+.mc-double-wild-banner-copy span {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 3.24cqi;
+    font-weight: 900;
+    letter-spacing: 0.15cqi;
+    text-transform: uppercase;
+}
+
+.mc-double-wild-banner-copy strong {
+    margin-top: 0.29cqi;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 4.41cqi;
+    font-weight: 900;
+    line-height: 1.1;
+    text-transform: uppercase;
+}
+
+.mc-double-wild-banner-copy em {
+    margin-top: 0.29cqi;
+    color: #222222;
+    font-family: 'EB Garamond', serif;
+    font-size: 2.65cqi;
+    font-style: italic;
+}
+
+.mc-double-wild-body {
+    z-index: 10;
+    display: grid;
+    flex: 1;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 2.35cqi;
+    min-height: 0;
+    padding: 1.18cqi 2.94cqi;
+    overflow: hidden;
+}
+
+.mc-double-wild-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+}
+
+.mc-double-wild-panel--bottom {
+    transform: rotate(180deg);
+}
+
+.mc-double-wild-panel h3 {
+    width: 100%;
+    margin: 0 0 0.59cqi;
+    color: #111111;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 4.12cqi;
+    font-weight: 900;
+    text-align: right;
+}
+
+.mc-double-wild-ladder {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.mc-double-wild-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    width: 100%;
+    min-width: 0;
+    margin-bottom: 0.88cqi;
+}
+
+.mc-double-wild-row--bottom {
+    justify-content: flex-start;
+}
+
+.mc-double-wild-cards {
+    position: relative;
+    flex: 0 0 10.6cqi;
+    height: 13.53cqi;
+}
+
+.mc-double-wild-mini-card {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    width: 8.82cqi;
+    height: 12.35cqi;
+    overflow: hidden;
+    border: 0.44cqi solid #111111;
+    border-radius: 0.88cqi;
+    background: #ffffff;
+    box-shadow: 0.29cqi 0.44cqi 0.88cqi rgba(0, 0, 0, 0.18);
+}
+
+.mc-double-wild-mini-card span {
+    flex: 0 0 28.6%;
+    box-sizing: border-box;
+    border-bottom: 0.35cqi solid #111111;
+    background: var(--property-color);
+}
+
+.mc-double-wild-mini-card strong {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    color: #111111;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 5.29cqi;
+    font-weight: 900;
+}
+
+.mc-double-wild-leader {
+    position: relative;
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    height: 1em;
+    margin: 0 1.18cqi;
+}
+
+.mc-double-wild-leader::before {
+    position: absolute;
+    right: 0;
+    left: 0;
+    border-bottom: 0.44cqi dotted #111111;
+    content: '';
+}
+
+.mc-double-wild-leader span {
+    z-index: 1;
+    padding: 0 0.59cqi;
+    background: #ffffff;
+    color: #111111;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 2.5cqi;
+    font-weight: 900;
+    line-height: 1.1;
+    text-align: center;
+}
+
+.mc-double-wild-rent {
+    flex-shrink: 0;
+    color: #111111;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 3.24cqi;
+    font-weight: 900;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.mc-double-wild-rent sub {
     position: relative;
     bottom: -0.05em;
     font-size: 0.65em;
