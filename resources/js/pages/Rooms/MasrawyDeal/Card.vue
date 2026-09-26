@@ -89,6 +89,7 @@ function colorLabel(color: string): string {
 
 const isLg = computed(() => props.size === 'lg')
 const motifId = `mc-art-deco-${useId()}`
+const moneyPatternId = `mc-money-pattern-${useId()}`
 // The studio's own native card is 340x520 (ratio ≈ 0.6538). 'sm' keeps
 // many cards legible side by side; 'lg' is roughly double for a single
 // selected-card detail view.
@@ -106,6 +107,17 @@ function isPropertyWildcard(entry: CardCatalogEntry): boolean {
         && Boolean(entry.colors?.length)
         && !entry.colors!.some(color => isRailroadOrUtility(color))
 }
+
+function isUtilityRailroadWildcard(entry: CardCatalogEntry): boolean {
+    return entry.type === 'wildcard'
+        && !entry.any_color
+        && entry.colors?.includes('utility') === true
+        && entry.colors.includes('railroad')
+}
+
+function hasReferenceWildcardDesign(entry: CardCatalogEntry): boolean {
+    return isPropertyWildcard(entry) || isUtilityRailroadWildcard(entry)
+}
 </script>
 
 <template>
@@ -114,9 +126,40 @@ function isPropertyWildcard(entry: CardCatalogEntry): boolean {
         :style="{ width: dims.w + 'px', height: dims.h + 'px', fontSize: (isLg ? 1 : 0.62) + 'rem' }"
     >
         <!-- Money -->
-        <div v-if="entry.type === 'money'" class="mc-face mc-money" :style="{ background: MONEY_BG[entry.value] ?? '#e2e8f0' }">
-            <span class="mc-money-value">{{ formatValue(entry.value) }}</span>
-            <span class="mc-money-caption">MALTOOSH</span>
+        <div v-if="entry.type === 'money'" class="mc-face mc-money-reference" :style="{ '--mc-money-bg': MONEY_BG[entry.value] ?? '#e2e8f0' }">
+            <div class="mc-money-badge mc-money-badge--top">
+                <span class="mc-money-badge-inner"><span class="mc-studio-mark">M</span>{{ entry.value }}<sub>M</sub></span>
+            </div>
+            <div class="mc-money-badge mc-money-badge--bottom">
+                <span class="mc-money-badge-inner"><span class="mc-studio-mark">M</span>{{ entry.value }}<sub>M</sub></span>
+            </div>
+
+            <div class="mc-money-frame">
+                <svg class="mc-money-pattern" viewBox="0 0 310 490" preserveAspectRatio="none" aria-hidden="true">
+                    <defs>
+                        <pattern :id="moneyPatternId" width="12" height="12" patternUnits="userSpaceOnUse">
+                            <rect width="12" height="12" :fill="`var(--mc-money-bg)`" />
+                            <path d="M 0 6 L 6 0 L 12 6 L 6 12 Z" fill="none" stroke="#111111" stroke-width="1" />
+                            <circle cx="6" cy="6" r="2" fill="#111111" />
+                        </pattern>
+                    </defs>
+                    <rect x="3" y="3" width="304" height="484" fill="none" stroke="#111111" stroke-width="1.5" />
+                    <rect x="8" y="8" width="294" height="14" :fill="`url(#${moneyPatternId})`" stroke="#111111" stroke-width="1" />
+                    <rect x="8" y="468" width="294" height="14" :fill="`url(#${moneyPatternId})`" stroke="#111111" stroke-width="1" />
+                    <rect x="8" y="8" width="14" height="474" :fill="`url(#${moneyPatternId})`" stroke="#111111" stroke-width="1" />
+                    <rect x="288" y="8" width="14" height="474" :fill="`url(#${moneyPatternId})`" stroke="#111111" stroke-width="1" />
+                    <rect x="25" y="25" width="260" height="440" fill="none" stroke="#111111" stroke-width="1.2" />
+                </svg>
+
+                <div class="mc-money-emblem">
+                    <div class="mc-money-emblem-inner">
+                        <span class="mc-money-center-value" :class="{ 'mc-money-center-value--double': entry.value === 10 }"><span class="mc-studio-mark">M</span>{{ entry.value }}<sub>M</sub></span>
+                        <span class="mc-money-center-caption">MALTOOSH</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mc-money-copyright">© 1935, 2008 HASBRO.</div>
         </div>
 
         <!-- Property -->
@@ -176,7 +219,7 @@ function isPropertyWildcard(entry: CardCatalogEntry): boolean {
         </div>
 
         <!-- Two-property wild card -->
-        <div v-else-if="isPropertyWildcard(entry)" class="mc-face mc-double-wild-reference">
+        <div v-else-if="hasReferenceWildcardDesign(entry)" class="mc-face mc-double-wild-reference" :class="{ 'mc-double-wild-reference--service': isUtilityRailroadWildcard(entry) }">
             <div class="mc-studio-badge mc-double-wild-badge--top">
                 <span class="mc-studio-mark">M</span>{{ entry.value }}<sub>M</sub>
             </div>
@@ -186,9 +229,17 @@ function isPropertyWildcard(entry: CardCatalogEntry): boolean {
 
             <div class="mc-double-wild-banner" :style="{ background: colorHex(entry.colors![0]) }">
                 <div class="mc-double-wild-banner-copy">
-                    <span>MANTI2A</span>
+                    <span>{{ isUtilityRailroadWildcard(entry) ? 'KHADAMAT ENSHERA7' : 'MANTI2A' }}</span>
                     <strong>CART KARBAGA</strong>
                     <em>(Use card either way up.)</em>
+                </div>
+                <div v-if="isUtilityRailroadWildcard(entry)" class="mc-double-wild-service-icons" aria-hidden="true">
+                    <svg width="20" height="22" viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 18h6m-4 3h2M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z" fill="#facc15" />
+                    </svg>
+                    <svg width="22" height="20" viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 10h12a2 2 0 0 0 2-2V6h-4M18 12v6a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-6m6-6v6" />
+                    </svg>
                 </div>
             </div>
 
@@ -214,7 +265,7 @@ function isPropertyWildcard(entry: CardCatalogEntry): boolean {
                                 </div>
                             </div>
                             <div class="mc-double-wild-leader">
-                                <span v-if="i === (wildSetSizes?.[0] ?? wildRentCharts[0].length) - 1">MANTI2A KAMLA</span>
+                                <span v-if="i === (wildSetSizes?.[0] ?? wildRentCharts[0].length) - 1">{{ isUtilityRailroadWildcard(entry) ? 'KHADAMAT ENSHERA7 KAMLA' : 'MANTI2A KAMLA' }}</span>
                             </div>
                             <div class="mc-double-wild-rent"><span class="mc-studio-mark">M</span>{{ rent }}<sub>M</sub></div>
                         </li>
@@ -227,7 +278,7 @@ function isPropertyWildcard(entry: CardCatalogEntry): boolean {
                         <li v-for="(rent, i) in wildRentCharts[1]" :key="i" class="mc-double-wild-row mc-double-wild-row--bottom">
                             <div class="mc-double-wild-rent"><span class="mc-studio-mark">M</span>{{ rent }}<sub>M</sub></div>
                             <div class="mc-double-wild-leader">
-                                <span v-if="i === (wildSetSizes?.[1] ?? wildRentCharts[1].length) - 1">MANTI2A KAMLA</span>
+                                <span v-if="i === (wildSetSizes?.[1] ?? wildRentCharts[1].length) - 1">{{ isUtilityRailroadWildcard(entry) ? 'KHADAMAT ENSHERA7 KAMLA' : 'MANTI2A KAMLA' }}</span>
                             </div>
                             <div class="mc-double-wild-cards">
                                 <div
@@ -252,9 +303,14 @@ function isPropertyWildcard(entry: CardCatalogEntry): boolean {
 
             <div class="mc-double-wild-banner mc-double-wild-banner--bottom" :style="{ background: colorHex(entry.colors![1]) }">
                 <div class="mc-double-wild-banner-copy">
-                    <span>MANTI2A</span>
+                    <span>{{ isUtilityRailroadWildcard(entry) ? 'KHADAMAT ENSHERA7' : 'MANTI2A' }}</span>
                     <strong>CART KARBAGA</strong>
                     <em>(Use card either way up.)</em>
+                </div>
+                <div v-if="isUtilityRailroadWildcard(entry)" class="mc-double-wild-service-icons" aria-hidden="true">
+                    <svg width="26" height="22" viewBox="0 0 24 24" fill="#ffffff">
+                        <path d="M4 15.5V14a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v1.5M6 18a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm15 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zM3 8l2-4h14l2 4v5H3V8z" />
+                    </svg>
                 </div>
             </div>
         </div>
@@ -324,6 +380,48 @@ function isPropertyWildcard(entry: CardCatalogEntry): boolean {
                         <div class="mc-rent-reference-medallion">
                             <h3>{{ entry.label }}</h3>
                         </div>
+                    </div>
+                </div>
+
+                <div class="mc-studio-footer">
+                    <p class="mc-studio-description">{{ entry.description }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sly Deal -->
+        <div v-else-if="entry.type === 'action' && entry.action === 'sly_deal'" class="mc-face mc-studio" :style="{ '--mc-studio-bg': ACTION_STYLE[entry.action]?.bg ?? '#dbe4ce' }">
+            <div class="mc-studio-badge mc-studio-badge--top">
+                <span class="mc-studio-mark">M</span>{{ entry.value }}<sub>M</sub>
+            </div>
+            <div class="mc-studio-badge mc-studio-badge--bottom">
+                <span class="mc-studio-mark">M</span>{{ entry.value }}<sub>M</sub>
+            </div>
+
+            <div class="mc-studio-inset">
+                <svg class="mc-studio-frame" viewBox="0 0 310 488" preserveAspectRatio="none" aria-hidden="true">
+                    <defs>
+                        <pattern :id="motifId" width="10" height="10" patternUnits="userSpaceOnUse">
+                            <rect width="10" height="10" fill="#dbe4ce" />
+                            <path d="M5 0 L10 5 L5 10 L0 5 Z" fill="none" stroke="#111111" stroke-width="1" />
+                            <path d="M5 2.5 L7.5 5 L5 7.5 L2.5 5 Z" fill="#111111" />
+                        </pattern>
+                    </defs>
+                    <rect x="2" y="2" width="306" height="484" fill="none" stroke="#111111" stroke-width="2" />
+                    <rect x="3" y="3" width="304" height="12" :fill="`url(#${motifId})`" stroke="#111111" stroke-width="0.8" />
+                    <rect x="3" y="473" width="304" height="12" :fill="`url(#${motifId})`" stroke="#111111" stroke-width="0.8" />
+                    <rect x="3" y="3" width="12" height="482" :fill="`url(#${motifId})`" stroke="#111111" stroke-width="0.8" />
+                    <rect x="295" y="3" width="12" height="482" :fill="`url(#${motifId})`" stroke="#111111" stroke-width="0.8" />
+                    <rect x="15" y="15" width="280" height="458" fill="none" stroke="#111111" stroke-width="1.5" />
+                </svg>
+
+                <div class="mc-studio-header">
+                    <span class="mc-category">CART SAYTARA</span>
+                </div>
+
+                <div class="mc-studio-center">
+                    <div class="mc-garab-medallion">
+                        <h3 class="mc-garab-title">{{ entry.label }}</h3>
                     </div>
                 </div>
 
@@ -454,22 +552,150 @@ function isPropertyWildcard(entry: CardCatalogEntry): boolean {
 }
 
 /* Money */
-.mc-money {
+.mc-money-reference {
+    align-items: stretch;
+    padding: 3.53cqi;
+    border: 0.88cqi solid #111111;
+    border-radius: 3.53cqi;
+    background: var(--mc-money-bg, #e2e8f0);
+}
+
+.mc-money-badge {
+    position: absolute;
+    z-index: 40;
+    display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.3em;
+    width: 15.29cqi;
+    height: 15.29cqi;
+    box-sizing: border-box;
+    border: 0.74cqi solid #111111;
+    border-radius: 50%;
+    background: var(--mc-money-bg, #e2e8f0);
+    box-shadow: 0 0.59cqi 1.18cqi rgba(0, 0, 0, 0.1);
 }
 
-.mc-money-value {
-    font-weight: 900;
-    font-size: 2.4em;
-    letter-spacing: -0.03em;
+.mc-money-badge--top {
+    top: 3.53cqi;
+    left: 3.53cqi;
 }
 
-.mc-money-caption {
+.mc-money-badge--bottom {
+    right: 3.53cqi;
+    bottom: 3.53cqi;
+}
+
+.mc-money-badge-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 84.62%;
+    height: 84.62%;
+    box-sizing: border-box;
+    border: 0.44cqi solid #111111;
+    border-radius: 50%;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 4.12cqi;
     font-weight: 900;
-    font-size: 0.75em;
-    letter-spacing: 0.15em;
+    letter-spacing: -0.15cqi;
+    line-height: 1;
+    white-space: nowrap;
+    transform: rotate(90deg);
+}
+
+.mc-money-badge-inner sub,
+.mc-money-center-value sub {
+    position: relative;
+    bottom: -0.05em;
+    font-size: 0.65em;
+}
+
+.mc-money-frame {
+    position: relative;
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    overflow: hidden;
+    border: 0.74cqi solid #111111;
+    border-radius: 1.18cqi;
+    background: var(--mc-money-bg, #e2e8f0);
+}
+
+.mc-money-pattern {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.mc-money-emblem {
+    z-index: 20;
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 68.24cqi;
+    height: 68.24cqi;
+    box-sizing: border-box;
+    padding: 1.76cqi;
+    border: 1.47cqi solid #111111;
+    border-radius: 50%;
+    background: var(--mc-money-bg, #e2e8f0);
+    box-shadow: 0 1.18cqi 3.53cqi rgba(0, 0, 0, 0.15);
+}
+
+.mc-money-emblem-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 2.94cqi;
+    border: 0.59cqi solid #111111;
+    border-radius: 50%;
+    transform: rotate(90deg);
+}
+
+.mc-money-center-value {
+    color: #111111;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 14.12cqi;
+    font-weight: 900;
+    letter-spacing: -0.44cqi;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.mc-money-center-value--double {
+    font-size: 11.76cqi;
+}
+
+.mc-money-center-caption {
+    margin-top: 1.47cqi;
+    color: #111111;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 3.82cqi;
+    font-weight: 900;
+    letter-spacing: 0.74cqi;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.mc-money-copyright {
+    position: absolute;
+    bottom: 0.88cqi;
+    z-index: 50;
+    width: 100%;
+    color: #444444;
+    font-family: sans-serif;
+    font-size: 2.35cqi;
+    text-align: center;
 }
 
 /* Property */
@@ -707,6 +933,30 @@ function isPropertyWildcard(entry: CardCatalogEntry): boolean {
     border: 0.88cqi solid #111111;
     border-radius: 3.53cqi;
     background: #ffffff;
+}
+
+.mc-double-wild-reference--service .mc-double-wild-banner--bottom .mc-double-wild-banner-copy {
+    color: #ffffff;
+}
+
+.mc-double-wild-reference--service .mc-double-wild-banner--bottom .mc-double-wild-banner-copy em {
+    color: #e2e8f0;
+}
+
+.mc-double-wild-service-icons {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 1.18cqi;
+}
+
+.mc-double-wild-service-icons svg {
+    width: 6.47cqi;
+    height: 6.47cqi;
+}
+
+.mc-double-wild-service-icons svg:last-child {
+    width: 7.65cqi;
 }
 
 .mc-double-wild-badge--top {

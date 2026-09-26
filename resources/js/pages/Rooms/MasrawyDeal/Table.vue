@@ -63,7 +63,7 @@ function setSizeFor(id: string): number | undefined {
 function wildRentChartsFor(id: string): number[][] | undefined {
     const entry = entryFor(id)
     const colors = entry?.type === 'wildcard' && !entry.any_color && entry.colors?.length === 2
-        ? entry.colors.filter(color => !['railroad', 'utility'].includes(color))
+        ? entry.colors
         : []
     const charts = colors.map(color => table.value?.rent_chart[color]).filter((chart): chart is number[] => Boolean(chart))
 
@@ -73,7 +73,7 @@ function wildRentChartsFor(id: string): number[][] | undefined {
 function wildSetSizesFor(id: string): number[] | undefined {
     const entry = entryFor(id)
     const colors = entry?.type === 'wildcard' && !entry.any_color && entry.colors?.length === 2
-        ? entry.colors.filter(color => !['railroad', 'utility'].includes(color))
+        ? entry.colors
         : []
     const sizes = colors.map(color => table.value?.set_size[color]).filter((size): size is number => typeof size === 'number')
 
