@@ -37,6 +37,7 @@ const flippedCardIds = ref<string[]>([])
 const flippedCardsLoaded = ref(false)
 const flippedCardsStorageKey = `masrawy-deal-flipped-cards:${props.room.id}:${props.auth.user.id}`
 const isReorderingHand = ref(false)
+const isHandCollapsed = ref(false)
 
 function reconcileHandOrder(hand: string[], preferredOrder: string[]): string[] {
     const cardsInHand = new Set(hand)
@@ -654,10 +655,29 @@ function pay() {
 
 const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
 const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_turn === true && overHandLimit.value)
+const autoEndTurnReady = computed(() =>
+    canAct.value &&
+    table.value?.has_drawn_this_turn === true &&
+    playsLeft.value <= 0 &&
+    !overHandLimit.value,
+)
+const autoEndTurnAttemptedKey = ref<string | null>(null)
+
+watch(
+    () => [autoEndTurnReady.value, submitting.value] as const,
+    ([ready, isSubmitting]) => {
+        const turnKey = `${table.value?.turn_number ?? ''}:${myId.value}`
+        if (!ready || isSubmitting || autoEndTurnAttemptedKey.value === turnKey) return
+
+        autoEndTurnAttemptedKey.value = turnKey
+        endTurn()
+    },
+    { immediate: true },
+)
 </script>
 
 <template>
-    <div class="md-root">
+    <div class="md-root" :class="{ 'md-root--hand-collapsed': isHandCollapsed }">
         <!-- table/you are only ever null before the game has started, which
              Show.vue's branch guard already keeps this component from
              rendering for — this is a defensive fallback, not an expected
@@ -758,10 +778,30 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
             </section>
 
             <!-- My hand -->
-            <section class="md-hand">
-                <div class="md-hand-header">
+            <section class="md-hand" :class="{ 'md-hand--collapsed': isHandCollapsed }">
+                <button
+                    v-if="isHandCollapsed"
+                    class="md-hand-expand"
+                    type="button"
+                    :aria-label="`Show hand cards (${you.hand.length})`"
+                    title="Show hand cards"
+                    @click="isHandCollapsed = false"
+                >
+                    <span aria-hidden="true">▤</span>
+                    <span>{{ you.hand.length }}</span>
+                </button>
+                <div v-else class="md-hand-header">
                     <h3 class="md-section-title">Your Hand ({{ you.hand.length }}/7)</h3>
                     <div class="md-hand-actions">
+                        <button
+                            class="md-btn md-btn--muted md-hand-collapse"
+                            type="button"
+                            aria-label="Collapse hand cards"
+                            title="Collapse hand cards"
+                            @click="isHandCollapsed = true"
+                        >
+                            ↓
+                        </button>
                         <button
                             v-if="you.hand.length > 1"
                             class="md-btn md-btn--muted"
@@ -771,7 +811,7 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                             {{ isReorderingHand ? 'Done sorting' : 'Sort hand' }}
                         </button>
                         <button
-                            v-if="isMyTurn && table.has_drawn_this_turn && pending === null && !overHandLimit"
+                            v-if="isMyTurn && table.has_drawn_this_turn && pending === null && !overHandLimit && playsLeft > 0"
                             class="md-btn"
                             :disabled="submitting"
                             @click="endTurn"
@@ -831,7 +871,9 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                     {{ pending ? 'Waiting on a pending action.' : 'Wait for your turn to play a card.' }}
                 </p>
 
-                <div v-else-if="selectedEntry" class="md-play-panel">
+            </section>
+
+            <section v-if="selectedEntry" class="md-play-panel">
                     <MasrawyCard
                         :entry="selectedEntry"
                         size="lg"
@@ -1066,7 +1108,6 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                         </button>
                         </template>
                     </div>
-                </div>
             </section>
 
             <!-- Move a wildcard (free, on your own turn, no pending action) -->
@@ -1386,9 +1427,14 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
 
 .md-root {
     margin-top: 1.5rem;
+    padding-bottom: 290px;
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+}
+
+.md-root--hand-collapsed {
+    padding-bottom: 88px;
 }
 
 .md-error {
@@ -1424,6 +1470,64 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
     border: 1px solid var(--rc-border);
     border-radius: 8px;
     padding: 1rem 1.25rem;
+}
+
+.md-hand {
+    position: fixed;
+    z-index: 900;
+    left: 50%;
+    bottom: 0;
+    width: min(1180px, calc(100vw - 1rem));
+    max-height: min(48dvh, 330px);
+    overflow: hidden;
+    transform: translateX(-50%);
+    border-radius: 14px 14px 0 0;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.24);
+}
+
+.md-hand--collapsed {
+    left: auto;
+    right: 1rem;
+    bottom: calc(1rem + env(safe-area-inset-bottom));
+    width: auto;
+    max-height: none;
+    overflow: visible;
+    transform: none;
+    border-radius: 50%;
+    padding: 0;
+}
+
+.md-hand--collapsed > :not(.md-hand-expand) {
+    display: none;
+}
+
+.md-hand-expand {
+    display: grid;
+    width: 3.5rem;
+    height: 3.5rem;
+    place-content: center;
+    gap: 0.05rem;
+    border: 2px solid var(--rc-primary);
+    border-radius: 50%;
+    background: var(--rc-surface);
+    color: var(--rc-text-on-surface);
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+
+.md-hand-expand span:first-child {
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.md-hand-collapse {
+    min-width: 44px;
+    padding-inline: 0.65rem;
+    font-size: 1.1rem;
 }
 
 .md-summary-row {
@@ -2566,6 +2670,14 @@ input[type='checkbox'] {
         gap: 1rem;
     }
 
+    .md-root:not(.md-root--hand-collapsed) {
+        padding-bottom: 290px;
+    }
+
+    .md-root--hand-collapsed {
+        padding-bottom: 88px;
+    }
+
     .md-summary,
     .md-pending,
     .md-players,
@@ -2573,6 +2685,15 @@ input[type='checkbox'] {
     .md-panel,
     .md-hand {
         padding: 0.875rem;
+    }
+
+    .md-hand {
+        max-height: min(48dvh, 330px);
+        padding-bottom: calc(0.875rem + env(safe-area-inset-bottom));
+    }
+
+    .md-hand--collapsed {
+        padding: 0;
     }
 
     .md-play-panel {
