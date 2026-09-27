@@ -105,6 +105,10 @@ function seatFor(id: number | string): MasrawySeat | undefined {
     return table.value?.players.find(s => String(s.id) === String(id))
 }
 
+function seatBankTotal(seat: MasrawySeat): number {
+    return seat.bank.reduce((total, cardId) => total + (entryFor(cardId)?.value ?? 0), 0)
+}
+
 // --- Turn / pending state -----------------------------------------------
 
 // Table.vue also renders finished/cancelled Masrawy Deal rooms (see
@@ -161,27 +165,27 @@ function draw() {
 }
 
 function endTurn() {
-    submit({ type: 'end_turn' })
+    submit({ type: 'end_turn' }, clearSelection)
 }
 
 function playPassGo(cardId: string) {
-    submit({ type: 'play_pass_go', card_id: cardId })
+    submit({ type: 'play_pass_go', card_id: cardId }, clearSelection)
 }
 
 function playShisha(cardId: string) {
-    submit({ type: 'play_shisha', card_id: cardId })
+    submit({ type: 'play_shisha', card_id: cardId }, clearSelection)
 }
 
 function playWil3a(cardId: string) {
-    submit({ type: 'play_wil3a', card_id: cardId })
+    submit({ type: 'play_wil3a', card_id: cardId }, clearSelection)
 }
 
 function bankCard(cardId: string) {
-    submit({ type: 'bank_card', card_id: cardId })
+    submit({ type: 'bank_card', card_id: cardId }, clearSelection)
 }
 
 function discard(cardId: string) {
-    submit({ type: 'discard', card_id: cardId })
+    submit({ type: 'discard', card_id: cardId }, clearSelection)
 }
 
 // --- Selected card / contextual play panel --------------------------------
@@ -203,6 +207,12 @@ function selectCard(id: string) {
     dealBreakerColor.value = ''
     doubleRentIds.value = []
     rentColor.value = ''
+}
+
+function resetTargetSelections() {
+    targetCardId.value = ''
+    dealBreakerColor.value = ''
+    wildcardColor.value = ''
 }
 
 function clearSelection() {
@@ -244,11 +254,11 @@ function opponentPropertyCards(seat?: MasrawySeat): { id: string; group: string 
 }
 
 function opponentCompleteSetColors(seat?: MasrawySeat): string[] {
-    // We can't compute completeness client-side without duplicating the
-    // "did this color reach its SET_SIZE" rule, so every color the
-    // opponent has anything in is offered and the server is the real
-    // judge of which ones are actually complete.
-    return seat ? Object.keys(seat.properties) : []
+    if (!seat) return []
+
+    return Object.entries(seat.properties)
+        .filter(([color, group]) => group.cards.length >= (table.value?.set_size[color] ?? Number.POSITIVE_INFINITY))
+        .map(([color]) => color)
 }
 
 const myDoubleRentCards = computed(() =>
@@ -371,6 +381,7 @@ function pay() {
 // --- Hand limit discard ---------------------------------------------------
 
 const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
+const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_turn === true && overHandLimit.value)
 </script>
 
 <template>
@@ -411,18 +422,6 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
                     Draw
                 </button>
 
-                <button
-                    v-if="isMyTurn && table.has_drawn_this_turn && pending === null && !overHandLimit"
-                    class="md-btn"
-                    :disabled="submitting"
-                    @click="endTurn"
-                >
-                    End Turn
-                </button>
-
-                <p v-if="isMyTurn && overHandLimit" class="md-hint">
-                    You're over the 7-card hand limit — discard down to 7 before ending your turn.
-                </p>
             </section>
 
             <!-- Pending action banner -->
@@ -444,7 +443,7 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
                 <div v-for="entry in myOpenResponses" :key="entry.targetId" class="md-respond">
                     <p>You may respond{{ pending.kind === 'birthday' || pending.kind === 'rent' ? ` (for ${playerName(entry.targetId)})` : '' }}:</p>
 
-                    <select v-model="respondCardByTarget[String(entry.targetId)]" :disabled="myJustSayNoCards.length === 0">
+                    <select v-model="respondCardByTarget[String(entry.targetId)]" :disabled="myJustSayNoCards.length === 0" aria-label="Choose a Just Say No card">
                         <option value="" disabled>Choose a DA 3AND OMMO... card</option>
                         <option v-for="cardId in myJustSayNoCards" :key="cardId" :value="cardId">
                             {{ label(cardId) }}
@@ -479,78 +478,33 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
                 </div>
             </section>
 
-            <!-- Players -->
-            <section class="md-players">
-                <h3 class="md-section-title">Players</h3>
-                <div v-for="seat in table.players" :key="seat.id" class="md-seat" :class="{ 'md-seat--turn': seat.id === table.current_player_id }">
-                    <p class="md-seat-name">
-                        {{ playerName(seat.id) }}<span v-if="seat.id === myId"> (you)</span>
-                        <span v-if="seat.id === table.current_player_id" class="md-seat-turn-tag">— current turn</span>
-                    </p>
-                    <p class="md-seat-hand">Hand: {{ seat.hand_count }} card(s)</p>
-
-                    <div v-if="seat.hand" class="md-card-row">
-                        <MasrawyCard v-for="cardId in seat.hand" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
-                    </div>
-
-                    <div v-if="seat.bank.length > 0" class="md-card-row">
-                        <MasrawyCard v-for="cardId in seat.bank" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
-                    </div>
-                    <p v-else class="md-seat-bank">Bank: empty</p>
-
-                    <div v-if="Object.keys(seat.properties).length > 0" class="md-seat-properties">
-                        <div v-for="(group, color) in seat.properties" :key="color" class="md-group">
-                            <p class="md-group-label">
-                                {{ colorLabel(String(color)) }}
-                                <span v-if="group.house"> + SHISHA</span>
-                                <span v-if="group.hotel"> + WIL3A</span>
-                            </p>
-                            <div class="md-card-row">
-                                <MasrawyCard v-for="cardId in group.cards" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Discard pile -->
-            <section v-if="table.discard_pile.length > 0" class="md-discard">
-                <h3 class="md-section-title">Discard Pile</h3>
-                <div class="md-discard-stack" :aria-label="`Top card of discard pile; ${table.discard_pile.length} cards in pile`">
-                    <MasrawyCard :entry="entryFor(topDiscardCardId)!" :rent-chart="rentChartFor(topDiscardCardId)" :set-size="setSizeFor(topDiscardCardId)" :wild-rent-charts="wildRentChartsFor(topDiscardCardId)" :wild-set-sizes="wildSetSizesFor(topDiscardCardId)" />
-                </div>
-            </section>
-
-            <!-- Move a wildcard (free, on your own turn, no pending action) -->
-            <section v-if="canAct && myWildcards.length > 0" class="md-panel">
-                <h3 class="md-section-title">Move a Wildcard (free)</h3>
-                <select v-model="moveWildcardId">
-                    <option value="" disabled>Choose one of your wildcards</option>
-                    <option v-for="c in myWildcards" :key="c.id" :value="c.id">
-                        {{ label(c.id) }} (currently {{ colorLabel(c.group) }})
-                    </option>
-                </select>
-                <select v-model="moveWildcardColor" :disabled="!moveWildcardId">
-                    <option value="" disabled>New color</option>
-                    <option v-for="c in moveWildcardValidColors(moveWildcardId)" :key="c" :value="c">
-                        {{ colorLabel(c) }}
-                    </option>
-                </select>
-                <button class="md-btn" :disabled="submitting || !moveWildcardId || !moveWildcardColor" @click="moveWildcard">
-                    Move
-                </button>
-            </section>
-
             <!-- My hand -->
             <section class="md-hand">
-                <h3 class="md-section-title">Your Hand ({{ you.hand.length }})</h3>
+                <div class="md-hand-header">
+                    <h3 class="md-section-title">Your Hand ({{ you.hand.length }}/7)</h3>
+                    <button
+                        v-if="isMyTurn && table.has_drawn_this_turn && pending === null && !overHandLimit"
+                        class="md-btn"
+                        :disabled="submitting"
+                        @click="endTurn"
+                    >
+                        End Turn
+                    </button>
+                </div>
 
-                <div class="md-card-row">
+                <p v-if="isMyTurn && overHandLimit" class="md-hint">
+                    Discard down to 7 cards before ending your turn.
+                </p>
+
+                <div class="md-card-row md-card-row--hand">
                     <button
                         v-for="cardId in you.hand"
                         :key="cardId"
                         class="md-card-btn"
                         :class="{ 'md-card-btn--selected': selectedCardId === cardId }"
+                        :aria-label="`Select ${label(cardId)}`"
+                        :aria-pressed="selectedCardId === cardId"
+                        :disabled="!canAct"
                         @click="selectCard(cardId)"
                     >
                         <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
@@ -586,7 +540,7 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
 
                         <!-- Two-color wildcard -->
                         <template v-if="selectedIsTwoColorWild">
-                            <select v-model="wildcardColor">
+                            <select v-model="wildcardColor" aria-label="Choose the property color">
                                 <option value="" disabled>Choose a color</option>
                                 <option v-for="c in selectedEntry.colors" :key="c" :value="c">{{ colorLabel(c) }}</option>
                             </select>
@@ -597,7 +551,7 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
 
                         <!-- Any-color (EL BOB) wildcard -->
                         <template v-if="selectedIsElBob">
-                            <select v-model="wildcardColor">
+                            <select v-model="wildcardColor" aria-label="Choose the property color">
                                 <option value="" disabled>Choose a color</option>
                                 <option v-for="c in COLORS" :key="c" :value="c">{{ colorLabel(c) }}</option>
                             </select>
@@ -616,7 +570,7 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
                             Bank It (no effect, worth its printed value)
                         </button>
 
-                        <button class="md-btn md-btn--muted" :disabled="submitting" @click="discard(selectedEntry.id)">
+                        <button class="md-btn md-btn--muted" :disabled="submitting || !canDiscard" @click="discard(selectedEntry.id)">
                             Discard
                         </button>
 
@@ -635,7 +589,7 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
 
                         <!-- HAT 5 FI KEES / Debt Collector -->
                         <template v-if="selectedEntry.action === 'debt_collector'">
-                            <select v-model="targetId">
+                            <select v-model="targetId" aria-label="Choose a player to charge">
                                 <option :value="null" disabled>Choose a player</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
@@ -651,13 +605,13 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
 
                         <!-- ELBIS! rent (regular or wild) -->
                         <template v-if="selectedIsPlainRent || selectedIsWildRent">
-                            <select v-model="rentColor">
+                            <select v-model="rentColor" aria-label="Choose which property color to charge">
                                 <option value="" disabled>Which color to charge</option>
                                 <option v-for="c in (selectedIsPlainRent ? selectedEntry.colors : myOwnColors)" :key="c" :value="c">
                                     {{ colorLabel(c) }}
                                 </option>
                             </select>
-                            <select v-if="selectedIsWildRent" v-model="targetId">
+                            <select v-if="selectedIsWildRent" v-model="targetId" aria-label="Choose the player to charge">
                                 <option :value="null" disabled>Choose a player</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
@@ -679,46 +633,52 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
 
                         <!-- KHOD AMA 2OLAK / Sly Deal -->
                         <template v-if="selectedEntry.action === 'sly_deal'">
-                            <select v-model="targetId">
+                            <select v-model="targetId" aria-label="Choose whose property to take" @change="resetTargetSelections">
                                 <option :value="null" disabled>Choose a player</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
-                            <select v-model="targetCardId" :disabled="targetId === null">
+                            <p v-if="targetId !== null && opponentPropertyCards(targetOpponent).length === 0" class="md-hint">
+                                That player has no properties to take.
+                            </p>
+                            <select v-model="targetCardId" :disabled="targetId === null" aria-label="Choose the property to take" @change="wildcardColor = ''">
                                 <option value="" disabled>Choose a property of theirs</option>
                                 <option v-for="c in opponentPropertyCards(targetOpponent)" :key="c.id" :value="c.id">
                                     {{ label(c.id) }} ({{ colorLabel(c.group) }})
                                 </option>
                             </select>
-                            <select v-if="targetCardId && entryFor(targetCardId)?.type === 'wildcard'" v-model="wildcardColor">
+                            <select v-if="targetCardId && entryFor(targetCardId)?.type === 'wildcard'" v-model="wildcardColor" aria-label="Choose the taken wildcard's new color">
                                 <option value="">Keep current color</option>
                                 <option v-for="c in (entryFor(targetCardId)?.any_color ? COLORS : entryFor(targetCardId)?.colors)" :key="c" :value="c">
                                     {{ colorLabel(c) }}
                                 </option>
                             </select>
                             <button class="md-btn" :disabled="submitting || playsLeft < 1 || targetId === null || !targetCardId" @click="playSlyDeal(selectedEntry.id)">
-                                Play
+                                Take Property
                             </button>
                         </template>
 
                         <!-- MA.. TEEGY WANA AGY! / Forced Deal -->
                         <template v-if="selectedEntry.action === 'forced_deal'">
-                            <select v-model="targetId">
+                            <select v-model="targetId" aria-label="Choose whose property to take and replace" @change="resetTargetSelections">
                                 <option :value="null" disabled>Choose a player</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
-                            <select v-model="targetCardId" :disabled="targetId === null">
+                            <p v-if="targetId !== null && opponentPropertyCards(targetOpponent).length === 0" class="md-hint">
+                                That player has no properties to swap.
+                            </p>
+                            <select v-model="targetCardId" :disabled="targetId === null" aria-label="Choose their property to take" @change="wildcardColor = ''">
                                 <option value="" disabled>Choose a property of theirs to take</option>
                                 <option v-for="c in opponentPropertyCards(targetOpponent)" :key="c.id" :value="c.id">
                                     {{ label(c.id) }} ({{ colorLabel(c.group) }})
                                 </option>
                             </select>
-                            <select v-model="giveCardId">
+                            <select v-model="giveCardId" aria-label="Choose one of your properties to give">
                                 <option value="" disabled>Choose one of your properties to give</option>
                                 <option v-for="c in myOwnPropertyCards" :key="c.id" :value="c.id">
                                     {{ label(c.id) }} ({{ colorLabel(c.group) }})
                                 </option>
                             </select>
-                            <select v-if="targetCardId && entryFor(targetCardId)?.type === 'wildcard'" v-model="wildcardColor">
+                            <select v-if="targetCardId && entryFor(targetCardId)?.type === 'wildcard'" v-model="wildcardColor" aria-label="Choose the taken wildcard's new color">
                                 <option value="">Keep current color</option>
                                 <option v-for="c in (entryFor(targetCardId)?.any_color ? COLORS : entryFor(targetCardId)?.colors)" :key="c" :value="c">
                                     {{ colorLabel(c) }}
@@ -729,29 +689,115 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
                                 :disabled="submitting || playsLeft < 1 || targetId === null || !targetCardId || !giveCardId"
                                 @click="playForcedDeal(selectedEntry.id)"
                             >
-                                Play
+                                Swap Properties
                             </button>
                         </template>
 
                         <!-- HAT wa lamo2akhza EL SHORT! / Deal Breaker -->
                         <template v-if="selectedEntry.action === 'deal_breaker'">
-                            <select v-model="targetId">
+                            <select v-model="targetId" aria-label="Choose whose complete set to take" @change="resetTargetSelections">
                                 <option :value="null" disabled>Choose a player</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
-                            <select v-model="dealBreakerColor" :disabled="targetId === null">
+                            <p v-if="targetId !== null && opponentCompleteSetColors(targetOpponent).length === 0" class="md-hint">
+                                That player has no complete sets to take.
+                            </p>
+                            <select v-model="dealBreakerColor" :disabled="targetId === null || opponentCompleteSetColors(targetOpponent).length === 0" aria-label="Choose their complete set">
                                 <option value="" disabled>Choose one of their complete sets</option>
                                 <option v-for="c in opponentCompleteSetColors(targetOpponent)" :key="c" :value="c">
                                     {{ colorLabel(c) }}
                                 </option>
                             </select>
                             <button class="md-btn" :disabled="submitting || playsLeft < 1 || targetId === null || !dealBreakerColor" @click="playDealBreaker(selectedEntry.id)">
-                                Play
+                                Take Complete Set
                             </button>
                         </template>
                     </div>
                 </div>
             </section>
+
+            <!-- Move a wildcard (free, on your own turn, no pending action) -->
+            <section v-if="canAct && myWildcards.length > 0" class="md-panel">
+                <h3 class="md-section-title">Move a Wildcard (free)</h3>
+                <select v-model="moveWildcardId" aria-label="Choose one of your wildcards to move" @change="moveWildcardColor = ''">
+                    <option value="" disabled>Choose one of your wildcards</option>
+                    <option v-for="c in myWildcards" :key="c.id" :value="c.id">
+                        {{ label(c.id) }} (currently {{ colorLabel(c.group) }})
+                    </option>
+                </select>
+                <select v-model="moveWildcardColor" :disabled="!moveWildcardId" aria-label="Choose the wildcard's new color">
+                    <option value="" disabled>New color</option>
+                    <option v-for="c in moveWildcardValidColors(moveWildcardId)" :key="c" :value="c">
+                        {{ colorLabel(c) }}
+                    </option>
+                </select>
+                <button class="md-btn" :disabled="submitting || !moveWildcardId || !moveWildcardColor" @click="moveWildcard">
+                    Move
+                </button>
+            </section>
+
+            <!-- Players -->
+            <section class="md-players">
+                <h3 class="md-section-title">Players</h3>
+                <details
+                    v-for="seat in table.players"
+                    :key="seat.id"
+                    class="md-seat"
+                    :class="{ 'md-seat--turn': seat.id === table.current_player_id }"
+                    :open="seat.id === myId"
+                >
+                    <summary class="md-seat-summary">
+                        <span class="md-seat-name">
+                            {{ playerName(seat.id) }}<span v-if="seat.id === myId"> (you)</span>
+                            <span v-if="seat.id === table.current_player_id" class="md-seat-turn-tag">— current turn</span>
+                        </span>
+                        <span class="md-seat-meta">
+                            Hand {{ seat.hand_count }} · Bank {{ seatBankTotal(seat) }}M · {{ Object.keys(seat.properties).length }} property groups
+                        </span>
+                    </summary>
+
+                    <div class="md-seat-content">
+                        <p v-if="seat.hand" class="md-seat-hand">Hand: {{ seat.hand_count }} card(s)</p>
+
+                        <div v-if="seat.hand" class="md-card-row">
+                            <MasrawyCard v-for="cardId in seat.hand" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                        </div>
+
+                        <div v-if="seat.bank.length > 0" class="md-seat-bank-group">
+                            <p class="md-group-label">Bank · {{ seatBankTotal(seat) }}M</p>
+                            <div class="md-card-row">
+                                <MasrawyCard v-for="cardId in seat.bank" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                            </div>
+                        </div>
+                        <p v-else class="md-seat-bank">Bank: empty</p>
+
+                        <div v-if="Object.keys(seat.properties).length > 0" class="md-seat-properties">
+                            <div v-for="(group, color) in seat.properties" :key="color" class="md-group">
+                                <p class="md-group-label">
+                                    {{ colorLabel(String(color)) }}
+                                    <span v-if="group.house"> + SHISHA</span>
+                                    <span v-if="group.hotel"> + WIL3A</span>
+                                </p>
+                                <div class="md-card-row">
+                                    <MasrawyCard v-for="cardId in group.cards" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+            </section>
+
+            <!-- Discard pile -->
+            <section v-if="table.discard_pile.length > 0" class="md-discard">
+                <h3 class="md-section-title">Discard Pile</h3>
+                <div class="md-discard-stack" :aria-label="`Top card of discard pile; ${table.discard_pile.length} cards in pile`">
+                    <MasrawyCard :entry="entryFor(topDiscardCardId)!" :rent-chart="rentChartFor(topDiscardCardId)" :set-size="setSizeFor(topDiscardCardId)" :wild-rent-charts="wildRentChartsFor(topDiscardCardId)" :wild-set-sizes="wildSetSizesFor(topDiscardCardId)" />
+                </div>
+            </section>
+
+
+
+
         </template>
     </div>
 </template>
@@ -880,8 +926,44 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
     font-weight: 600;
 }
 
+.md-seat-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.25rem 0.75rem;
+    cursor: pointer;
+    list-style-position: inside;
+}
+
+.md-seat-summary::marker {
+    color: var(--rc-primary);
+}
+
 .md-seat-name {
-    margin-bottom: 0.4rem;
+    font-weight: 600;
+}
+
+.md-seat-meta {
+    color: var(--rc-text-muted);
+    font-size: 0.78rem;
+    font-weight: 400;
+}
+
+.md-seat-content {
+    padding-top: 0.75rem;
+}
+
+.md-hand-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.md-hand-header .md-section-title {
+    margin-bottom: 0;
 }
 
 .md-seat-turn-tag {
@@ -901,6 +983,16 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
     flex-wrap: wrap;
     gap: 0.5rem;
     margin-bottom: 0.5rem;
+}
+
+.md-card-row--hand {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 0.25rem 0.25rem 0.75rem;
+    margin: 0 -0.25rem 0.25rem;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
 }
 
 .md-discard-stack {
@@ -945,16 +1037,22 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
 }
 
 .md-card-btn {
+    flex: 0 0 auto;
     border: none;
     background: transparent;
     padding: 0;
     cursor: pointer;
     border-radius: 8px;
     transition: transform 0.1s ease;
+    scroll-snap-align: start;
 }
 
-.md-card-btn:hover {
+.md-card-btn:hover:not(:disabled) {
     transform: translateY(-2px);
+}
+
+.md-card-btn:disabled {
+    cursor: default;
 }
 
 .md-card-btn--selected {
@@ -981,6 +1079,19 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
     min-width: 200px;
 }
 
+.md-play-controls select {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.md-respond select,
+.md-panel select {
+    min-width: 0;
+    max-width: 100%;
+    min-height: 44px;
+}
+
 .md-fieldset {
     border: 1px solid var(--rc-border);
     border-radius: 6px;
@@ -990,6 +1101,7 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
 .md-btn {
     border-radius: 6px;
     padding: 0.5rem 1rem;
+    min-height: 44px;
     font-size: 0.85rem;
     border: 1px solid var(--rc-border);
     background: var(--rc-surface-alt);
@@ -1020,5 +1132,33 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
 select,
 input[type='checkbox'] {
     font-size: 0.85rem;
+}
+
+@media (max-width: 600px) {
+    .md-root {
+        gap: 1rem;
+    }
+
+    .md-summary,
+    .md-pending,
+    .md-players,
+    .md-discard,
+    .md-panel,
+    .md-hand {
+        padding: 0.875rem;
+    }
+
+    .md-play-panel {
+        gap: 0.75rem;
+    }
+
+    .md-play-controls {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .md-play-controls .md-btn {
+        flex: 1 1 auto;
+    }
 }
 </style>
