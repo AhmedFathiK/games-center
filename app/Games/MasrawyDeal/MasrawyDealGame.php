@@ -89,7 +89,7 @@ use App\Models\User;
  * that — extra cards of an already-complete color just pile onto the
  * single existing group, which still reads as "complete" (SET_SIZE
  * cards or more) but doesn't grant a second independent set. Flagged
- * to Ahmed; revisit if it matters in practice with 2-5 players.
+ * to Ahmed; revisit if it matters in practice with 2-10 players.
  *
  * Unlike Mafia, the host IS a player here — Masrawy Deal has no
  * separate "manager" role, everyone dealt in plays their own hand.
@@ -128,10 +128,10 @@ class MasrawyDealGame extends AbstractGame
         return 2;
     }
 
-    /** Matches Monopoly Deal's official cap. */
+    /** The room configuration supports up to ten players. */
     public function maximumPlayers(): int
     {
-        return 5;
+        return 10;
     }
 
     public function hostIsPlayer(): bool

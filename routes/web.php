@@ -3,7 +3,6 @@
 use App\Games\MasrawyDeal\CardCatalog;
 use App\Http\Controllers\GameController;
 use App\Http\Controllers\RoomController;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -75,23 +74,4 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/rooms/{room}/heartbeat', [RoomController::class, 'heartbeat'])
         ->name('rooms.heartbeat');
 
-    Route::get('/test-email', function () {
-        try {
-            Mail::raw(
-                'Testing Hostinger SMTP connection from Laravel web route!',
-                function ($message) {
-                    $message->to('e.elghamed@gmail.com')
-                        ->subject('Laravel Web SMTP Test');
-                },
-            );
-
-            return 'Email sent successfully! Check your inbox and spam folder.';
-        } catch (Throwable $exception) {
-            report($exception);
-
-            return response('Email failed. Check the Laravel logs for details.', 500);
-        }
-    })
-        ->middleware('throttle:5,1')
-        ->name('test-email');
 });

@@ -373,7 +373,7 @@ class MasrawyDealGameTest extends TestCase
         $game = new MasrawyDealGame();
 
         $this->assertEquals(2, $game->minimumPlayers());
-        $this->assertEquals(5, $game->maximumPlayers());
+        $this->assertEquals(10, $game->maximumPlayers());
     }
 
     // --- Dealing / setup ---------------------------------------------------
