@@ -12,7 +12,7 @@
  * the platform-shared views (Show.vue, Mine.vue) at the top level.
  * Mafia's own files live the same way, under Rooms/Mafia/.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import type { FormDataConvertible } from '@inertiajs/core'
 import { VueDraggable } from 'vue-draggable-plus'
@@ -227,16 +227,29 @@ const recentActivity = computed(() => [...(table.value?.recent_activity ?? [])].
 const currentTurnSeat = computed(() => table.value?.players.find((seat) => seat.id === table.value?.current_player_id));
 const currentTurnAttentionKey = computed(() => `${table.value?.turn_number ?? 0}:${table.value?.current_player_id ?? ''}`)
 const dismissedMyTurnAttentionKey = ref<string | null>(null)
+const showingPreviousTurn = ref(false)
+let previousTurnTimer: ReturnType<typeof setTimeout> | null = null
+const previousTurnSnapshot = ref<{ playerId: number; activity: MasrawyActivity[] } | null>(null)
+const previousTurnActivity = computed(() => previousTurnSnapshot.value?.activity ?? [])
+const previousTurnPlayerId = computed(() => previousTurnSnapshot.value?.playerId ?? null)
+const turnViewSeat = computed(() =>
+    showingPreviousTurn.value && previousTurnPlayerId.value !== null
+        ? seatFor(previousTurnPlayerId.value)
+        : currentTurnSeat.value,
+)
 const showMyTurnAttention = computed(
-    () => gameIsLive.value && isMyTurn.value && dismissedMyTurnAttentionKey.value !== currentTurnAttentionKey.value,
+    () => gameIsLive.value && !showingPreviousTurn.value && isMyTurn.value && dismissedMyTurnAttentionKey.value !== currentTurnAttentionKey.value,
 )
 const currentTurnActivity = computed(() =>
     (table.value?.turn_activity ?? []).filter((event) => event.player_id === table.value?.current_player_id),
 );
+const turnViewActivity = computed(() =>
+    showingPreviousTurn.value ? previousTurnActivity.value : currentTurnActivity.value,
+)
 const currentTurnMoveCardIds = computed(
     () =>
         new Set(
-            currentTurnActivity.value.flatMap((event) => [
+            turnViewActivity.value.flatMap((event) => [
                 ...(event.card_id ? [event.card_id] : []),
                 ...event.card_ids,
                 ...(event.target_card_id ? [event.target_card_id] : []),
@@ -271,21 +284,33 @@ watch(
 const showTurnModal = computed(
     () =>
         gameIsLive.value &&
-        !isMyTurn.value &&
+        (showingPreviousTurn.value || !isMyTurn.value) &&
         pending.value === null &&
-        currentTurnSeat.value !== undefined &&
-        dismissedTurnPlayerId.value !== currentTurnSeat.value.id,
+        turnViewSeat.value !== undefined &&
+        dismissedTurnPlayerId.value !== turnViewSeat.value.id,
 );
 
 watch(
-    () => table.value?.current_player_id,
-    (playerId, previousPlayerId) => {
-        if (playerId !== previousPlayerId) dismissedTurnPlayerId.value = null;
+    () => table.value,
+    (nextTable, previousTable) => {
+        if (!nextTable || !previousTable || nextTable.turn_number === previousTable.turn_number) return
+
+        previousTurnSnapshot.value = {
+            playerId: previousTable.current_player_id,
+            activity: previousTable.turn_activity.filter((event) => event.player_id === previousTable.current_player_id),
+        }
+        dismissedTurnPlayerId.value = null
+        showingPreviousTurn.value = true
+        if (previousTurnTimer !== null) clearTimeout(previousTurnTimer)
+        previousTurnTimer = setTimeout(() => {
+            showingPreviousTurn.value = false
+            previousTurnTimer = null
+        }, 5000)
     },
 );
 
 function dismissTurnModal() {
-    dismissedTurnPlayerId.value = currentTurnSeat.value?.id ?? null;
+    dismissedTurnPlayerId.value = turnViewSeat.value?.id ?? null;
 }
 
 function dismissMyTurnAttention() {
@@ -368,6 +393,15 @@ function seatBankTotal(seat: MasrawySeat): number {
 const gameIsLive = computed(() => props.room.status === 'in_progress')
 const isMyTurn = computed(() => gameIsLive.value && table.value?.current_player_id === myId.value)
 const pending = computed(() => table.value?.pending ?? null)
+const paymentReason = computed(() => {
+    if (!pending.value) return 'Pay charge'
+
+    const source = playerName(pending.value.source_id)
+    const cardName = label(pending.value.card_id)
+    const color = pending.value.color ? ` for ${colorLabel(pending.value.color)} rent` : ''
+
+    return `Pay ${cardName}${color} from ${source}`
+})
 const canAct = computed(() => gameIsLive.value && pending.value === null && isMyTurn.value)
 const playsLeft = computed(() => 3 - (table.value?.cards_played_this_turn ?? 0))
 
@@ -735,6 +769,10 @@ watch(
     },
     { immediate: true },
 )
+
+onUnmounted(() => {
+    if (previousTurnTimer !== null) clearTimeout(previousTurnTimer)
+})
 </script>
 
 <template>
@@ -775,15 +813,6 @@ watch(
                         </li>
                     </ol>
                 </div>
-
-                <button
-                    v-if="isMyTurn && !table.has_drawn_this_turn && pending === null"
-                    class="md-btn md-btn--primary"
-                    :disabled="submitting"
-                    @click="draw"
-                >
-                    Draw
-                </button>
 
             </section>
 
@@ -833,17 +862,25 @@ watch(
 
             <!-- My hand -->
             <section class="md-hand" :class="{ 'md-hand--collapsed': isHandCollapsed }">
-                <button
-                    v-if="isHandCollapsed"
-                    class="md-hand-expand"
-                    type="button"
-                    :aria-label="`Show hand cards (${you.hand.length})`"
-                    title="Show hand cards"
-                    @click="isHandCollapsed = false"
-                >
-                    <span aria-hidden="true">▤</span>
-                    <span>{{ you.hand.length }}</span>
-                </button>
+                <template v-if="isHandCollapsed">
+                    <button
+                        class="md-hand-expand"
+                        type="button"
+                        :aria-label="`Show hand cards (${you.hand.length})`"
+                        title="Show hand cards"
+                        @click="isHandCollapsed = false"
+                    >
+                        <span aria-hidden="true">▤</span>
+                        <span>{{ you.hand.length }}</span>
+                    </button>
+                    <button
+                        v-if="isMyTurn && !table.has_drawn_this_turn && pending === null"
+                        class="md-btn md-btn--primary md-hand-collapsed-draw"
+                        type="button"
+                        :disabled="submitting"
+                        @click="draw"
+                    >Draw</button>
+                </template>
                 <div v-else class="md-hand-header">
                     <h3 class="md-section-title">Your Hand ({{ you.hand.length }}/7)</h3>
                     <div class="md-hand-actions">
@@ -864,6 +901,13 @@ watch(
                         >
                             {{ isReorderingHand ? 'Done sorting' : 'Sort hand' }}
                         </button>
+                        <button
+                            v-if="isMyTurn && !table.has_drawn_this_turn && pending === null"
+                            class="md-btn md-btn--primary"
+                            type="button"
+                            :disabled="submitting"
+                            @click="draw"
+                        >Draw</button>
                         <button
                             v-if="isMyTurn && table.has_drawn_this_turn && pending === null && !overHandLimit && playsLeft > 0"
                             class="md-btn"
@@ -1279,20 +1323,20 @@ watch(
         </template>
 
         <button
-            v-if="gameIsLive && !isMyTurn && pending === null && currentTurnSeat && !showTurnModal"
+            v-if="gameIsLive && !isMyTurn && pending === null && turnViewSeat && !showTurnModal"
             class="md-turn-modal-reopen"
             @click="dismissedTurnPlayerId = null"
         >
-            Watch {{ playerName(currentTurnSeat.id) }}’s turn
+            Watch {{ playerName(turnViewSeat.id) }}’s turn
         </button>
 
-        <div v-if="showTurnModal && currentTurnSeat" class="md-turn-modal-backdrop" @click.self="dismissTurnModal" @keydown.esc="dismissTurnModal">
+        <div v-if="showTurnModal && turnViewSeat" class="md-turn-modal-backdrop" @click.self="dismissTurnModal" @keydown.esc="dismissTurnModal">
             <section class="md-turn-modal" role="dialog" aria-modal="true" aria-labelledby="md-turn-modal-title">
                 <header class="md-turn-modal-header">
                     <div>
                         <p class="md-turn-modal-eyebrow">LIVE TURN</p>
-                        <h2 id="md-turn-modal-title">{{ playerName(currentTurnSeat.id) }} is playing</h2>
-                        <p class="md-turn-modal-hand-count">{{ currentTurnSeat.hand_count }} cards in hand · hand stays private</p>
+                        <h2 id="md-turn-modal-title">{{ playerName(turnViewSeat.id) }} is playing</h2>
+                        <p class="md-turn-modal-hand-count">{{ turnViewSeat.hand_count }} cards in hand · hand stays private</p>
                     </div>
                     <button class="md-turn-modal-close" type="button" aria-label="Close turn view" @click="dismissTurnModal">×</button>
                 </header>
@@ -1301,11 +1345,11 @@ watch(
                     <div class="md-turn-modal-tableau">
                         <section class="md-turn-modal-section">
                             <h3>
-                                Bank <span>{{ seatBankTotal(currentTurnSeat) }}M</span>
+                                Bank <span>{{ seatBankTotal(turnViewSeat) }}M</span>
                             </h3>
-                            <div v-if="currentTurnSeat.bank.length" class="md-turn-card-stack md-turn-card-stack--bank">
+                            <div v-if="turnViewSeat.bank.length" class="md-turn-card-stack md-turn-card-stack--bank">
                                 <div
-                                    v-for="(cardId, index) in currentTurnSeat.bank"
+                                    v-for="(cardId, index) in turnViewSeat.bank"
                                     :key="cardId"
                                     class="md-turn-card"
                                     :class="{ 'md-turn-card--moved': currentTurnMoveCardIds.has(cardId) }"
@@ -1325,10 +1369,10 @@ watch(
 
                         <section class="md-turn-modal-section">
                             <h3>
-                                Properties <span>{{ Object.keys(currentTurnSeat.properties).length }} sets</span>
+                                Properties <span>{{ Object.keys(turnViewSeat.properties).length }} sets</span>
                             </h3>
-                            <div v-if="Object.keys(currentTurnSeat.properties).length" class="md-turn-property-groups">
-                                <div v-for="(group, color) in currentTurnSeat.properties" :key="color" class="md-turn-property-group">
+                            <div v-if="Object.keys(turnViewSeat.properties).length" class="md-turn-property-groups">
+                                <div v-for="(group, color) in turnViewSeat.properties" :key="color" class="md-turn-property-group">
                                     <h4>
                                         {{ colorLabel(String(color)) }}<span v-if="group.house"> · SHISHA</span
                                         ><span v-if="group.hotel"> · WIL3A</span>
@@ -1366,10 +1410,10 @@ watch(
 
                     <aside class="md-turn-modal-log" aria-label="Current player's moves">
                         <h3>
-                            Moves this turn <span>{{ currentTurnActivity.length }}</span>
+                            Moves this turn <span>{{ turnViewActivity.length }}</span>
                         </h3>
-                        <ol v-if="currentTurnActivity.length">
-                            <li v-for="(event, index) in currentTurnActivity" :key="event.id" class="md-turn-activity" :class="{ 'md-turn-activity--latest': index === currentTurnActivity.length - 1 }">
+                        <ol v-if="turnViewActivity.length">
+                            <li v-for="(event, index) in turnViewActivity" :key="event.id" class="md-turn-activity" :class="{ 'md-turn-activity--latest': index === turnViewActivity.length - 1 }">
                                 <span class="md-turn-activity-dot" aria-hidden="true"></span>
                                 <div>
                                     <strong>{{ activityDescription(event) }}</strong>
@@ -1494,7 +1538,7 @@ watch(
             <section class="md-pay-modal" role="dialog" aria-modal="true" aria-labelledby="md-pay-modal-title">
                 <header class="md-pay-modal-header">
                     <div>
-                        <h2 id="md-pay-modal-title">Pay rent</h2>
+                        <h2 id="md-pay-modal-title">{{ paymentReason }}</h2>
                         <p>You owe <strong>{{ you.owes }}M</strong>. Selected: <strong>{{ payTotal }}M</strong>.</p>
                     </div>
                     <button class="md-btn md-btn--muted md-pay-modal-close" aria-label="Collapse payment window" @click="collapsePayModal">−</button>
@@ -1619,19 +1663,26 @@ watch(
 }
 
 .md-hand--collapsed {
-    left: auto;
-    right: 1rem;
+    left: 1rem;
+    right: auto;
     bottom: calc(1rem + env(safe-area-inset-bottom));
     width: auto;
     max-height: none;
     overflow: visible;
     transform: none;
-    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 999px;
     padding: 0;
 }
 
-.md-hand--collapsed > :not(.md-hand-expand) {
+.md-hand--collapsed > :not(.md-hand-expand):not(.md-hand-collapsed-draw) {
     display: none;
+}
+
+.md-hand-collapsed-draw {
+    white-space: nowrap;
 }
 
 .md-hand-expand {
@@ -2291,6 +2342,10 @@ watch(
     cursor: pointer;
 }
 
+.md-root:not(.md-root--hand-collapsed) .md-turn-modal-reopen {
+    bottom: calc(min(48dvh, 330px) + 1rem + env(safe-area-inset-bottom));
+}
+
 .md-turn-attention-backdrop,
 .md-payment-received-backdrop,
 .md-winner-backdrop {
@@ -2478,8 +2533,13 @@ watch(
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
 }
 
+.md-root.md-root--hand-collapsed .md-pay-reopen {
+    right: 1rem;
+    bottom: calc(5.75rem + env(safe-area-inset-bottom));
+}
+
 .md-root:not(.md-root--hand-collapsed) .md-pay-reopen {
-    bottom: calc(300px + env(safe-area-inset-bottom));
+    bottom: calc(min(48dvh, 330px) + 1rem + env(safe-area-inset-bottom));
 }
 
 @keyframes md-turn-card-highlight {
