@@ -744,7 +744,6 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                     :key="seat.id"
                     class="md-seat"
                     :class="{ 'md-seat--turn': seat.id === table.current_player_id }"
-                    :open="seat.id === myId"
                 >
                     <summary class="md-seat-summary">
                         <span class="md-seat-name">
