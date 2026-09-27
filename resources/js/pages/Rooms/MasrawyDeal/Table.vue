@@ -29,6 +29,10 @@ const props = defineProps<{
 const you = computed(() => props.room.you as MasrawyYou | null)
 const table = computed(() => props.room.table as MasrawyTableState | null)
 const myId = computed(() => props.auth.user.id)
+const topDiscardCardId = computed(() => {
+    const pile = table.value?.discard_pile ?? []
+    return pile[pile.length - 1] ?? ''
+})
 
 const COLORS = [
     'brown', 'light_blue', 'pink', 'orange', 'red',
@@ -512,8 +516,8 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
             <!-- Discard pile -->
             <section v-if="table.discard_pile.length > 0" class="md-discard">
                 <h3 class="md-section-title">Discard Pile</h3>
-                <div class="md-card-row">
-                    <MasrawyCard v-for="cardId in table.discard_pile" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                <div class="md-discard-stack" :aria-label="`Top card of discard pile; ${table.discard_pile.length} cards in pile`">
+                    <MasrawyCard :entry="entryFor(topDiscardCardId)!" :rent-chart="rentChartFor(topDiscardCardId)" :set-size="setSizeFor(topDiscardCardId)" :wild-rent-charts="wildRentChartsFor(topDiscardCardId)" :wild-set-sizes="wildSetSizesFor(topDiscardCardId)" />
                 </div>
             </section>
 
@@ -897,6 +901,37 @@ const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
     flex-wrap: wrap;
     gap: 0.5rem;
     margin-bottom: 0.5rem;
+}
+
+.md-discard-stack {
+    position: relative;
+    isolation: isolate;
+    width: 114px;
+    height: 171px;
+    margin: 0 0.375rem 0.375rem 0;
+}
+
+.md-discard-stack::before,
+.md-discard-stack::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: 108px;
+    height: 165px;
+    border: 1px solid var(--rc-border);
+    border-radius: 8px;
+    background: var(--rc-surface-alt);
+    box-shadow: 0 2px 4px rgb(0 0 0 / 12%);
+}
+
+.md-discard-stack::before {
+    transform: translate(6px, 6px);
+    z-index: -2;
+}
+
+.md-discard-stack::after {
+    transform: translate(3px, 3px);
+    z-index: -1;
 }
 
 .md-group {
