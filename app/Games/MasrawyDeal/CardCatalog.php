@@ -420,7 +420,7 @@ class CardCatalog
             'forced_deal' => ['count' => 3, 'value' => 3, 'label' => 'MA.. TEEGY WANA AGY!', 'description' => 'SALIM WESTILIM MANTI2A'],
             'sly_deal' => ['count' => 3, 'value' => 3, 'label' => 'KHOD AMA 2OLAK', 'description' => 'KHOD MANTI2A MIN AY BRINCE'],
             'debt_collector' => ['count' => 3, 'value' => 3, 'label' => 'HAT 5 FI KEES', 'description' => 'LABES WA7ID YEDIK 5 MILLION MALTOOSH'],
-            'birthday' => ['count' => 3, 'value' => 2, 'label' => '3ID MILADY YA KELAB', 'description' => '2 MILLION MALTOOSH min KOL BRINCE'],
+            'birthday' => ['count' => 3, 'value' => 2, 'label' => '3ID MILADY YA KELAB', 'description' => '2 MILLION MALTOOSH MIN KOL BRINCE'],
             // "Double The Rent", renamed ELBIS X 2 — you need to hold
             // an ELBIS (rent) card to play this alongside it.
             'double_rent' => ['count' => 2, 'value' => 1, 'label' => 'ELBIS X 2', 'description' => 'LAZEM CART EL TALBEES 3ASHAN TELABES X 2'],

@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\GameController;
+use App\Games\MasrawyDeal\CardCatalog;
 
 Route::get('/', function () {
     return Inertia::render('Index');
@@ -13,6 +14,20 @@ require __DIR__ . '/settings.php';
 require __DIR__ . '/auth.php';
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    // Temporary visual index for reviewing the full Masrawy Deal deck.
+    $renderMasrawyDealCardGallery = static function () {
+        return Inertia::render('Rooms/MasrawyDeal/CardGallery', [
+            'catalog' => CardCatalog::all(),
+            'rentChart' => CardCatalog::RENT_CHART,
+            'setSize' => CardCatalog::SET_SIZE,
+        ]);
+    };
+
+    Route::get('/masrawy-deal/card-gallery', $renderMasrawyDealCardGallery)
+        ->name('masrawy-deal.card-gallery');
+    Route::get('/rooms/MasrawyDeal/CardGallery', $renderMasrawyDealCardGallery)
+        ->name('masrawy-deal.card-gallery.preview');
+
     Route::get('/', [GameController::class, 'index'])
         ->name('home');
 

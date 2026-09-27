@@ -48,14 +48,14 @@ function entryFor(id: string): CardCatalogEntry | undefined {
 
 function rentChartFor(id: string): number[] | undefined {
     const entry = entryFor(id)
-    return entry?.type === 'property' && entry.color && !['railroad', 'utility'].includes(entry.color)
+    return entry?.type === 'property' && entry.color
         ? table.value?.rent_chart[entry.color]
         : undefined
 }
 
 function setSizeFor(id: string): number | undefined {
     const entry = entryFor(id)
-    return entry?.type === 'property' && entry.color && !['railroad', 'utility'].includes(entry.color)
+    return entry?.type === 'property' && entry.color
         ? table.value?.set_size[entry.color]
         : undefined
 }
