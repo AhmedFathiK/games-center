@@ -241,7 +241,7 @@ const payableOptions = computed(() => {
                 ? `${label(id)} · ${colorLabel(group)} ${entry?.type === 'wildcard' ? 'wildcard' : 'property'}`
                 : label(id)
 
-        return { id, value, description }
+        return { id, value, description, inBank, group, entry }
     })
     const counts = new Map<string, number>()
     for (const asset of assets) counts.set(asset.description, (counts.get(asset.description) ?? 0) + 1)
@@ -555,21 +555,29 @@ function decline(targetIdForCharge: number) {
 // --- Paying -------------------------------------------------------------
 
 const paySelection = ref<string[]>([])
+const isPayModalOpen = ref(false)
 
 const payTotal = computed(() =>
     paySelection.value.reduce((sum, id) => sum + (you.value?.payable_assets?.[id] ?? 0), 0),
 )
 
 function togglePayCard(id: string) {
+    actionError.value = null
     const i = paySelection.value.indexOf(id)
     if (i === -1) paySelection.value.push(id)
     else paySelection.value.splice(i, 1)
 }
 
+function openPayModal() {
+    actionError.value = null
+    isPayModalOpen.value = true
+}
+
 function pay() {
-    if (paySelection.value.length === 0) return
+    if (paySelection.value.length === 0 || payTotal.value < (you.value?.owes ?? 0)) return
     submit({ type: 'pay', card_ids: [...paySelection.value] }, () => {
         paySelection.value = []
+        isPayModalOpen.value = false
     })
 }
 
@@ -595,7 +603,7 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                 Room cancelled. Hands are shown below for reference.
             </p>
 
-            <p v-if="actionError" role="alert" class="md-error">{{ actionError }}</p>
+            <p v-if="actionError && !isPayModalOpen" role="alert" class="md-error">{{ actionError }}</p>
 
             <!-- Turn / draw pile summary -->
             <section class="md-summary">
@@ -668,17 +676,9 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
 
                 <!-- Paying -->
                 <div v-if="you.owes !== null" class="md-pay">
-                    <p>You owe {{ you.owes }}M. Choose cards to pay with (selected: {{ payTotal }}M):</p>
-                    <label v-for="asset in payableOptions" :key="asset.id" class="md-pay-option">
-                        <input
-                            type="checkbox"
-                            :checked="paySelection.includes(asset.id)"
-                            @change="togglePayCard(asset.id)"
-                        />
-                        {{ asset.display }}
-                    </label>
-                    <button class="md-btn md-btn--primary" :disabled="submitting || paySelection.length === 0" @click="pay">
-                        Pay
+                    <p>You owe {{ you.owes }}M.</p>
+                    <button class="md-btn md-btn--primary" @click="openPayModal">
+                        Choose cards to pay<span v-if="paySelection.length"> ({{ payTotal }}M selected)</span>
                     </button>
                 </div>
             </section>
@@ -1077,6 +1077,57 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
 
 
         </template>
+
+        <div v-if="isPayModalOpen && you.owes !== null" class="md-pay-modal-backdrop" @click.self="isPayModalOpen = false" @keydown.esc="isPayModalOpen = false">
+            <section class="md-pay-modal" role="dialog" aria-modal="true" aria-labelledby="md-pay-modal-title">
+                <header class="md-pay-modal-header">
+                    <div>
+                        <h2 id="md-pay-modal-title">Choose payment cards</h2>
+                        <p>You owe <strong>{{ you.owes }}M</strong>. Selected: <strong>{{ payTotal }}M</strong>.</p>
+                    </div>
+                    <button class="md-btn md-btn--muted md-pay-modal-close" aria-label="Close payment card chooser" @click="isPayModalOpen = false">×</button>
+                </header>
+
+                <p v-if="actionError" class="md-pay-modal-error" role="alert">{{ actionError }}</p>
+                <p v-else-if="payTotal < you.owes" class="md-pay-modal-error" role="status">
+                    Select at least {{ you.owes - payTotal }}M more to cover what you owe.
+                </p>
+
+                <div v-if="payableOptions.length" class="md-pay-card-grid">
+                    <button
+                        v-for="asset in payableOptions"
+                        :key="asset.id"
+                        type="button"
+                        class="md-pay-card"
+                        :class="{ 'md-pay-card--selected': paySelection.includes(asset.id) }"
+                        :aria-pressed="paySelection.includes(asset.id)"
+                        @click="togglePayCard(asset.id)"
+                    >
+                        <span class="md-pay-card-face">
+                            <MasrawyCard
+                                v-if="asset.entry"
+                                :entry="asset.entry"
+                                :active-color="asset.group ?? activeColorForCard(asset.id)"
+                                :rent-chart="rentChartFor(asset.id)"
+                                :set-size="setSizeFor(asset.id)"
+                                :wild-rent-charts="wildRentChartsFor(asset.id)"
+                                :wild-set-sizes="wildSetSizesFor(asset.id)"
+                            />
+                        </span>
+                        <span class="md-pay-card-info">{{ asset.inBank ? 'Bank' : asset.group ? colorLabel(asset.group) : 'Property' }} · {{ asset.value }}M</span>
+                        <span v-if="paySelection.includes(asset.id)" class="md-pay-card-check" aria-hidden="true">✓</span>
+                    </button>
+                </div>
+                <p v-else class="md-pay-empty">You have no cards available to pay with.</p>
+
+                <footer class="md-pay-modal-footer">
+                    <button class="md-btn md-btn--muted" @click="isPayModalOpen = false">Cancel</button>
+                    <button class="md-btn md-btn--primary" :disabled="submitting || paySelection.length === 0 || payTotal < you.owes" @click="pay">
+                        Pay {{ payTotal }}M
+                    </button>
+                </footer>
+            </section>
+        </div>
     </div>
 </template>
 
@@ -1231,6 +1282,144 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
 .md-pay {
     flex-direction: column;
     align-items: flex-start;
+}
+
+.md-pay-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(10, 15, 20, 0.72);
+}
+
+.md-pay-modal {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    width: min(760px, 100%);
+    max-height: min(90dvh, 900px);
+    overflow: hidden;
+    padding: 1rem;
+    border: 1px solid var(--rc-border);
+    border-radius: 12px;
+    background: var(--rc-surface);
+    color: var(--rc-text-on-surface);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+}
+
+.md-pay-modal-header,
+.md-pay-modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.md-pay-modal-header h2,
+.md-pay-modal-header p {
+    margin: 0;
+}
+
+.md-pay-modal-header h2 {
+    font-family: var(--rc-font-display);
+    font-size: 1.1rem;
+}
+
+.md-pay-modal-header p {
+    margin-top: 0.25rem;
+    color: var(--rc-text-muted);
+    font-size: 0.9rem;
+}
+
+.md-pay-modal-close {
+    width: 44px;
+    padding: 0;
+    font-size: 2.25rem;
+    line-height: 1;
+}
+
+.md-pay-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(126px, 1fr));
+    gap: 0.75rem;
+    overflow: auto;
+    padding: 0.25rem;
+}
+
+.md-pay-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0.65rem 0.4rem;
+    border: 2px solid var(--rc-border);
+    border-radius: 9px;
+    background: var(--rc-surface-alt);
+    color: var(--rc-text-on-surface);
+    cursor: pointer;
+    text-align: center;
+}
+
+.md-pay-card--selected {
+    border-color: var(--rc-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--rc-primary), transparent 72%);
+}
+
+.md-pay-card-face {
+    display: block;
+    flex: 0 0 108px;
+    width: 108px;
+    height: 165px;
+}
+
+.md-pay-card-info {
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.md-pay-card-check {
+    position: absolute;
+    z-index: 5;
+    top: -0.35rem;
+    right: -0.35rem;
+    display: grid;
+    width: 1.6rem;
+    height: 1.6rem;
+    place-items: center;
+    border-radius: 50%;
+    border: 2px solid var(--rc-surface);
+    background: var(--rc-primary);
+    color: #fff;
+    font-size: 0.85rem;
+    font-weight: 900;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.md-pay-empty {
+    margin: 0;
+    color: var(--rc-text-muted);
+}
+
+.md-pay-modal-error {
+    margin: 0;
+    padding: 0.65rem 0.8rem;
+    border: 1px solid color-mix(in srgb, var(--rc-primary), transparent 55%);
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--rc-primary), transparent 92%);
+    color: var(--rc-primary);
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.md-pay-modal-footer {
+    justify-content: flex-end;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--rc-border);
 }
 
 .md-pay-option {
@@ -1610,6 +1799,20 @@ input[type='checkbox'] {
 
     .md-turn-status {
         width: 100%;
+    }
+
+    .md-pay-modal-backdrop {
+        padding: 0.5rem;
+    }
+
+    .md-pay-modal {
+        max-height: 94dvh;
+        padding: 0.8rem;
+    }
+
+    .md-pay-card-grid {
+        grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+        gap: 0.5rem;
     }
 }
 </style>
