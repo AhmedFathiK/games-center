@@ -1,17 +1,18 @@
 <?php
 
+use App\Games\MasrawyDeal\CardCatalog;
+use App\Http\Controllers\GameController;
+use App\Http\Controllers\RoomController;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
-use App\Http\Controllers\RoomController;
-use App\Http\Controllers\GameController;
-use App\Games\MasrawyDeal\CardCatalog;
 
 Route::get('/', function () {
     return Inertia::render('Index');
 })->name('home');
 
-require __DIR__ . '/settings.php';
-require __DIR__ . '/auth.php';
+require __DIR__.'/settings.php';
+require __DIR__.'/auth.php';
 
 Route::middleware(['auth', 'verified'])->group(function () {
     // Temporary visual index for reviewing the full Masrawy Deal deck.
@@ -73,4 +74,24 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::post('/rooms/{room}/heartbeat', [RoomController::class, 'heartbeat'])
         ->name('rooms.heartbeat');
+
+    Route::get('/test-email', function () {
+        try {
+            Mail::raw(
+                'Testing Hostinger SMTP connection from Laravel web route!',
+                function ($message) {
+                    $message->to('e.elghamed@gmail.com')
+                        ->subject('Laravel Web SMTP Test');
+                },
+            );
+
+            return 'Email sent successfully! Check your inbox and spam folder.';
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response('Email failed. Check the Laravel logs for details.', 500);
+        }
+    })
+        ->middleware('throttle:5,1')
+        ->name('test-email');
 });
