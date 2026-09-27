@@ -201,11 +201,53 @@ function seatFor(id: number | string): MasrawySeat | undefined {
 }
 
 const recentActivity = computed(() => [...(table.value?.recent_activity ?? [])].slice(-4).reverse())
+const currentTurnSeat = computed(() => table.value?.players.find((seat) => seat.id === table.value?.current_player_id));
+const currentTurnActivity = computed(() =>
+    (table.value?.turn_activity ?? []).filter((event) => event.player_id === table.value?.current_player_id),
+);
+const currentTurnMoveCardIds = computed(
+    () =>
+        new Set(
+            currentTurnActivity.value.flatMap((event) => [
+                ...(event.card_id ? [event.card_id] : []),
+                ...event.card_ids,
+                ...(event.target_card_id ? [event.target_card_id] : []),
+                ...(event.give_card_id ? [event.give_card_id] : []),
+                ...event.double_rent_card_ids,
+            ]),
+        ),
+);
+const dismissedTurnPlayerId = ref<number | null>(null);
+const showTurnModal = computed(
+    () =>
+        gameIsLive.value &&
+        !isMyTurn.value &&
+        pending.value === null &&
+        currentTurnSeat.value !== undefined &&
+        dismissedTurnPlayerId.value !== currentTurnSeat.value.id,
+);
+
+watch(
+    () => table.value?.current_player_id,
+    (playerId, previousPlayerId) => {
+        if (playerId !== previousPlayerId) dismissedTurnPlayerId.value = null;
+    },
+);
+
+function dismissTurnModal() {
+    dismissedTurnPlayerId.value = currentTurnSeat.value?.id ?? null;
+}
+
+function activityCardLabels(event: MasrawyActivity): string[] {
+    const ids = [event.card_id, ...event.card_ids, event.target_card_id, event.give_card_id, ...event.double_rent_card_ids]
+    return [...new Set(ids.filter((id): id is string => Boolean(id)))].map(id => label(id))
+}
 
 function activityDescription(event: MasrawyActivity): string {
     const cardName = event.card_id ? label(event.card_id) : ''
     const target = event.target_id !== null ? playerName(event.target_id) : ''
     const targetCardName = event.target_card_id ? label(event.target_card_id) : ''
+    const giveCardName = event.give_card_id ? label(event.give_card_id) : ''
     const color = event.color ? colorLabel(event.color) : ''
 
     switch (event.type) {
@@ -219,13 +261,14 @@ function activityDescription(event: MasrawyActivity): string {
         case 'play_birthday': return `played ${cardName} against everyone`
         case 'play_rent': return `played ${cardName} for ${color} rent${target ? ` against ${target}` : ''}${event.double_rent_card_ids.length ? ' (doubled)' : ''}`
         case 'play_sly_deal': return `played ${cardName} and took ${targetCardName} from ${target}`
-        case 'play_forced_deal': return `played ${cardName} and swapped ${targetCardName} with a property`
+        case 'play_forced_deal': return `played ${cardName} and swapped ${targetCardName} for ${giveCardName}`
         case 'play_deal_breaker': return `played ${cardName} and took the ${colorLabel(event.target_color ?? '')} set from ${target}`
         case 'move_wildcard': return `moved ${cardName} to ${color}`
         case 'discard': return `discarded ${cardName}`
         case 'respond_no': return `played ${cardName} to stop an action`
         case 'decline': return `declined the charge from ${target}`
         case 'pay': return `paid ${event.card_ids.map(id => label(id)).join(', ')}`
+        case 'draw': return 'drew cards'
         default: return 'made a move'
     }
 }
@@ -545,7 +588,11 @@ const respondCardByTarget = ref<Record<string, string>>({})
 function respondNo(targetIdForCharge: number) {
     const cardId = respondCardByTarget.value[String(targetIdForCharge)]
     if (!cardId) return
-    submit({ type: 'respond_no', card_id: cardId, target_id: targetIdForCharge })
+    submit({ type: 'respond_no', card_id: cardId, target_id: targetIdForCharge }, () => {
+        respondCardByTarget.value[String(targetIdForCharge)] = ''
+        paySelection.value = []
+        isPayModalOpen.value = false
+    })
 }
 
 function decline(targetIdForCharge: number) {
@@ -654,7 +701,12 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
 
                 <!-- My response window(s) -->
                 <div v-for="entry in myOpenResponses" :key="entry.targetId" class="md-respond">
-                    <p>You may respond{{ pending.kind === 'birthday' || pending.kind === 'rent' ? ` (for ${playerName(entry.targetId)})` : '' }}:</p>
+                    <p v-if="entry.charge?.phase === 'paying'">
+                        You can still play DA 3AND OMMO... before choosing payment{{ pending.kind === 'birthday' || pending.kind === 'rent' ? ` (for ${playerName(entry.targetId)})` : '' }}.
+                    </p>
+                    <p v-else>
+                        You may respond{{ pending.kind === 'birthday' || pending.kind === 'rent' ? ` (for ${playerName(entry.targetId)})` : '' }}:
+                    </p>
 
                     <select v-model="respondCardByTarget[String(entry.targetId)]" :disabled="myJustSayNoCards.length === 0" aria-label="Choose a Just Say No card">
                         <option value="" disabled>Choose a DA 3AND OMMO... card</option>
@@ -667,9 +719,9 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                         :disabled="submitting || !respondCardByTarget[String(entry.targetId)]"
                         @click="respondNo(entry.targetId)"
                     >
-                        Play It
+                        {{ entry.charge?.phase === 'paying' ? 'Play DA 3AND OMMO... instead' : 'Play It' }}
                     </button>
-                    <button class="md-btn md-btn--muted" :disabled="submitting" @click="decline(entry.targetId)">
+                    <button v-if="entry.charge?.phase !== 'paying'" class="md-btn md-btn--muted" :disabled="submitting" @click="decline(entry.targetId)">
                         Decline
                     </button>
                 </div>
@@ -1078,6 +1130,111 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
 
         </template>
 
+        <button
+            v-if="gameIsLive && !isMyTurn && pending === null && currentTurnSeat && !showTurnModal"
+            class="md-turn-modal-reopen"
+            @click="dismissedTurnPlayerId = null"
+        >
+            Watch {{ playerName(currentTurnSeat.id) }}’s turn
+        </button>
+
+        <div v-if="showTurnModal && currentTurnSeat" class="md-turn-modal-backdrop" @click.self="dismissTurnModal" @keydown.esc="dismissTurnModal">
+            <section class="md-turn-modal" role="dialog" aria-modal="true" aria-labelledby="md-turn-modal-title">
+                <header class="md-turn-modal-header">
+                    <div>
+                        <p class="md-turn-modal-eyebrow">LIVE TURN</p>
+                        <h2 id="md-turn-modal-title">{{ playerName(currentTurnSeat.id) }} is playing</h2>
+                        <p class="md-turn-modal-hand-count">{{ currentTurnSeat.hand_count }} cards in hand · hand stays private</p>
+                    </div>
+                    <button class="md-turn-modal-close" type="button" aria-label="Close turn view" @click="dismissTurnModal">×</button>
+                </header>
+
+                <div class="md-turn-modal-body">
+                    <div class="md-turn-modal-tableau">
+                        <section class="md-turn-modal-section">
+                            <h3>
+                                Bank <span>{{ seatBankTotal(currentTurnSeat) }}M</span>
+                            </h3>
+                            <div v-if="currentTurnSeat.bank.length" class="md-turn-card-stack md-turn-card-stack--bank">
+                                <div
+                                    v-for="(cardId, index) in currentTurnSeat.bank"
+                                    :key="cardId"
+                                    class="md-turn-card"
+                                    :class="{ 'md-turn-card--moved': currentTurnMoveCardIds.has(cardId) }"
+                                    :style="{ zIndex: index + 1 }"
+                                >
+                                    <MasrawyCard
+                                        :entry="entryFor(cardId)!"
+                                        :rent-chart="rentChartFor(cardId)"
+                                        :set-size="setSizeFor(cardId)"
+                                        :wild-rent-charts="wildRentChartsFor(cardId)"
+                                        :wild-set-sizes="wildSetSizesFor(cardId)"
+                                    />
+                                </div>
+                            </div>
+                            <p v-else class="md-turn-modal-empty">No bank cards yet</p>
+                        </section>
+
+                        <section class="md-turn-modal-section">
+                            <h3>
+                                Properties <span>{{ Object.keys(currentTurnSeat.properties).length }} sets</span>
+                            </h3>
+                            <div v-if="Object.keys(currentTurnSeat.properties).length" class="md-turn-property-groups">
+                                <div v-for="(group, color) in currentTurnSeat.properties" :key="color" class="md-turn-property-group">
+                                    <h4>
+                                        {{ colorLabel(String(color)) }}<span v-if="group.house"> · SHISHA</span
+                                        ><span v-if="group.hotel"> · WIL3A</span>
+                                    </h4>
+                                    <div class="md-turn-card-stack">
+                                        <div
+                                            v-for="(cardId, index) in [
+                                                ...group.cards,
+                                                ...(group.house ? [group.house] : []),
+                                                ...(group.hotel ? [group.hotel] : []),
+                                            ]"
+                                            :key="cardId"
+                                            class="md-turn-card"
+                                            :class="{ 'md-turn-card--moved': currentTurnMoveCardIds.has(cardId) }"
+                                            :style="{ zIndex: index + 1 }"
+                                        >
+                                            <MasrawyCard
+                                                :entry="entryFor(cardId)!"
+                                                :active-color="entryFor(cardId)?.type === 'wildcard' ? String(color) : undefined"
+                                                :rent-chart="rentChartFor(cardId)"
+                                                :set-size="setSizeFor(cardId)"
+                                                :wild-rent-charts="wildRentChartsFor(cardId)"
+                                                :wild-set-sizes="wildSetSizesFor(cardId)"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <p v-else class="md-turn-modal-empty">No properties on the table yet</p>
+                        </section>
+                    </div>
+
+                    <aside class="md-turn-modal-log" aria-label="Current player's moves">
+                        <h3>
+                            Moves this turn <span>{{ currentTurnActivity.length }}</span>
+                        </h3>
+                        <ol v-if="currentTurnActivity.length">
+                            <li v-for="(event, index) in currentTurnActivity" :key="event.id" class="md-turn-activity" :class="{ 'md-turn-activity--latest': index === currentTurnActivity.length - 1 }">
+                                <span class="md-turn-activity-dot" aria-hidden="true"></span>
+                                <div>
+                                    <strong>{{ activityDescription(event) }}</strong>
+                                    <small>Move {{ event.id }}</small>
+                                    <div v-if="activityCardLabels(event).length" class="md-turn-activity-cards">
+                                        <span v-for="cardLabel in activityCardLabels(event)" :key="cardLabel">{{ cardLabel }}</span>
+                                    </div>
+                                </div>
+                            </li>
+                        </ol>
+                        <p v-else class="md-turn-modal-empty">Their moves will appear here as they play.</p>
+                    </aside>
+                </div>
+            </section>
+        </div>
+
         <div v-if="isPayModalOpen && you.owes !== null" class="md-pay-modal-backdrop" @click.self="isPayModalOpen = false" @keydown.esc="isPayModalOpen = false">
             <section class="md-pay-modal" role="dialog" aria-modal="true" aria-labelledby="md-pay-modal-title">
                 <header class="md-pay-modal-header">
@@ -1284,6 +1441,311 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
     align-items: flex-start;
 }
 
+.md-turn-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 950;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(10, 15, 20, 0.78);
+}
+
+.md-turn-modal {
+    display: flex;
+    flex-direction: column;
+    width: min(1080px, 100%);
+    max-height: min(92dvh, 960px);
+    overflow: hidden;
+    border: 1px solid var(--rc-border);
+    border-radius: 16px;
+    background: var(--rc-surface);
+    color: var(--rc-text-on-surface);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.md-turn-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.1rem 1.35rem;
+    border-bottom: 1px solid var(--rc-border);
+    background: var(--rc-surface-alt);
+}
+
+.md-turn-modal-header h2,
+.md-turn-modal-header p {
+    margin: 0;
+}
+
+.md-turn-modal-eyebrow {
+    margin-bottom: 0.25rem !important;
+    color: var(--rc-primary);
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+}
+
+.md-turn-modal-header h2 {
+    font-family: var(--rc-font-display);
+    font-size: clamp(1.2rem, 2.5vw, 1.8rem);
+}
+
+.md-turn-modal-hand-count {
+    margin-top: 0.25rem !important;
+    color: var(--rc-text-muted);
+    font-size: 0.85rem;
+}
+
+.md-turn-modal-close {
+    display: inline-flex;
+    flex: 0 0 48px;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border: 1px solid var(--rc-border);
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font-size: 2.5rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.md-turn-modal-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(230px, 0.34fr);
+    min-height: 0;
+    overflow: auto;
+}
+
+.md-turn-modal-tableau {
+    display: grid;
+    align-content: start;
+    gap: 1.2rem;
+    min-width: 0;
+    padding: 1.25rem;
+}
+
+.md-turn-modal-section h3,
+.md-turn-modal-log h3 {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    margin: 0 0 0.6rem;
+    font-family: var(--rc-font-display);
+    font-size: 1rem;
+}
+
+.md-turn-modal-section h3 span,
+.md-turn-modal-log h3 span {
+    color: var(--rc-text-muted);
+    font: 600 0.75rem var(--rc-font-body);
+}
+
+.md-turn-card-stack {
+    display: flex;
+    align-items: flex-start;
+    min-height: 154px;
+    padding: 0.3rem 0.4rem 0.65rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+}
+
+.md-turn-card {
+    position: relative;
+    flex: 0 0 106px;
+    width: 106px;
+    transition:
+        transform 160ms ease,
+        filter 160ms ease;
+}
+
+.md-turn-card + .md-turn-card {
+    margin-left: -58px;
+}
+
+.md-turn-card--moved {
+    z-index: 20 !important;
+    transform: translateY(-8px) scale(1.04);
+    filter: drop-shadow(0 0 8px #facc15) drop-shadow(0 0 16px rgba(250, 204, 21, 0.72));
+    animation: md-turn-card-highlight 1.1s ease-in-out 2;
+}
+
+.md-turn-card-stack--bank {
+    overflow-x: auto;
+}
+
+.md-turn-property-groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: 1rem;
+}
+
+.md-turn-property-group {
+    min-width: 0;
+    padding: 0.6rem 0.75rem 0.1rem;
+    border: 1px solid var(--rc-border);
+    border-radius: 10px;
+    background: var(--rc-surface-alt);
+}
+
+.md-turn-property-group h4 {
+    margin: 0;
+    color: var(--rc-text-muted);
+    font-size: 0.8rem;
+}
+
+.md-turn-property-group .md-turn-card-stack {
+    min-height: 148px;
+}
+
+.md-turn-modal-log {
+    min-width: 0;
+    padding: 1.25rem;
+    border-left: 1px solid var(--rc-border);
+    background: var(--rc-surface-alt);
+}
+
+.md-turn-modal-log h3 {
+    margin-bottom: 0.9rem;
+}
+
+.md-turn-modal-log ol {
+    display: grid;
+    gap: 0.65rem;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+
+.md-turn-activity {
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr);
+    gap: 0.6rem;
+    align-items: start;
+    padding: 0.7rem;
+    border: 1px solid var(--rc-border);
+    border-radius: 9px;
+    background: var(--rc-surface);
+    animation: md-turn-activity-in 220ms ease-out both;
+}
+
+.md-turn-activity--latest {
+    border-color: var(--rc-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--rc-primary) 18%, transparent);
+}
+
+.md-turn-activity-dot {
+    width: 8px;
+    height: 8px;
+    margin-top: 0.27rem;
+    border-radius: 50%;
+    background: var(--rc-primary);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--rc-primary) 18%, transparent);
+}
+
+.md-turn-activity strong,
+.md-turn-activity small {
+    display: block;
+}
+
+.md-turn-activity-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.45rem;
+}
+
+.md-turn-activity-cards span {
+    padding: 0.18rem 0.4rem;
+    border: 1px solid color-mix(in srgb, var(--rc-primary) 45%, var(--rc-border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--rc-primary) 12%, var(--rc-surface));
+    color: var(--rc-text-on-surface);
+    font-size: 0.66rem;
+    font-weight: 700;
+}
+
+.md-turn-activity strong {
+    font-size: 0.82rem;
+    line-height: 1.35;
+}
+
+.md-turn-activity small {
+    margin-top: 0.2rem;
+    color: var(--rc-text-muted);
+    font-size: 0.68rem;
+}
+
+.md-turn-modal-empty {
+    margin: 0.4rem 0;
+    color: var(--rc-text-muted);
+    font-size: 0.82rem;
+}
+
+.md-turn-modal-reopen {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 900;
+    padding: 0.7rem 1rem;
+    border: 1px solid var(--rc-border);
+    border-radius: 999px;
+    background: var(--rc-primary);
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+}
+
+@keyframes md-turn-card-highlight {
+    0%,
+    100% {
+        filter: drop-shadow(0 0 5px #facc15);
+    }
+    50% {
+        filter: drop-shadow(0 0 12px #facc15) drop-shadow(0 0 20px rgba(250, 204, 21, 0.8));
+    }
+}
+
+@keyframes md-turn-activity-in {
+    from {
+        opacity: 0.4;
+        transform: translateX(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@media (max-width: 760px) {
+    .md-turn-modal-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .md-turn-modal-log {
+        border-top: 1px solid var(--rc-border);
+        border-left: 0;
+    }
+
+    .md-turn-property-groups {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .md-turn-card--moved,
+    .md-turn-activity {
+        animation: none;
+    }
+}
+
 .md-pay-modal-backdrop {
     position: fixed;
     inset: 0;
@@ -1334,10 +1796,15 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
     font-size: 0.9rem;
 }
 
-.md-pay-modal-close {
-    width: 44px;
+.md-btn.md-pay-modal-close {
+    display: inline-flex;
+    flex: 0 0 48px;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
     padding: 0;
-    font-size: 2.25rem;
+    font-size: 2.75rem;
     line-height: 1;
 }
 

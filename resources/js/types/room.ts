@@ -86,6 +86,7 @@ export interface MasrawyPending {
 
 export interface MasrawyActivity {
     id: number
+    turn_number?: number
     player_id: number
     type: string
     card_id: string | null
@@ -135,6 +136,7 @@ export interface MasrawyYou {
 
 export interface MasrawyTableState {
     current_player_id: number
+    turn_number: number
     has_drawn_this_turn: boolean
     cards_played_this_turn: number
     draw_pile_count: number
@@ -142,6 +144,7 @@ export interface MasrawyTableState {
     players: MasrawySeat[]
     pending: MasrawyPending | null
     recent_activity: MasrawyActivity[]
+    turn_activity: MasrawyActivity[]
     // See CardCatalogEntry — one entry per card id visible anywhere in
     // this payload, never the whole deck.
     catalog: Record<string, CardCatalogEntry>

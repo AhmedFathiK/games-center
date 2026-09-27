@@ -176,6 +176,7 @@ class MasrawyDealGame extends AbstractGame
         return [
             'turn_order' => $playerIds,
             'current_player_id' => $playerIds[0],
+            'turn_number' => 1,
             'draw_pile' => $deck,
             'discard_pile' => [],
             'hands' => $hands,
@@ -184,6 +185,7 @@ class MasrawyDealGame extends AbstractGame
             'cards_played_this_turn' => 0,
             'has_drawn_this_turn' => false,
             'recent_activity' => [],
+            'turn_activity' => [],
             'activity_sequence' => 0,
             // An in-flight action awaiting responses from other
             // players (see "Pending actions" in the class docblock).
@@ -313,7 +315,12 @@ class MasrawyDealGame extends AbstractGame
         foreach ($pending['charges'] ?? [] as $targetId => $charge) {
             $targetId = (int) $targetId;
 
-            if ($charge['phase'] === 'responding' && $this->responderId($pending, $targetId) === $viewerId) {
+            $isCurrentResponder = $this->responderId($pending, $targetId) === $viewerId;
+            $canReconsiderBeforePaying = $charge['phase'] === 'paying'
+                && $targetId === $viewerId
+                && $this->holdsJustSayNo($state, $viewerId);
+
+            if (($charge['phase'] === 'responding' && $isCurrentResponder) || $canReconsiderBeforePaying) {
                 $you['responding_to'][] = $targetId;
             }
 
@@ -347,6 +354,7 @@ class MasrawyDealGame extends AbstractGame
             'you' => $you,
             'table' => [
                 'current_player_id' => (int) $state['current_player_id'],
+                'turn_number' => (int) ($state['turn_number'] ?? 1),
                 'has_drawn_this_turn' => $state['has_drawn_this_turn'],
                 'cards_played_this_turn' => $state['cards_played_this_turn'],
                 'draw_pile_count' => count($state['draw_pile']),
@@ -354,6 +362,7 @@ class MasrawyDealGame extends AbstractGame
                 'players' => $seats,
                 'pending' => $pending,
                 'recent_activity' => $state['recent_activity'] ?? [],
+                'turn_activity' => $state['turn_activity'] ?? [],
                 'catalog' => $catalog,
                 'rent_chart' => CardCatalog::RENT_CHART,
                 'set_size' => CardCatalog::SET_SIZE,
@@ -377,9 +386,9 @@ class MasrawyDealGame extends AbstractGame
      * if a future card kind ever references one that genuinely isn't
      * covered by the structures already walked here.
      *
-     * @param array<string, mixed> $you
-     * @param array<int, array<string, mixed>> $seats
-     * @param array<int, string> $discardPile
+     * @param  array<string, mixed>  $you
+     * @param  array<int, array<string, mixed>>  $seats
+     * @param  array<int, string>  $discardPile
      * @return array<int, string>
      */
     protected function collectVisibleCardIds(array $you, array $seats, array $discardPile): array
@@ -1084,7 +1093,7 @@ class MasrawyDealGame extends AbstractGame
      */
     protected function handleRespondNo(array $state, User $user, array $payload): array
     {
-        $targetId = $this->respondingChargeTarget($state, $user, $payload);
+        $targetId = $this->respondingChargeTarget($state, $user, $payload, allowPaying: true);
         $cardId = (string) ($payload['card_id'] ?? '');
         $card = $this->cardInHand($state, $user, $cardId);
 
@@ -1099,6 +1108,8 @@ class MasrawyDealGame extends AbstractGame
             'player_id' => (int) $user->id,
             'card_id' => $cardId,
         ];
+        $state['pending']['charges'][$targetId]['phase'] = 'responding';
+        $state['pending']['charges'][$targetId]['outcome'] = null;
 
         return $this->settlePending($state);
     }
@@ -1205,12 +1216,13 @@ class MasrawyDealGame extends AbstractGame
      * their own (as the target) or, if they are the source, the one
      * named by `target_id`. Throws if it is not their move.
      */
-    protected function respondingChargeTarget(array $state, User $user, array $payload): int
+    protected function respondingChargeTarget(array $state, User $user, array $payload, bool $allowPaying = false): int
     {
         $targetId = (int) ($payload['target_id'] ?? $user->id);
         $charge = $state['pending']['charges'][$targetId] ?? null;
+        $isPayingResponder = $allowPaying && $charge !== null && $charge['phase'] === 'paying' && $targetId === (int) $user->id;
 
-        if ($charge === null || $charge['phase'] !== 'responding') {
+        if ($charge === null || ($charge['phase'] !== 'responding' && ! $isPayingResponder)) {
             throw new \InvalidArgumentException('Nothing is waiting on you.');
         }
 
@@ -1580,6 +1592,8 @@ class MasrawyDealGame extends AbstractGame
         $nextIndex = ($currentIndex + 1) % count($order);
 
         $state['current_player_id'] = $order[$nextIndex];
+        $state['turn_number'] = (int) ($state['turn_number'] ?? 1) + 1;
+        $state['turn_activity'] = [];
         $state['has_drawn_this_turn'] = false;
         $state['cards_played_this_turn'] = 0;
 
@@ -1596,7 +1610,7 @@ class MasrawyDealGame extends AbstractGame
             'play_money', 'play_property', 'bank_card', 'play_pass_go', 'play_shisha',
             'play_wil3a', 'play_debt_collector', 'play_birthday', 'play_rent',
             'play_sly_deal', 'play_forced_deal', 'play_deal_breaker', 'move_wildcard',
-            'discard', 'respond_no', 'decline', 'pay',
+            'discard', 'respond_no', 'decline', 'pay', 'draw',
         ];
 
         if (! in_array($type, $visibleActions, true)) {
@@ -1605,6 +1619,7 @@ class MasrawyDealGame extends AbstractGame
 
         $event = [
             'id' => (int) ($state['activity_sequence'] ?? 0) + 1,
+            'turn_number' => (int) ($state['turn_number'] ?? 1),
             'player_id' => (int) $user->id,
             'type' => $type,
             'card_id' => is_string($payload['card_id'] ?? null) ? $payload['card_id'] : null,
@@ -1621,6 +1636,7 @@ class MasrawyDealGame extends AbstractGame
 
         $state['activity_sequence'] = $event['id'];
         $state['recent_activity'] = array_slice([...($state['recent_activity'] ?? []), $event], -8);
+        $state['turn_activity'] = [...($state['turn_activity'] ?? []), $event];
 
         return $state;
     }
