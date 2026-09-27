@@ -3,8 +3,8 @@
     "file": "assets/AppLayout-B4SxWRDf.css",
     "src": "_AppLayout-B4SxWRDf.css"
   },
-  "_AppLayout-CCC1iOaH.js": {
-    "file": "assets/AppLayout-CCC1iOaH.js",
+  "_AppLayout-Be8TIGS-.js": {
+    "file": "assets/AppLayout-Be8TIGS-.js",
     "name": "AppLayout",
     "imports": [
       "resources/js/app.ts",
@@ -18,8 +18,8 @@
     "file": "assets/AuthLayout-BhDxlPwv.css",
     "src": "_AuthLayout-BhDxlPwv.css"
   },
-  "_AuthLayout-DzTrzdHe.js": {
-    "file": "assets/AuthLayout-DzTrzdHe.js",
+  "_AuthLayout-BrfTBIJH.js": {
+    "file": "assets/AuthLayout-BrfTBIJH.js",
     "name": "AuthLayout",
     "imports": [
       "resources/js/app.ts",
@@ -29,8 +29,12 @@
       "assets/AuthLayout-BhDxlPwv.css"
     ]
   },
-  "_SettingsNav-BbYDyvuA.js": {
-    "file": "assets/SettingsNav-BbYDyvuA.js",
+  "_SettingsNav-CnzIsSvY.css": {
+    "file": "assets/SettingsNav-CnzIsSvY.css",
+    "src": "_SettingsNav-CnzIsSvY.css"
+  },
+  "_SettingsNav-lHZdhMze.js": {
+    "file": "assets/SettingsNav-lHZdhMze.js",
     "name": "SettingsNav",
     "imports": [
       "resources/js/app.ts",
@@ -40,16 +44,12 @@
       "assets/SettingsNav-CnzIsSvY.css"
     ]
   },
-  "_SettingsNav-CnzIsSvY.css": {
-    "file": "assets/SettingsNav-CnzIsSvY.css",
-    "src": "_SettingsNav-CnzIsSvY.css"
-  },
   "__plugin-vue_export-helper-DlAUqK2U.js": {
     "file": "assets/_plugin-vue_export-helper-DlAUqK2U.js",
     "name": "_plugin-vue_export-helper"
   },
   "resources/js/app.ts": {
-    "file": "assets/app-DxutB-mm.js",
+    "file": "assets/app-BMwM02gf.js",
     "name": "app",
     "src": "resources/js/app.ts",
     "isEntry": true,
@@ -60,6 +60,7 @@
       "resources/js/pages/Rooms/Mafia/GameOver.vue",
       "resources/js/pages/Rooms/Mafia/NightPhase.vue",
       "resources/js/pages/Rooms/MasrawyDeal/Card.vue",
+      "resources/js/pages/Rooms/MasrawyDeal/CardGallery.vue",
       "resources/js/pages/Rooms/MasrawyDeal/Table.vue",
       "resources/js/pages/Rooms/Mine.vue",
       "resources/js/pages/Rooms/Show.vue",
@@ -73,17 +74,17 @@
       "resources/js/pages/settings/Profile.vue"
     ],
     "css": [
-      "assets/app-_UZQecCy.css"
+      "assets/app-BGMAXPeZ.css"
     ]
   },
   "resources/js/pages/Index.vue": {
-    "file": "assets/Index-Dr1HmzBT.js",
+    "file": "assets/Index-zRxIo0qJ.js",
     "name": "Index",
     "src": "resources/js/pages/Index.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.ts",
-      "_AppLayout-CCC1iOaH.js",
+      "_AppLayout-Be8TIGS-.js",
       "__plugin-vue_export-helper-DlAUqK2U.js"
     ],
     "css": [
@@ -91,7 +92,7 @@
     ]
   },
   "resources/js/pages/Rooms/Mafia/Cancelled.vue": {
-    "file": "assets/Cancelled-DMrHIqrY.js",
+    "file": "assets/Cancelled-UvEPuAxn.js",
     "name": "Cancelled",
     "src": "resources/js/pages/Rooms/Mafia/Cancelled.vue",
     "isDynamicEntry": true,
@@ -104,7 +105,7 @@
     ]
   },
   "resources/js/pages/Rooms/Mafia/DayPhase.vue": {
-    "file": "assets/DayPhase-aq-pf5Hm.js",
+    "file": "assets/DayPhase-CzuV-pWL.js",
     "name": "DayPhase",
     "src": "resources/js/pages/Rooms/Mafia/DayPhase.vue",
     "isDynamicEntry": true,
@@ -117,7 +118,7 @@
     ]
   },
   "resources/js/pages/Rooms/Mafia/GameOver.vue": {
-    "file": "assets/GameOver-BsenXHcI.js",
+    "file": "assets/GameOver-_gVEWF_e.js",
     "name": "GameOver",
     "src": "resources/js/pages/Rooms/Mafia/GameOver.vue",
     "isDynamicEntry": true,
@@ -130,7 +131,7 @@
     ]
   },
   "resources/js/pages/Rooms/Mafia/NightPhase.vue": {
-    "file": "assets/NightPhase-C6GpLew_.js",
+    "file": "assets/NightPhase-CEcHGPWO.js",
     "name": "NightPhase",
     "src": "resources/js/pages/Rooms/Mafia/NightPhase.vue",
     "isDynamicEntry": true,
@@ -143,7 +144,7 @@
     ]
   },
   "resources/js/pages/Rooms/MasrawyDeal/Card.vue": {
-    "file": "assets/Card-BwVTwIfu.js",
+    "file": "assets/Card-CDt6PsG-.js",
     "name": "Card",
     "src": "resources/js/pages/Rooms/MasrawyDeal/Card.vue",
     "isDynamicEntry": true,
@@ -152,11 +153,25 @@
       "__plugin-vue_export-helper-DlAUqK2U.js"
     ],
     "css": [
-      "assets/Card-CygxmT4u.css"
+      "assets/Card-BGsczPUp.css"
+    ]
+  },
+  "resources/js/pages/Rooms/MasrawyDeal/CardGallery.vue": {
+    "file": "assets/CardGallery-Dn-fnq78.js",
+    "name": "CardGallery",
+    "src": "resources/js/pages/Rooms/MasrawyDeal/CardGallery.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/pages/Rooms/MasrawyDeal/Card.vue",
+      "resources/js/app.ts",
+      "__plugin-vue_export-helper-DlAUqK2U.js"
+    ],
+    "css": [
+      "assets/CardGallery-i3euNkiD.css"
     ]
   },
   "resources/js/pages/Rooms/MasrawyDeal/Table.vue": {
-    "file": "assets/Table-DZ-ReoNy.js",
+    "file": "assets/Table-Dlgnfmiz.js",
     "name": "Table",
     "src": "resources/js/pages/Rooms/MasrawyDeal/Table.vue",
     "isDynamicEntry": true,
@@ -166,17 +181,17 @@
       "__plugin-vue_export-helper-DlAUqK2U.js"
     ],
     "css": [
-      "assets/Table-Cjp1XX2V.css"
+      "assets/Table-IJ8vCXHN.css"
     ]
   },
   "resources/js/pages/Rooms/Mine.vue": {
-    "file": "assets/Mine-CeOJBhvq.js",
+    "file": "assets/Mine-CYdBOtBO.js",
     "name": "Mine",
     "src": "resources/js/pages/Rooms/Mine.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.ts",
-      "_AppLayout-CCC1iOaH.js",
+      "_AppLayout-Be8TIGS-.js",
       "__plugin-vue_export-helper-DlAUqK2U.js"
     ],
     "css": [
@@ -184,7 +199,7 @@
     ]
   },
   "resources/js/pages/Rooms/Show.vue": {
-    "file": "assets/Show-mpFOgUNJ.js",
+    "file": "assets/Show-BrMrWgt6.js",
     "name": "Show",
     "src": "resources/js/pages/Rooms/Show.vue",
     "isDynamicEntry": true,
@@ -203,13 +218,13 @@
     ]
   },
   "resources/js/pages/auth/ConfirmPassword.vue": {
-    "file": "assets/ConfirmPassword-DYPat7av.js",
+    "file": "assets/ConfirmPassword-Bg0HdNse.js",
     "name": "ConfirmPassword",
     "src": "resources/js/pages/auth/ConfirmPassword.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.ts",
-      "_AuthLayout-DzTrzdHe.js",
+      "_AuthLayout-BrfTBIJH.js",
       "__plugin-vue_export-helper-DlAUqK2U.js"
     ],
     "css": [
@@ -217,13 +232,13 @@
     ]
   },
   "resources/js/pages/auth/ForgotPassword.vue": {
-    "file": "assets/ForgotPassword-CIB9e-aE.js",
+    "file": "assets/ForgotPassword-DkhDHsXE.js",
     "name": "ForgotPassword",
     "src": "resources/js/pages/auth/ForgotPassword.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.ts",
-      "_AuthLayout-DzTrzdHe.js",
+      "_AuthLayout-BrfTBIJH.js",
       "__plugin-vue_export-helper-DlAUqK2U.js"
     ],
     "css": [
@@ -231,13 +246,13 @@
     ]
   },
   "resources/js/pages/auth/Login.vue": {
-    "file": "assets/Login-DEXU0zKL.js",
+    "file": "assets/Login-ZVy8iDe9.js",
     "name": "Login",
     "src": "resources/js/pages/auth/Login.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.ts",
-      "_AuthLayout-DzTrzdHe.js",
+      "_AuthLayout-BrfTBIJH.js",
       "__plugin-vue_export-helper-DlAUqK2U.js"
     ],
     "css": [
@@ -245,13 +260,13 @@
     ]
   },
   "resources/js/pages/auth/Register.vue": {
-    "file": "assets/Register-B_b12E3f.js",
+    "file": "assets/Register-CD9XazBF.js",
     "name": "Register",
     "src": "resources/js/pages/auth/Register.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.ts",
-      "_AuthLayout-DzTrzdHe.js",
+      "_AuthLayout-BrfTBIJH.js",
       "__plugin-vue_export-helper-DlAUqK2U.js"
     ],
     "css": [
@@ -259,13 +274,13 @@
     ]
   },
   "resources/js/pages/auth/ResetPassword.vue": {
-    "file": "assets/ResetPassword-BGrHWf96.js",
+    "file": "assets/ResetPassword-D8eCj8Xd.js",
     "name": "ResetPassword",
     "src": "resources/js/pages/auth/ResetPassword.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.ts",
-      "_AuthLayout-DzTrzdHe.js",
+      "_AuthLayout-BrfTBIJH.js",
       "__plugin-vue_export-helper-DlAUqK2U.js"
     ],
     "css": [
@@ -273,13 +288,13 @@
     ]
   },
   "resources/js/pages/auth/VerifyEmail.vue": {
-    "file": "assets/VerifyEmail-DwQoT_VX.js",
+    "file": "assets/VerifyEmail-74XfApuF.js",
     "name": "VerifyEmail",
     "src": "resources/js/pages/auth/VerifyEmail.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.ts",
-      "_AuthLayout-DzTrzdHe.js",
+      "_AuthLayout-BrfTBIJH.js",
       "__plugin-vue_export-helper-DlAUqK2U.js"
     ],
     "css": [
@@ -287,14 +302,14 @@
     ]
   },
   "resources/js/pages/settings/Password.vue": {
-    "file": "assets/Password-BvU8qAeO.js",
+    "file": "assets/Password-d1mUGKQS.js",
     "name": "Password",
     "src": "resources/js/pages/settings/Password.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.ts",
-      "_AppLayout-CCC1iOaH.js",
-      "_SettingsNav-BbYDyvuA.js",
+      "_AppLayout-Be8TIGS-.js",
+      "_SettingsNav-lHZdhMze.js",
       "__plugin-vue_export-helper-DlAUqK2U.js"
     ],
     "css": [
@@ -302,14 +317,14 @@
     ]
   },
   "resources/js/pages/settings/Profile.vue": {
-    "file": "assets/Profile-pRg3AQ2E.js",
+    "file": "assets/Profile-BZhhBSeI.js",
     "name": "Profile",
     "src": "resources/js/pages/settings/Profile.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.ts",
-      "_AppLayout-CCC1iOaH.js",
-      "_SettingsNav-BbYDyvuA.js",
+      "_AppLayout-Be8TIGS-.js",
+      "_SettingsNav-lHZdhMze.js",
       "__plugin-vue_export-helper-DlAUqK2U.js"
     ],
     "css": [
