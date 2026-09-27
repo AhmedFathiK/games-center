@@ -16,7 +16,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import type { FormDataConvertible } from '@inertiajs/core'
 import { VueDraggable } from 'vue-draggable-plus'
-import type { Room, AuthUser, MasrawyYou, MasrawyTableState, MasrawySeat, CardCatalogEntry } from '@/types/room'
+import type { Room, AuthUser, MasrawyYou, MasrawyTableState, MasrawySeat, CardCatalogEntry, MasrawyActivity } from '@/types/room'
 import MasrawyCard from './Card.vue'
 
 const props = defineProps<{
@@ -132,21 +132,6 @@ function label(id: string): string {
     return entryFor(id)?.label ?? id
 }
 
-function putHandCardAt(cardId: string, targetIndex: number) {
-    const order = [...handOrder.value]
-    const fromIndex = order.indexOf(cardId)
-    if (fromIndex < 0 || targetIndex < 0 || targetIndex >= order.length || fromIndex === targetIndex) return
-
-    const [movedCard] = order.splice(fromIndex, 1)
-    order.splice(targetIndex, 0, movedCard)
-    handOrder.value = order
-}
-
-function moveHandCard(cardId: string, offset: number) {
-    const index = handOrder.value.indexOf(cardId)
-    putHandCardAt(cardId, index + offset)
-}
-
 function toggleHandReordering() {
     isReorderingHand.value = !isReorderingHand.value
     if (isReorderingHand.value) selectedCardId.value = null
@@ -165,9 +150,70 @@ const mySeat = computed<MasrawySeat | undefined>(() =>
 
 const opponents = computed(() => table.value?.players.filter(s => s.id !== myId.value) ?? [])
 
+const nextPlayerId = computed(() => {
+    const players = table.value?.players ?? []
+    const currentIndex = players.findIndex(seat => seat.id === table.value?.current_player_id)
+    return currentIndex < 0 || players.length < 2 ? null : players[(currentIndex + 1) % players.length]?.id ?? null
+})
+
 function seatFor(id: number | string): MasrawySeat | undefined {
     return table.value?.players.find(s => String(s.id) === String(id))
 }
+
+const recentActivity = computed(() => [...(table.value?.recent_activity ?? [])].slice(-4).reverse())
+
+function activityDescription(event: MasrawyActivity): string {
+    const cardName = event.card_id ? label(event.card_id) : ''
+    const target = event.target_id !== null ? playerName(event.target_id) : ''
+    const targetCardName = event.target_card_id ? label(event.target_card_id) : ''
+    const color = event.color ? colorLabel(event.color) : ''
+
+    switch (event.type) {
+        case 'play_money': return `banked ${cardName}`
+        case 'play_property': return `played ${cardName} into ${color}`
+        case 'bank_card': return `banked ${cardName} as money (${entryFor(event.card_id ?? '')?.value ?? 0}M)`
+        case 'play_pass_go': return `played ${cardName} and drew 2 cards`
+        case 'play_shisha': return `added SHISHA to the ${color} set`
+        case 'play_wil3a': return `added WIL3A to the ${color} set`
+        case 'play_debt_collector': return `played ${cardName} against ${target}`
+        case 'play_birthday': return `played ${cardName} against everyone`
+        case 'play_rent': return `played ${cardName} for ${color} rent${target ? ` against ${target}` : ''}${event.double_rent_card_ids.length ? ' (doubled)' : ''}`
+        case 'play_sly_deal': return `played ${cardName} and took ${targetCardName} from ${target}`
+        case 'play_forced_deal': return `played ${cardName} and swapped ${targetCardName} with a property`
+        case 'play_deal_breaker': return `played ${cardName} and took the ${colorLabel(event.target_color ?? '')} set from ${target}`
+        case 'move_wildcard': return `moved ${cardName} to ${color}`
+        case 'discard': return `discarded ${cardName}`
+        case 'respond_no': return `played ${cardName} to stop an action`
+        case 'decline': return `declined the charge from ${target}`
+        case 'pay': return `paid ${event.card_ids.map(id => label(id)).join(', ')}`
+        default: return 'made a move'
+    }
+}
+
+const payableOptions = computed(() => {
+    const assets = Object.entries(you.value?.payable_assets ?? {}).map(([id, value]) => {
+        const inBank = mySeat.value?.bank.includes(id) ?? false
+        const group = Object.entries(mySeat.value?.properties ?? {}).find(([, property]) => property.cards.includes(id) || property.house === id || property.hotel === id)?.[0]
+        const entry = entryFor(id)
+        const description = inBank
+            ? `${label(id)} · bank`
+            : group
+                ? `${label(id)} · ${colorLabel(group)} ${entry?.type === 'wildcard' ? 'wildcard' : 'property'}`
+                : label(id)
+
+        return { id, value, description }
+    })
+    const counts = new Map<string, number>()
+    for (const asset of assets) counts.set(asset.description, (counts.get(asset.description) ?? 0) + 1)
+    const seen = new Map<string, number>()
+
+    return assets.map(asset => {
+        const copy = (seen.get(asset.description) ?? 0) + 1
+        seen.set(asset.description, copy)
+        const copyLabel = (counts.get(asset.description) ?? 0) > 1 ? ` · copy ${copy}` : ''
+        return { ...asset, display: `${asset.description}${copyLabel} · ${asset.value}M` }
+    })
+})
 
 function seatBankTotal(seat: MasrawySeat): number {
     return seat.bank.reduce((total, cardId) => total + (entryFor(cardId)?.value ?? 0), 0)
@@ -236,16 +282,30 @@ function playPassGo(cardId: string) {
     submit({ type: 'play_pass_go', card_id: cardId }, clearSelection)
 }
 
-function playShisha(cardId: string) {
-    submit({ type: 'play_shisha', card_id: cardId }, clearSelection)
+function playShisha(cardId: string, color: string) {
+    submit({ type: 'play_shisha', card_id: cardId, color }, clearSelection)
 }
 
-function playWil3a(cardId: string) {
-    submit({ type: 'play_wil3a', card_id: cardId }, clearSelection)
+function playWil3a(cardId: string, color: string) {
+    submit({ type: 'play_wil3a', card_id: cardId, color }, clearSelection)
 }
 
 function bankCard(cardId: string) {
     submit({ type: 'bank_card', card_id: cardId }, clearSelection)
+}
+
+const confirmBankCardId = ref<string | null>(null)
+
+function requestBankCard(cardId: string) {
+    confirmBankCardId.value = cardId
+}
+
+function cancelBankCard() {
+    confirmBankCardId.value = null
+}
+
+function confirmBankCard() {
+    if (confirmBankCardId.value) bankCard(confirmBankCardId.value)
 }
 
 function discard(cardId: string) {
@@ -260,9 +320,28 @@ const selectedIsWildRent = computed(() => selectedEntry.value?.type === 'rent' &
 const selectedIsPlainRent = computed(() => selectedEntry.value?.type === 'rent' && !selectedEntry.value.any_color)
 const selectedIsElBob = computed(() => selectedEntry.value?.type === 'wildcard' && selectedEntry.value.any_color)
 const selectedIsTwoColorWild = computed(() => selectedEntry.value?.type === 'wildcard' && !selectedEntry.value.any_color)
+const selectedWildcardFlipped = ref(false)
+
+const selectedWildcardColors = computed(() => {
+    const colors = selectedEntry.value?.colors ?? []
+    if (colors.includes('green') && colors.includes('dark_blue')) return ['green', 'dark_blue']
+    if (colors.includes('brown') && colors.includes('light_blue')) return ['brown', 'light_blue']
+    return colors
+})
+
+const activeWildcardColor = computed(() => {
+    if (!selectedIsTwoColorWild.value) return undefined
+    return selectedWildcardColors.value[selectedWildcardFlipped.value ? 1 : 0]
+})
+
+function rotateSelectedWildcard() {
+    selectedWildcardFlipped.value = !selectedWildcardFlipped.value
+}
 
 function selectCard(id: string) {
     selectedCardId.value = selectedCardId.value === id ? null : id
+    confirmBankCardId.value = null
+    selectedWildcardFlipped.value = false
     // Reset any in-progress sub-form when switching cards.
     wildcardColor.value = ''
     targetId.value = null
@@ -271,6 +350,7 @@ function selectCard(id: string) {
     dealBreakerColor.value = ''
     doubleRentIds.value = []
     rentColor.value = ''
+    targetColor.value = ''
 }
 
 function resetTargetSelections() {
@@ -298,6 +378,7 @@ function playProperty(id: string, color?: string) {
 // --- Targeted-action sub-forms -------------------------------------------
 
 const targetId = ref<number | null>(null)
+const targetColor = ref('')
 const targetCardId = ref('')
 const giveCardId = ref('')
 const dealBreakerColor = ref('')
@@ -331,6 +412,15 @@ const myDoubleRentCards = computed(() =>
 
 const myOwnPropertyCards = computed(() => opponentPropertyCards(mySeat.value))
 const myOwnColors = computed(() => Object.keys(mySeat.value?.properties ?? {}))
+const myCompleteSetColors = computed(() => myOwnColors.value.filter(color => {
+    const group = mySeat.value?.properties[color]
+    return Boolean(group && group.cards.length >= (table.value?.set_size[color] ?? Number.POSITIVE_INFINITY))
+}))
+const myShishaColors = computed(() => myCompleteSetColors.value.filter(color => mySeat.value?.properties[color]?.house === null))
+const myWil3aColors = computed(() => myCompleteSetColors.value.filter(color => {
+    const group = mySeat.value?.properties[color]
+    return Boolean(group?.house && !group.hotel)
+}))
 
 function playDebtCollector(cardId: string) {
     if (targetId.value === null) return
@@ -469,12 +559,22 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
             <!-- Turn / draw pile summary -->
             <section class="md-summary">
                 <div class="md-summary-row">
-                    <span>
-                        Turn: <strong>{{ isMyTurn ? 'You' : playerName(table.current_player_id) }}</strong>
+                    <span class="md-turn-status" :class="{ 'md-turn-status--mine': isMyTurn }" aria-live="polite">
+                        <strong>{{ isMyTurn ? 'YOUR TURN' : `${playerName(table.current_player_id)}’S TURN` }}</strong>
+                        <span v-if="nextPlayerId !== null">Next: {{ playerName(nextPlayerId) }}</span>
                     </span>
                     <span>Plays left this turn: <strong>{{ playsLeft }}</strong></span>
                     <span>Draw pile: <strong>{{ table.draw_pile_count }}</strong></span>
                     <span>Discard pile: <strong>{{ table.discard_pile.length }}</strong></span>
+                </div>
+
+                <div v-if="recentActivity.length" class="md-activity" aria-live="polite" aria-label="Recent plays">
+                    <strong class="md-activity-title">Recent plays</strong>
+                    <ol>
+                        <li v-for="event in recentActivity" :key="event.id">
+                            <strong>{{ playerName(event.player_id) }}</strong> {{ activityDescription(event) }}
+                        </li>
+                    </ol>
                 </div>
 
                 <button
@@ -528,13 +628,13 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                 <!-- Paying -->
                 <div v-if="you.owes !== null" class="md-pay">
                     <p>You owe {{ you.owes }}M. Choose cards to pay with (selected: {{ payTotal }}M):</p>
-                    <label v-for="(value, cardId) in you.payable_assets ?? {}" :key="cardId" class="md-pay-option">
+                    <label v-for="asset in payableOptions" :key="asset.id" class="md-pay-option">
                         <input
                             type="checkbox"
-                            :checked="paySelection.includes(cardId)"
-                            @change="togglePayCard(cardId)"
+                            :checked="paySelection.includes(asset.id)"
+                            @change="togglePayCard(asset.id)"
                         />
-                        {{ label(cardId) }} ({{ value }}M)
+                        {{ asset.display }}
                     </label>
                     <button class="md-btn md-btn--primary" :disabled="submitting || paySelection.length === 0" @click="pay">
                         Pay
@@ -567,7 +667,7 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                 </div>
 
                 <p v-if="isReorderingHand" class="md-hint md-hand-sort-hint">
-                    Press and hold a card, then drag it to reorder. You can also use the arrows. Your order is saved on this device.
+                    Press and hold a card, then drag it to reorder. Your order is saved on this device.
                 </p>
 
                 <p v-if="isMyTurn && overHandLimit" class="md-hint">
@@ -595,7 +695,7 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                     drag-class="md-hand-card--dragging"
                 >
                     <div
-                        v-for="(cardId, index) in handOrder"
+                        v-for="cardId in handOrder"
                         :key="cardId"
                         class="md-hand-card"
                     >
@@ -609,10 +709,6 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                         >
                             <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
                         </button>
-                        <div v-if="isReorderingHand" class="md-hand-sort-controls">
-                            <button class="md-btn md-btn--sort" :disabled="index === 0" :aria-label="`Move ${label(cardId)} left from position ${index + 1}`" @click="moveHandCard(cardId, -1)">←</button>
-                            <button class="md-btn md-btn--sort" :disabled="index === handOrder.length - 1" :aria-label="`Move ${label(cardId)} right from position ${index + 1}`" @click="moveHandCard(cardId, 1)">→</button>
-                        </div>
                     </div>
                 </VueDraggable>
 
@@ -624,6 +720,7 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                     <MasrawyCard
                         :entry="selectedEntry"
                         size="lg"
+                        :active-color="selectedIsTwoColorWild ? activeWildcardColor : undefined"
                         :rent-chart="rentChartFor(selectedEntry.id)"
                         :set-size="setSizeFor(selectedEntry.id)"
                         :wild-rent-charts="wildRentChartsFor(selectedEntry.id)"
@@ -645,12 +742,13 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
 
                         <!-- Two-color wildcard -->
                         <template v-if="selectedIsTwoColorWild">
-                            <select v-model="wildcardColor" aria-label="Choose the property color">
-                                <option value="" disabled>Choose a color</option>
-                                <option v-for="c in selectedEntry.colors" :key="c" :value="c">{{ colorLabel(c) }}</option>
-                            </select>
-                            <button class="md-btn" :disabled="submitting || playsLeft < 1 || !wildcardColor" @click="playProperty(selectedEntry.id, wildcardColor)">
-                                Play as Property
+                            <p class="md-wildcard-active-hint">Top color is active: <strong>{{ colorLabel(activeWildcardColor ?? '') }}</strong>. Rotate 180° to switch.
+                            </p>
+                            <button class="md-btn md-btn--muted" type="button" @click="rotateSelectedWildcard">
+                                ↻ Rotate 180°
+                            </button>
+                            <button class="md-btn" :disabled="submitting || playsLeft < 1 || !activeWildcardColor" @click="playProperty(selectedEntry.id, activeWildcardColor)">
+                                Play as Property ({{ colorLabel(activeWildcardColor ?? '') }})
                             </button>
                         </template>
 
@@ -665,32 +763,30 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                             </button>
                         </template>
 
-                        <!-- Bank / discard -->
-                        <button
-                            v-if="selectedEntry.type === 'action' || selectedEntry.type === 'rent'"
-                            class="md-btn"
-                            :disabled="submitting || playsLeft < 1"
-                            @click="bankCard(selectedEntry.id)"
-                        >
-                            Bank It (no effect, worth its printed value)
-                        </button>
-
-                        <button class="md-btn md-btn--muted" :disabled="submitting || !canDiscard" @click="discard(selectedEntry.id)">
-                            Discard
-                        </button>
-
                         <!-- GARAB 7AZAK / Pass Go -->
                         <button v-if="selectedEntry.action === 'pass_go'" class="md-btn" :disabled="submitting || playsLeft < 1" @click="playPassGo(selectedEntry.id)">
                             Play Pass Go (draw 2)
                         </button>
 
                         <!-- SHISHA / WIL3A -->
-                        <button v-if="selectedEntry.action === 'house'" class="md-btn" :disabled="submitting || playsLeft < 1" @click="playShisha(selectedEntry.id)">
-                            Play SHISHA on a complete set
-                        </button>
-                        <button v-if="selectedEntry.action === 'hotel'" class="md-btn" :disabled="submitting || playsLeft < 1" @click="playWil3a(selectedEntry.id)">
-                            Play WIL3A on a set with a SHISHA
-                        </button>
+                        <template v-if="selectedEntry.action === 'house'">
+                            <select v-model="targetColor" aria-label="Choose a complete set for SHISHA">
+                                <option value="" disabled>Choose a complete set</option>
+                                <option v-for="c in myShishaColors" :key="c" :value="c">{{ colorLabel(c) }}</option>
+                            </select>
+                            <button class="md-btn" :disabled="submitting || playsLeft < 1 || !targetColor" @click="playShisha(selectedEntry.id, targetColor)">
+                                Play SHISHA on {{ targetColor ? colorLabel(targetColor) : 'a set' }}
+                            </button>
+                        </template>
+                        <template v-if="selectedEntry.action === 'hotel'">
+                            <select v-model="targetColor" aria-label="Choose a set with SHISHA for WIL3A">
+                                <option value="" disabled>Choose a complete set with SHISHA</option>
+                                <option v-for="c in myWil3aColors" :key="c" :value="c">{{ colorLabel(c) }}</option>
+                            </select>
+                            <button class="md-btn" :disabled="submitting || playsLeft < 1 || !targetColor" @click="playWil3a(selectedEntry.id, targetColor)">
+                                Play WIL3A on {{ targetColor ? colorLabel(targetColor) : 'a set' }}
+                            </button>
+                        </template>
 
                         <!-- HAT 5 FI KEES / Debt Collector -->
                         <template v-if="selectedEntry.action === 'debt_collector'">
@@ -817,6 +913,29 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                                 Take Complete Set
                             </button>
                         </template>
+
+                        <!-- Put the optional money/discard choices after the card's main effect. -->
+                        <button
+                            v-if="(selectedEntry.type === 'action' || selectedEntry.type === 'rent') && confirmBankCardId !== selectedEntry.id"
+                            class="md-btn md-btn--muted"
+                            :disabled="submitting || playsLeft < 1"
+                            @click="requestBankCard(selectedEntry.id)"
+                        >
+                            Bank instead · worth {{ selectedEntry.value }}M
+                        </button>
+
+                        <div v-if="confirmBankCardId === selectedEntry.id" class="md-bank-confirm" role="alertdialog" aria-labelledby="md-bank-confirm-title">
+                            <strong id="md-bank-confirm-title">Bank {{ label(selectedEntry.id) }} for {{ selectedEntry.value }}M?</strong>
+                            <p>This uses a play and permanently gives up this card’s effect.</p>
+                            <div>
+                                <button class="md-btn md-btn--primary" :disabled="submitting" @click="confirmBankCard">Confirm bank</button>
+                                <button class="md-btn md-btn--muted" :disabled="submitting" @click="cancelBankCard">Keep card</button>
+                            </div>
+                        </div>
+
+                        <button class="md-btn md-btn--muted" :disabled="submitting || !canDiscard" @click="discard(selectedEntry.id)">
+                            Discard
+                        </button>
                     </div>
                 </div>
             </section>
@@ -883,7 +1002,7 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                                     <span v-if="group.hotel"> + WIL3A</span>
                                 </p>
                                 <div class="md-card-row">
-                                    <MasrawyCard v-for="cardId in group.cards" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                                    <MasrawyCard v-for="cardId in group.cards" :key="cardId" :entry="entryFor(cardId)!" :active-color="entryFor(cardId)?.type === 'wildcard' ? String(color) : undefined" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
                                 </div>
                             </div>
                         </div>
@@ -968,6 +1087,57 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
     gap: 1rem;
     font-size: 0.85rem;
     margin-bottom: 0.75rem;
+}
+
+.md-turn-status {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.5rem 0.75rem;
+    border-left: 4px solid var(--rc-border);
+    border-radius: 6px;
+    background: var(--rc-surface-alt);
+}
+
+.md-turn-status strong {
+    font-size: 1rem;
+}
+
+.md-turn-status span {
+    color: var(--rc-text-muted);
+    font-size: 0.8rem;
+}
+
+.md-turn-status--mine {
+    border-color: #15803d;
+    background: #dcfce7;
+    color: #14532d;
+}
+
+.md-turn-status--mine span {
+    color: #166534;
+}
+
+.md-activity {
+    margin: 0.25rem 0 0.75rem;
+    padding: 0.7rem 0.85rem;
+    border-radius: 7px;
+    border: 1px solid var(--rc-border);
+    border-left: 4px solid var(--rc-primary);
+    background: var(--rc-surface-alt);
+    font-size: 0.85rem;
+}
+
+.md-activity-title {
+    display: block;
+    margin-bottom: 0.35rem;
+}
+
+.md-activity ol {
+    display: grid;
+    gap: 0.3rem;
+    margin: 0;
+    padding-left: 1.2rem;
 }
 
 .md-hint {
@@ -1146,18 +1316,6 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
     opacity: 0.45;
 }
 
-.md-hand-sort-controls {
-    display: flex;
-    gap: 0.4rem;
-}
-
-.md-hand-sort-controls .md-btn {
-    min-width: 44px;
-    min-height: 44px;
-    padding: 0.4rem;
-    font-size: 1.1rem;
-}
-
 .md-discard-stack {
     position: relative;
     isolation: isolate;
@@ -1248,6 +1406,45 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
     max-width: 100%;
 }
 
+.md-play-controls > .md-btn:not(.md-btn--muted) {
+    background: var(--rc-primary);
+    border-color: var(--rc-primary);
+    color: #fff;
+}
+
+.md-bank-confirm {
+    display: grid;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--rc-primary);
+    border-radius: 7px;
+    background: var(--rc-surface-alt);
+    font-size: 0.9rem;
+}
+
+.md-bank-confirm p {
+    margin: 0;
+    color: var(--rc-text-muted);
+}
+
+.md-bank-confirm > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.md-wildcard-active-hint {
+    width: 100%;
+    margin: 0;
+    color: var(--rc-text-muted);
+    font-size: 0.85rem;
+}
+
+.md-wildcard-active-hint strong {
+    color: var(--rc-text-on-surface);
+}
+
 .md-respond select,
 .md-panel select {
     min-width: 0;
@@ -1292,7 +1489,27 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
     background: transparent;
 }
 
-select,
+.md-root select {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 46px;
+    padding: 0.65rem 2.25rem 0.65rem 0.8rem;
+    border: 1px solid var(--rc-border);
+    border-radius: 7px;
+    background-color: var(--rc-surface-alt);
+    color: var(--rc-text-on-surface);
+    font: inherit;
+    font-size: 0.9rem;
+    line-height: 1.25;
+}
+
+.md-root select option {
+    background-color: var(--rc-surface);
+    color: var(--rc-text-on-surface);
+}
+
 input[type='checkbox'] {
     font-size: 0.85rem;
 }
@@ -1312,16 +1529,32 @@ input[type='checkbox'] {
     }
 
     .md-play-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
         gap: 0.75rem;
     }
 
+    .md-play-panel > :first-child {
+        justify-self: center;
+    }
+
     .md-play-controls {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
         min-width: 0;
         width: 100%;
     }
 
-    .md-play-controls .md-btn {
-        flex: 1 1 auto;
+    .md-play-controls .md-btn,
+    .md-play-controls select,
+    .md-play-controls .md-fieldset {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .md-turn-status {
+        width: 100%;
     }
 }
 </style>

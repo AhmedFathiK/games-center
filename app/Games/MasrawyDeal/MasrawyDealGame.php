@@ -183,6 +183,8 @@ class MasrawyDealGame extends AbstractGame
             'properties' => $properties,
             'cards_played_this_turn' => 0,
             'has_drawn_this_turn' => false,
+            'recent_activity' => [],
+            'activity_sequence' => 0,
             // An in-flight action awaiting responses from other
             // players (see "Pending actions" in the class docblock).
             'pending' => null,
@@ -210,12 +212,14 @@ class MasrawyDealGame extends AbstractGame
         // handler checks that this particular player is the one the
         // action is actually waiting on.
         if (($state['pending'] ?? null) !== null) {
-            return match ($type) {
+            $nextState = match ($type) {
                 'respond_no' => $this->handleRespondNo($state, $user, $payload),
                 'decline' => $this->handleDecline($state, $user, $payload),
                 'pay' => $this->handlePay($state, $user, $payload),
                 default => throw new \InvalidArgumentException('Waiting for a response to a played action.'),
             };
+
+            return $this->recordRecentActivity($nextState, $user, $payload);
         }
 
         // Every other action is something only the current player can do.
@@ -223,7 +227,7 @@ class MasrawyDealGame extends AbstractGame
             throw new \InvalidArgumentException('It is not your turn.');
         }
 
-        return match ($type) {
+        $nextState = match ($type) {
             'draw' => $this->handleDraw($state, $user),
             'play_money' => $this->handlePlayMoney($state, $user, $payload),
             'play_property' => $this->handlePlayProperty($state, $user, $payload),
@@ -242,6 +246,8 @@ class MasrawyDealGame extends AbstractGame
             'end_turn' => $this->handleEndTurn($state, $user),
             default => throw new \InvalidArgumentException('Unknown action type.'),
         };
+
+        return $this->recordRecentActivity($nextState, $user, $payload);
     }
 
     // --- What each player is allowed to see ------------------------------------
@@ -318,6 +324,19 @@ class MasrawyDealGame extends AbstractGame
         }
 
         $cardIds = $this->collectVisibleCardIds($you, $seats, $state['discard_pile']);
+        foreach ($state['recent_activity'] ?? [] as $activity) {
+            foreach (['card_id', 'target_card_id', 'give_card_id'] as $field) {
+                if (is_string($activity[$field] ?? null) && $activity[$field] !== '') {
+                    $cardIds[] = $activity[$field];
+                }
+            }
+            foreach ($activity['card_ids'] ?? [] as $cardId) {
+                if (is_string($cardId) && $cardId !== '') {
+                    $cardIds[] = $cardId;
+                }
+            }
+        }
+        $cardIds = array_values(array_unique($cardIds));
         $catalog = [];
 
         foreach ($cardIds as $cardId) {
@@ -334,6 +353,7 @@ class MasrawyDealGame extends AbstractGame
                 'discard_pile' => $state['discard_pile'],
                 'players' => $seats,
                 'pending' => $pending,
+                'recent_activity' => $state['recent_activity'] ?? [],
                 'catalog' => $catalog,
                 'rent_chart' => CardCatalog::RENT_CHART,
                 'set_size' => CardCatalog::SET_SIZE,
@@ -1567,6 +1587,43 @@ class MasrawyDealGame extends AbstractGame
     }
 
     // --- Shared helpers ---------------------------------------------------
+
+    /** Keep a short, public feed so plays remain visible when a set is off-screen. */
+    protected function recordRecentActivity(array $state, User $user, array $payload): array
+    {
+        $type = $payload['type'] ?? null;
+        $visibleActions = [
+            'play_money', 'play_property', 'bank_card', 'play_pass_go', 'play_shisha',
+            'play_wil3a', 'play_debt_collector', 'play_birthday', 'play_rent',
+            'play_sly_deal', 'play_forced_deal', 'play_deal_breaker', 'move_wildcard',
+            'discard', 'respond_no', 'decline', 'pay',
+        ];
+
+        if (! in_array($type, $visibleActions, true)) {
+            return $state;
+        }
+
+        $event = [
+            'id' => (int) ($state['activity_sequence'] ?? 0) + 1,
+            'player_id' => (int) $user->id,
+            'type' => $type,
+            'card_id' => is_string($payload['card_id'] ?? null) ? $payload['card_id'] : null,
+            'card_ids' => array_values(array_filter($payload['card_ids'] ?? [], 'is_string')),
+            'target_id' => isset($payload['target_id']) ? (int) $payload['target_id'] : null,
+            'target_card_id' => is_string($payload['target_card_id'] ?? null) ? $payload['target_card_id'] : null,
+            'give_card_id' => is_string($payload['give_card_id'] ?? null) ? $payload['give_card_id'] : null,
+            'color' => is_string($payload['color'] ?? null)
+                ? $payload['color']
+                : (is_string($payload['card_id'] ?? null) ? (CardCatalog::get($payload['card_id'])['color'] ?? null) : null),
+            'target_color' => is_string($payload['target_color'] ?? null) ? $payload['target_color'] : null,
+            'double_rent_card_ids' => array_values(array_filter($payload['double_rent_card_ids'] ?? [], 'is_string')),
+        ];
+
+        $state['activity_sequence'] = $event['id'];
+        $state['recent_activity'] = array_slice([...($state['recent_activity'] ?? []), $event], -8);
+
+        return $state;
+    }
 
     /**
      * Looks up $cardId in $user's hand and returns its catalog

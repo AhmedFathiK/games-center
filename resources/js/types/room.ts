@@ -84,6 +84,20 @@ export interface MasrawyPending {
     charges: Record<string, MasrawyChargeEntry>
 }
 
+export interface MasrawyActivity {
+    id: number
+    player_id: number
+    type: string
+    card_id: string | null
+    card_ids: string[]
+    target_id: number | null
+    target_card_id: string | null
+    give_card_id: string | null
+    color: string | null
+    target_color: string | null
+    double_rent_card_ids: string[]
+}
+
 // Mirrors CardCatalog::get()'s shape exactly — the backend sends one of
 // these per card id that actually appears anywhere in the payload (see
 // MasrawyDealGame::viewFor()/collectVisibleCardIds()), so the frontend
@@ -127,6 +141,7 @@ export interface MasrawyTableState {
     discard_pile: string[]
     players: MasrawySeat[]
     pending: MasrawyPending | null
+    recent_activity: MasrawyActivity[]
     // See CardCatalogEntry — one entry per card id visible anywhere in
     // this payload, never the whole deck.
     catalog: Record<string, CardCatalogEntry>

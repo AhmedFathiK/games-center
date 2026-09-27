@@ -28,12 +28,13 @@ const props = withDefaults(
     defineProps<{
         entry: CardCatalogEntry
         size?: 'sm' | 'lg'
+        activeColor?: string
         rentChart?: number[]
         setSize?: number
         wildRentCharts?: number[][]
         wildSetSizes?: number[]
     }>(),
-    { size: 'sm', rentChart: undefined, setSize: undefined, wildRentCharts: undefined, wildSetSizes: undefined },
+    { size: 'sm', activeColor: undefined, rentChart: undefined, setSize: undefined, wildRentCharts: undefined, wildSetSizes: undefined },
 )
 
 const COLOR_HEX: Record<string, string> = {
@@ -142,6 +143,13 @@ const referenceWildcardColors = computed(() => {
     return colors
 })
 
+const isWildcardFlipped = computed(() =>
+    props.entry.type === 'wildcard'
+    && !props.entry.any_color
+    && props.activeColor !== undefined
+    && referenceWildcardColors.value[1] === props.activeColor,
+)
+
 const referenceWildcardRentCharts = computed(() => referenceWildcardColors.value.map(color => {
     const index = props.entry.colors?.indexOf(color) ?? -1
     return index >= 0 ? props.wildRentCharts?.[index] : undefined
@@ -156,6 +164,7 @@ const referenceWildcardSetSizes = computed(() => referenceWildcardColors.value.m
 <template>
     <div
         class="mc-card"
+        :class="{ 'mc-card--flipped': isWildcardFlipped }"
         :style="{ width: dims.w + 'px', height: dims.h + 'px', fontSize: (isLg ? 1 : 0.62) + 'rem' }"
     >
         <!-- Money -->
@@ -299,6 +308,7 @@ const referenceWildcardSetSizes = computed(() => referenceWildcardColors.value.m
 
             <div class="mc-double-wild-banner" :style="{ background: colorHex(referenceWildcardColors[0]) }">
                 <div class="mc-double-wild-banner-copy">
+                    <b v-if="activeColor === referenceWildcardColors[0]" class="mc-double-wild-active">ACTIVE COLOR</b>
                     <span>{{ isRailroadOrUtility(referenceWildcardColors[0]) ? 'KHADAMAT ENSHERA7' : 'MANTI2A' }}</span>
                     <strong>CART KARBAGA</strong>
                     <em>(Use card either way up.)</em>
@@ -373,6 +383,7 @@ const referenceWildcardSetSizes = computed(() => referenceWildcardColors.value.m
 
             <div class="mc-double-wild-banner mc-double-wild-banner--bottom" :style="{ background: colorHex(referenceWildcardColors[1]) }">
                 <div class="mc-double-wild-banner-copy">
+                    <b v-if="activeColor === referenceWildcardColors[1]" class="mc-double-wild-active">ACTIVE COLOR</b>
                     <span>{{ isRailroadOrUtility(referenceWildcardColors[1]) ? 'KHADAMAT ENSHERA7' : 'MANTI2A' }}</span>
                     <strong>CART KARBAGA</strong>
                     <em>(Use card either way up.)</em>
@@ -896,6 +907,11 @@ const referenceWildcardSetSizes = computed(() => referenceWildcardColors.value.m
     font-family: 'Montserrat', sans-serif;
     color: #111111;
     container-type: inline-size;
+    transition: transform 180ms ease;
+}
+
+.mc-card--flipped {
+    transform: rotate(180deg);
 }
 
 .mc-face {
@@ -1421,6 +1437,20 @@ const referenceWildcardSetSizes = computed(() => referenceWildcardColors.value.m
     font-family: 'EB Garamond', serif;
     font-size: 2.65cqi;
     font-style: italic;
+}
+
+.mc-double-wild-active {
+    margin-bottom: 0.2cqi;
+    padding: 0.15cqi 0.45cqi;
+    border: 0.3cqi solid #111111;
+    border-radius: 1cqi;
+    background: #ffffff;
+    color: #111111;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 2.45cqi;
+    font-style: normal;
+    font-weight: 900;
+    line-height: 1;
 }
 
 .mc-double-wild-body {
