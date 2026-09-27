@@ -12,9 +12,10 @@
  * the platform-shared views (Show.vue, Mine.vue) at the top level.
  * Mafia's own files live the same way, under Rooms/Mafia/.
  */
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import type { FormDataConvertible } from '@inertiajs/core'
+import { VueDraggable } from 'vue-draggable-plus'
 import type { Room, AuthUser, MasrawyYou, MasrawyTableState, MasrawySeat, CardCatalogEntry } from '@/types/room'
 import MasrawyCard from './Card.vue'
 
@@ -29,6 +30,49 @@ const props = defineProps<{
 const you = computed(() => props.room.you as MasrawyYou | null)
 const table = computed(() => props.room.table as MasrawyTableState | null)
 const myId = computed(() => props.auth.user.id)
+const handOrder = ref<string[]>([])
+const handOrderLoaded = ref(false)
+const handOrderStorageKey = `masrawy-deal-hand-order:${props.room.id}:${props.auth.user.id}`
+const isReorderingHand = ref(false)
+
+function reconcileHandOrder(hand: string[], preferredOrder: string[]): string[] {
+    const cardsInHand = new Set(hand)
+    const ordered = preferredOrder.filter((id, index) => cardsInHand.has(id) && preferredOrder.indexOf(id) === index)
+
+    return [...ordered, ...hand.filter(id => !ordered.includes(id))]
+}
+
+watch(
+    () => [...(you.value?.hand ?? [])],
+    hand => {
+        handOrder.value = reconcileHandOrder(hand, handOrder.value.length > 0 ? handOrder.value : hand)
+    },
+    { immediate: true },
+)
+
+onMounted(() => {
+    try {
+        const savedOrder: unknown = JSON.parse(window.localStorage.getItem(handOrderStorageKey) ?? '[]')
+        if (Array.isArray(savedOrder) && savedOrder.every(id => typeof id === 'string')) {
+            handOrder.value = reconcileHandOrder(you.value?.hand ?? [], savedOrder)
+        }
+    } catch {
+        // Sorting still works for this visit when local storage is unavailable.
+    }
+
+    handOrderLoaded.value = true
+})
+
+watch(handOrder, order => {
+    if (!handOrderLoaded.value) return
+
+    try {
+        window.localStorage.setItem(handOrderStorageKey, JSON.stringify(order))
+    } catch {
+        // Keep the in-memory order even when the browser blocks local storage.
+    }
+})
+
 const topDiscardCardId = computed(() => {
     const pile = table.value?.discard_pile ?? []
     return pile[pile.length - 1] ?? ''
@@ -86,6 +130,26 @@ function wildSetSizesFor(id: string): number[] | undefined {
 
 function label(id: string): string {
     return entryFor(id)?.label ?? id
+}
+
+function putHandCardAt(cardId: string, targetIndex: number) {
+    const order = [...handOrder.value]
+    const fromIndex = order.indexOf(cardId)
+    if (fromIndex < 0 || targetIndex < 0 || targetIndex >= order.length || fromIndex === targetIndex) return
+
+    const [movedCard] = order.splice(fromIndex, 1)
+    order.splice(targetIndex, 0, movedCard)
+    handOrder.value = order
+}
+
+function moveHandCard(cardId: string, offset: number) {
+    const index = handOrder.value.indexOf(cardId)
+    putHandCardAt(cardId, index + offset)
+}
+
+function toggleHandReordering() {
+    isReorderingHand.value = !isReorderingHand.value
+    if (isReorderingHand.value) selectedCardId.value = null
 }
 
 // --- Roster / seats ----------------------------------------------------
@@ -482,34 +546,75 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
             <section class="md-hand">
                 <div class="md-hand-header">
                     <h3 class="md-section-title">Your Hand ({{ you.hand.length }}/7)</h3>
-                    <button
-                        v-if="isMyTurn && table.has_drawn_this_turn && pending === null && !overHandLimit"
-                        class="md-btn"
-                        :disabled="submitting"
-                        @click="endTurn"
-                    >
-                        End Turn
-                    </button>
+                    <div class="md-hand-actions">
+                        <button
+                            v-if="you.hand.length > 1"
+                            class="md-btn md-btn--muted"
+                            :aria-pressed="isReorderingHand"
+                            @click="toggleHandReordering"
+                        >
+                            {{ isReorderingHand ? 'Done sorting' : 'Sort hand' }}
+                        </button>
+                        <button
+                            v-if="isMyTurn && table.has_drawn_this_turn && pending === null && !overHandLimit"
+                            class="md-btn"
+                            :disabled="submitting"
+                            @click="endTurn"
+                        >
+                            End Turn
+                        </button>
+                    </div>
                 </div>
+
+                <p v-if="isReorderingHand" class="md-hint md-hand-sort-hint">
+                    Press and hold a card, then drag it to reorder. You can also use the arrows. Your order is saved on this device.
+                </p>
 
                 <p v-if="isMyTurn && overHandLimit" class="md-hint">
                     Discard down to 7 cards before ending your turn.
                 </p>
 
-                <div class="md-card-row md-card-row--hand">
-                    <button
-                        v-for="cardId in you.hand"
+                <VueDraggable
+                    v-model="handOrder"
+                    class="md-card-row md-card-row--hand"
+                    :class="{ 'md-card-row--hand-sorting': isReorderingHand }"
+                    :disabled="!isReorderingHand"
+                    :animation="180"
+                    :delay="160"
+                    :delay-on-touch-only="true"
+                    :touch-start-threshold="5"
+                    :fallback-tolerance="5"
+                    :force-fallback="true"
+                    :fallback-on-body="true"
+                    :scroll="true"
+                    :scroll-sensitivity="60"
+                    :scroll-speed="10"
+                    direction="horizontal"
+                    ghost-class="md-hand-card--ghost"
+                    chosen-class="md-hand-card--chosen"
+                    drag-class="md-hand-card--dragging"
+                >
+                    <div
+                        v-for="(cardId, index) in handOrder"
                         :key="cardId"
-                        class="md-card-btn"
-                        :class="{ 'md-card-btn--selected': selectedCardId === cardId }"
-                        :aria-label="`Select ${label(cardId)}`"
-                        :aria-pressed="selectedCardId === cardId"
-                        :disabled="!canAct"
-                        @click="selectCard(cardId)"
+                        class="md-hand-card"
                     >
-                        <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
-                    </button>
-                </div>
+                        <button
+                            class="md-card-btn"
+                            :class="{ 'md-card-btn--selected': selectedCardId === cardId }"
+                            :aria-label="`${isReorderingHand ? 'Reorder' : 'Select'} ${label(cardId)}`"
+                            :aria-pressed="selectedCardId === cardId"
+                            :disabled="!canAct || isReorderingHand"
+                            @click="selectCard(cardId)"
+                        >
+                            <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                        </button>
+                        <div v-if="isReorderingHand" class="md-hand-sort-controls">
+                            <button class="md-btn md-btn--sort" :disabled="index === 0" :aria-label="`Move ${label(cardId)} left from position ${index + 1}`" @click="moveHandCard(cardId, -1)">←</button>
+                            <button class="md-btn md-btn--sort" :disabled="index === handOrder.length - 1" :aria-label="`Move ${label(cardId)} right from position ${index + 1}`" @click="moveHandCard(cardId, 1)">→</button>
+                        </div>
+                    </div>
+                </VueDraggable>
 
                 <p v-if="!canAct" class="md-hint">
                     {{ pending ? 'Waiting on a pending action.' : 'Wait for your turn to play a card.' }}
@@ -965,6 +1070,17 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
     margin-bottom: 0;
 }
 
+.md-hand-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+
+.md-hand-sort-hint {
+    margin: 0.5rem 0 0;
+}
+
 .md-seat-turn-tag {
     color: var(--rc-primary);
     font-weight: 400;
@@ -992,6 +1108,49 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
     overscroll-behavior-x: contain;
     scroll-snap-type: x proximity;
     scrollbar-width: thin;
+}
+
+.md-hand-card {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.md-hand-card {
+    cursor: auto;
+}
+
+.md-card-row--hand-sorting .md-hand-card {
+    cursor: grab;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.md-card-row--hand-sorting .md-card-btn {
+    pointer-events: none;
+}
+
+.md-hand-card--chosen {
+    cursor: grabbing;
+}
+
+.md-hand-card--dragging,
+.md-hand-card--ghost {
+    opacity: 0.45;
+}
+
+.md-hand-sort-controls {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.md-hand-sort-controls .md-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0.4rem;
+    font-size: 1.1rem;
 }
 
 .md-discard-stack {
