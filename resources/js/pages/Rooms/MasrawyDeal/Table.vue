@@ -1110,6 +1110,11 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
     scrollbar-width: thin;
 }
 
+.md-card-row--hand-sorting {
+    overflow-anchor: none;
+    scroll-snap-type: none;
+}
+
 .md-hand-card {
     display: flex;
     flex: 0 0 auto;
