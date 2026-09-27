@@ -136,7 +136,7 @@ class MasrawyDealGameTest extends TestCase
     {
         return [
             'deal_breaker' => ['deal_breaker', 'HAT wa lamo2akhza EL SHORT!', 'HAT EL GAMAL BEMA 7AMAL', 5],
-            'birthday' => ['birthday', '3ID MILADY YA KELAB', '2 MILLION MALTOOSH min KOL BRINCE', 2],
+            'birthday' => ['birthday', '3ID MILADY YA KELAB', '2 MILLION MALTOOSH MIN KOL BRINCE', 2],
             'sly_deal' => ['sly_deal', 'KHOD AMA 2OLAK', 'KHOD MANTI2A MIN AY BRINCE', 3],
             'forced_deal' => ['forced_deal', 'MA.. TEEGY WANA AGY!', 'SALIM WESTILIM MANTI2A', 3],
             'debt_collector' => ['debt_collector', 'HAT 5 FI KEES', 'LABES WA7ID YEDIK 5 MILLION MALTOOSH', 3],
