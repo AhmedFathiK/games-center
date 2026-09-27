@@ -221,7 +221,12 @@ class MasrawyDealGame extends AbstractGame
                 default => throw new \InvalidArgumentException('Waiting for a response to a played action.'),
             };
 
-            return $this->recordRecentActivity($nextState, $user, $payload);
+            $activityPayload = $payload;
+            if ($type === 'pay') {
+                $activityPayload['target_id'] = (int) $state['pending']['source_id'];
+            }
+
+            return $this->recordRecentActivity($nextState, $user, $activityPayload);
         }
 
         // Every other action is something only the current player can do.

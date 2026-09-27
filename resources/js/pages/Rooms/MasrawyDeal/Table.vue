@@ -225,6 +225,11 @@ function closePropertySet() {
 
 const recentActivity = computed(() => [...(table.value?.recent_activity ?? [])].slice(-4).reverse())
 const currentTurnSeat = computed(() => table.value?.players.find((seat) => seat.id === table.value?.current_player_id));
+const currentTurnAttentionKey = computed(() => `${table.value?.turn_number ?? 0}:${table.value?.current_player_id ?? ''}`)
+const dismissedMyTurnAttentionKey = ref<string | null>(null)
+const showMyTurnAttention = computed(
+    () => gameIsLive.value && isMyTurn.value && dismissedMyTurnAttentionKey.value !== currentTurnAttentionKey.value,
+)
 const currentTurnActivity = computed(() =>
     (table.value?.turn_activity ?? []).filter((event) => event.player_id === table.value?.current_player_id),
 );
@@ -241,6 +246,28 @@ const currentTurnMoveCardIds = computed(
         ),
 );
 const dismissedTurnPlayerId = ref<number | null>(null);
+const paymentReceivedEvents = ref<MasrawyActivity[]>([])
+const latestSeenActivityId = ref(Math.max(0, ...(table.value?.recent_activity ?? []).map((event) => event.id)))
+const celebrationPieces = Array.from({ length: 28 }, (_, index) => index)
+const winnerModalDismissed = ref(false)
+const showWinnerModal = computed(() =>
+    props.room.status === 'finished' && props.room.winner !== null && !winnerModalDismissed.value,
+)
+
+watch(
+    () => table.value?.recent_activity.map((event) => event.id) ?? [],
+    (activityIds) => {
+        const unseenIds = activityIds.filter((id) => id > latestSeenActivityId.value)
+        if (activityIds.length) latestSeenActivityId.value = Math.max(latestSeenActivityId.value, ...activityIds)
+        if (unseenIds.length === 0) return
+
+        const newPaymentsToMe = (table.value?.recent_activity ?? []).filter(
+            (event) => unseenIds.includes(event.id) && event.type === 'pay' && event.target_id === myId.value,
+        )
+        if (newPaymentsToMe.length) paymentReceivedEvents.value = newPaymentsToMe
+    },
+)
+
 const showTurnModal = computed(
     () =>
         gameIsLive.value &&
@@ -259,6 +286,14 @@ watch(
 
 function dismissTurnModal() {
     dismissedTurnPlayerId.value = currentTurnSeat.value?.id ?? null;
+}
+
+function dismissMyTurnAttention() {
+    dismissedMyTurnAttentionKey.value = currentTurnAttentionKey.value
+}
+
+function dismissPaymentReceipt() {
+    paymentReceivedEvents.value = []
 }
 
 function activityCardLabels(event: MasrawyActivity): string[] {
@@ -290,7 +325,7 @@ function activityDescription(event: MasrawyActivity): string {
         case 'discard': return `discarded ${cardName}`
         case 'respond_no': return `played ${cardName} to stop an action`
         case 'decline': return `declined the charge from ${target}`
-        case 'pay': return `paid ${event.card_ids.map(id => label(id)).join(', ')}`
+        case 'pay': return `paid ${event.card_ids.map(id => label(id)).join(', ')}${target ? ` to ${target}` : ''}`
         case 'draw': return 'drew cards'
         default: return 'made a move'
     }
@@ -615,6 +650,7 @@ function respondNo(targetIdForCharge: number) {
         respondCardByTarget.value[String(targetIdForCharge)] = ''
         paySelection.value = []
         isPayModalOpen.value = false
+        isPayModalCollapsed.value = false
     })
 }
 
@@ -626,6 +662,24 @@ function decline(targetIdForCharge: number) {
 
 const paySelection = ref<string[]>([])
 const isPayModalOpen = ref(false)
+const isPayModalCollapsed = ref(false)
+
+watch(
+    () => you.value?.owes ?? null,
+    (owed, previousOwed) => {
+        if (owed !== null && owed !== previousOwed) {
+            paySelection.value = []
+            actionError.value = null
+            isPayModalOpen.value = true
+            isPayModalCollapsed.value = false
+        } else if (owed === null) {
+            paySelection.value = []
+            isPayModalOpen.value = false
+            isPayModalCollapsed.value = false
+        }
+    },
+    { immediate: true },
+)
 
 const payTotal = computed(() =>
     paySelection.value.reduce((sum, id) => sum + (you.value?.payable_assets?.[id] ?? 0), 0),
@@ -641,6 +695,12 @@ function togglePayCard(id: string) {
 function openPayModal() {
     actionError.value = null
     isPayModalOpen.value = true
+    isPayModalCollapsed.value = false
+}
+
+function collapsePayModal() {
+    isPayModalOpen.value = false
+    isPayModalCollapsed.value = true
 }
 
 function pay() {
@@ -648,6 +708,7 @@ function pay() {
     submit({ type: 'pay', card_ids: [...paySelection.value] }, () => {
         paySelection.value = []
         isPayModalOpen.value = false
+        isPayModalCollapsed.value = false
     })
 }
 
@@ -768,13 +829,6 @@ watch(
                     </button>
                 </div>
 
-                <!-- Paying -->
-                <div v-if="you.owes !== null" class="md-pay">
-                    <p>You owe {{ you.owes }}M.</p>
-                    <button class="md-btn md-btn--primary" @click="openPayModal">
-                        Choose cards to pay<span v-if="paySelection.length"> ({{ payTotal }}M selected)</span>
-                    </button>
-                </div>
             </section>
 
             <!-- My hand -->
@@ -874,6 +928,10 @@ watch(
             </section>
 
             <section v-if="selectedEntry" class="md-play-panel">
+                    <header class="md-play-panel-header">
+                        <h3>{{ label(selectedEntry.id) }}</h3>
+                        <button class="md-play-panel-close" type="button" aria-label="Close card options" @click="clearSelection">×</button>
+                    </header>
                     <MasrawyCard
                         :entry="selectedEntry"
                         size="lg"
@@ -1179,7 +1237,11 @@ watch(
                                     <strong>{{ colorLabel(String(color)) }}</strong>
                                     <small>{{ group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }} cards<span v-if="group.house"> · SHISHA</span><span v-if="group.hotel"> · WIL3A</span></small>
                                 </span>
-                                <span class="md-seat-set-stack" aria-hidden="true">
+                                <span
+                                    class="md-seat-set-stack"
+                                    aria-hidden="true"
+                                    :style="{ '--set-card-count': group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }"
+                                >
                                     <span
                                         v-for="(cardId, index) in [...group.cards, ...(group.house ? [group.house] : []), ...(group.hotel ? [group.hotel] : [])]"
                                         :key="cardId"
@@ -1271,7 +1333,10 @@ watch(
                                         {{ colorLabel(String(color)) }}<span v-if="group.house"> · SHISHA</span
                                         ><span v-if="group.hotel"> · WIL3A</span>
                                     </h4>
-                                    <div class="md-turn-card-stack">
+                                    <div
+                                        class="md-turn-card-stack"
+                                        :style="{ '--set-card-count': group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }"
+                                    >
                                         <div
                                             v-for="(cardId, index) in [
                                                 ...group.cards,
@@ -1358,14 +1423,81 @@ watch(
             </section>
         </div>
 
-        <div v-if="isPayModalOpen && you.owes !== null" class="md-pay-modal-backdrop" @click.self="isPayModalOpen = false" @keydown.esc="isPayModalOpen = false">
+        <div v-if="showMyTurnAttention" class="md-turn-attention-backdrop" @click.self="dismissMyTurnAttention" @keydown.esc="dismissMyTurnAttention">
+            <section class="md-turn-attention" role="dialog" aria-modal="true" aria-labelledby="md-turn-attention-title">
+                <span class="md-turn-attention-icon" aria-hidden="true">⏱</span>
+                <p class="md-turn-modal-eyebrow">YOUR TURN</p>
+                <h2 id="md-turn-attention-title">{{ playerName(myId) }}, it’s your turn!</h2>
+                <p>{{ table.has_drawn_this_turn ? 'Your turn is underway. Continue your plays.' : 'Draw your cards, then make your plays.' }}</p>
+                <button class="md-btn md-btn--primary" type="button" @click="dismissMyTurnAttention">Let’s play</button>
+            </section>
+        </div>
+
+        <div v-if="paymentReceivedEvents.length && !isPayModalOpen && !showWinnerModal" class="md-payment-received-backdrop" @click.self="dismissPaymentReceipt" @keydown.esc="dismissPaymentReceipt">
+            <section class="md-payment-received" role="dialog" aria-modal="true" aria-labelledby="md-payment-received-title">
+                <header class="md-payment-received-header">
+                    <div>
+                        <p class="md-turn-modal-eyebrow">RENT RECEIVED</p>
+                        <h2 id="md-payment-received-title">You got paid!</h2>
+                    </div>
+                    <button class="md-turn-modal-close" type="button" aria-label="Close rent receipt" @click="dismissPaymentReceipt">×</button>
+                </header>
+                <ul class="md-payment-receipt-list">
+                    <li v-for="event in paymentReceivedEvents" :key="event.id">
+                        <strong>{{ playerName(event.player_id) }} paid you:</strong>
+                        <div class="md-payment-receipt-cards">
+                            <span v-for="cardId in event.card_ids" :key="cardId">
+                                {{ label(cardId) }} · {{ entryFor(cardId)?.value ?? 0 }}M
+                            </span>
+                        </div>
+                    </li>
+                </ul>
+                <footer class="md-pay-modal-footer">
+                    <button class="md-btn md-btn--primary" type="button" @click="dismissPaymentReceipt">Got it</button>
+                </footer>
+            </section>
+        </div>
+
+        <div v-if="showWinnerModal" class="md-winner-backdrop">
+            <div class="md-winner-confetti" aria-hidden="true">
+                <span
+                    v-for="piece in celebrationPieces"
+                    :key="piece"
+                    class="md-winner-confetti-piece"
+                    :style="{
+                        left: `${(piece * 37) % 100}%`,
+                        animationDelay: `${-((piece % 9) * 0.42)}s`,
+                        '--confetti-hue': `${(piece * 47) % 360}`,
+                    }"
+                ></span>
+            </div>
+            <section class="md-winner-modal" role="dialog" aria-modal="true" aria-labelledby="md-winner-title">
+                <button class="md-winner-close" type="button" aria-label="Close winner announcement" @click="winnerModalDismissed = true">×</button>
+                <span class="md-winner-trophy" aria-hidden="true">🏆</span>
+                <p class="md-turn-modal-eyebrow">GAME OVER</p>
+                <h2 id="md-winner-title">{{ room.winner === String(myId) ? 'You won!' : `${playerName(room.winner ?? '')} wins!` }}</h2>
+                <p>{{ room.winner === String(myId) ? 'Congratulations! You completed the winning sets.' : `${playerName(room.winner ?? '')} completed the winning sets.` }}</p>
+                <button class="md-btn md-btn--primary" type="button" @click="winnerModalDismissed = true">Celebrate!</button>
+            </section>
+        </div>
+
+        <button
+            v-if="you.owes !== null && isPayModalCollapsed"
+            class="md-pay-reopen"
+            type="button"
+            @click="openPayModal"
+        >
+            Pay {{ you.owes }}M
+        </button>
+
+        <div v-if="isPayModalOpen && you.owes !== null" class="md-pay-modal-backdrop" @click.self="collapsePayModal" @keydown.esc="collapsePayModal">
             <section class="md-pay-modal" role="dialog" aria-modal="true" aria-labelledby="md-pay-modal-title">
                 <header class="md-pay-modal-header">
                     <div>
-                        <h2 id="md-pay-modal-title">Choose payment cards</h2>
+                        <h2 id="md-pay-modal-title">Pay rent</h2>
                         <p>You owe <strong>{{ you.owes }}M</strong>. Selected: <strong>{{ payTotal }}M</strong>.</p>
                     </div>
-                    <button class="md-btn md-btn--muted md-pay-modal-close" aria-label="Close payment card chooser" @click="isPayModalOpen = false">×</button>
+                    <button class="md-btn md-btn--muted md-pay-modal-close" aria-label="Collapse payment window" @click="collapsePayModal">−</button>
                 </header>
 
                 <p v-if="actionError" class="md-pay-modal-error" role="alert">{{ actionError }}</p>
@@ -1401,7 +1533,7 @@ watch(
                 <p v-else class="md-pay-empty">You have no cards available to pay with.</p>
 
                 <footer class="md-pay-modal-footer">
-                    <button class="md-btn md-btn--muted" @click="isPayModalOpen = false">Cancel</button>
+                    <button class="md-btn md-btn--muted" @click="collapsePayModal">Collapse</button>
                     <button class="md-btn md-btn--primary" :disabled="submitting || paySelection.length === 0 || payTotal < you.owes" @click="pay">
                         Pay {{ payTotal }}M
                     </button>
@@ -1717,7 +1849,7 @@ watch(
 }
 
 .md-seat-set-card + .md-seat-set-card {
-    margin-left: -39px;
+    margin-left: calc(-27px - 3px * var(--set-card-count, 4));
 }
 
 .md-seat-set-card :deep(.mc-card) {
@@ -1859,7 +1991,7 @@ watch(
     }
 
     .md-seat-set-card + .md-seat-set-card {
-        margin-left: -31px;
+        margin-left: calc(-19px - 4px * var(--set-card-count, 4));
     }
 
     .md-seat-set-card :deep(.mc-card) {
@@ -2022,13 +2154,14 @@ watch(
 
 .md-turn-property-groups {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
 }
 
 .md-turn-property-group {
     min-width: 0;
-    padding: 0.6rem 0.75rem 0.1rem;
+    overflow: hidden;
+    padding: 0.55rem 0.6rem 0.1rem;
     border: 1px solid var(--rc-border);
     border-radius: 10px;
     background: var(--rc-surface-alt);
@@ -2041,7 +2174,22 @@ watch(
 }
 
 .md-turn-property-group .md-turn-card-stack {
-    min-height: 148px;
+    min-height: 108px;
+}
+
+.md-turn-property-group .md-turn-card {
+    flex-basis: 66px;
+    width: 66px;
+    height: 102px;
+}
+
+.md-turn-property-group .md-turn-card + .md-turn-card {
+    margin-left: calc(-27px - 3px * var(--set-card-count, 4));
+}
+
+.md-turn-property-group .md-turn-card :deep(.mc-card) {
+    transform: scale(0.61);
+    transform-origin: top left;
 }
 
 .md-turn-modal-log {
@@ -2143,6 +2291,197 @@ watch(
     cursor: pointer;
 }
 
+.md-turn-attention-backdrop,
+.md-payment-received-backdrop,
+.md-winner-backdrop {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(7, 10, 18, 0.82);
+}
+
+.md-turn-attention-backdrop {
+    z-index: 1200;
+}
+
+.md-payment-received-backdrop {
+    z-index: 1250;
+}
+
+.md-turn-attention,
+.md-payment-received,
+.md-winner-modal {
+    position: relative;
+    width: min(540px, 100%);
+    max-height: min(90dvh, 760px);
+    overflow: auto;
+    padding: 1.5rem;
+    border: 1px solid var(--rc-border);
+    border-radius: 16px;
+    background: var(--rc-surface);
+    color: var(--rc-text-on-surface);
+    text-align: center;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+    animation: md-attention-pop 380ms cubic-bezier(0.2, 0.85, 0.3, 1.2) both;
+}
+
+.md-turn-attention-icon,
+.md-winner-trophy {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 3.5rem;
+}
+
+.md-turn-attention-icon {
+    animation: md-attention-pulse 1s ease-in-out infinite alternate;
+}
+
+.md-turn-attention h2,
+.md-payment-received h2,
+.md-winner-modal h2 {
+    margin: 0.2rem 0 0.55rem;
+    font-family: var(--rc-font-display);
+    font-size: clamp(1.35rem, 4vw, 2rem);
+}
+
+.md-turn-attention > p:not(.md-turn-modal-eyebrow),
+.md-winner-modal > p:not(.md-turn-modal-eyebrow) {
+    margin: 0 0 1rem;
+    color: var(--rc-text-muted);
+}
+
+.md-turn-attention > .md-btn,
+.md-winner-modal > .md-btn {
+    min-width: 150px;
+}
+
+.md-payment-received {
+    text-align: left;
+}
+
+.md-payment-received-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.md-payment-received-header h2 {
+    margin-bottom: 0;
+}
+
+.md-payment-receipt-list {
+    display: grid;
+    gap: 0.75rem;
+    max-height: 45dvh;
+    overflow: auto;
+    padding: 0;
+    margin: 1rem 0;
+    list-style: none;
+}
+
+.md-payment-receipt-list li {
+    padding: 0.8rem;
+    border: 1px solid var(--rc-border);
+    border-radius: 9px;
+    background: var(--rc-surface-alt);
+}
+
+.md-payment-receipt-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+}
+
+.md-payment-receipt-cards span {
+    padding: 0.3rem 0.55rem;
+    border: 1px solid color-mix(in srgb, var(--rc-primary) 45%, var(--rc-border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--rc-primary) 12%, var(--rc-surface));
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.md-payment-received .md-pay-modal-footer {
+    justify-content: flex-end;
+}
+
+.md-winner-backdrop {
+    z-index: 1400;
+    overflow: hidden;
+    background: radial-gradient(ellipse at center, rgba(30, 35, 54, 0.92), rgba(7, 10, 18, 0.96));
+}
+
+.md-winner-modal {
+    z-index: 1;
+    border-color: color-mix(in srgb, #facc15 62%, var(--rc-border));
+    box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.1), 0 24px 90px rgba(0, 0, 0, 0.65);
+}
+
+.md-winner-close {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.6rem;
+    width: 2.6rem;
+    height: 2.6rem;
+    border: 1px solid var(--rc-border);
+    border-radius: 50%;
+    background: var(--rc-surface-alt);
+    color: var(--rc-text-on-surface);
+    font-size: 1.65rem;
+    cursor: pointer;
+}
+
+.md-winner-modal h2 {
+    color: #facc15;
+    font-size: clamp(2rem, 7vw, 3.3rem);
+}
+
+.md-winner-trophy {
+    animation: md-trophy-celebrate 900ms ease-in-out infinite alternate;
+}
+
+.md-winner-confetti {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.md-winner-confetti-piece {
+    position: absolute;
+    top: -1rem;
+    width: 8px;
+    height: 15px;
+    border-radius: 2px;
+    background: hsl(var(--confetti-hue) 90% 60%);
+    animation: md-confetti-fall 3.7s linear infinite;
+}
+
+.md-pay-reopen {
+    position: fixed;
+    z-index: 1100;
+    right: 1rem;
+    bottom: calc(1rem + env(safe-area-inset-bottom));
+    min-height: 3.25rem;
+    padding: 0.7rem 1rem;
+    border: 1px solid var(--rc-primary);
+    border-radius: 999px;
+    background: var(--rc-primary);
+    color: #fff;
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.md-root:not(.md-root--hand-collapsed) .md-pay-reopen {
+    bottom: calc(300px + env(safe-area-inset-bottom));
+}
+
 @keyframes md-turn-card-highlight {
     0%,
     100% {
@@ -2164,6 +2503,41 @@ watch(
     }
 }
 
+@keyframes md-attention-pop {
+    from {
+        opacity: 0;
+        transform: translateY(18px) scale(0.92);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes md-attention-pulse {
+    from {
+        transform: scale(0.9) rotate(-8deg);
+    }
+    to {
+        transform: scale(1.08) rotate(8deg);
+    }
+}
+
+@keyframes md-trophy-celebrate {
+    from {
+        transform: rotate(-8deg) scale(0.96);
+    }
+    to {
+        transform: rotate(8deg) scale(1.08);
+    }
+}
+
+@keyframes md-confetti-fall {
+    to {
+        transform: translate3d(18px, 110dvh, 0) rotate(720deg);
+    }
+}
+
 @media (max-width: 760px) {
     .md-turn-modal-body {
         grid-template-columns: minmax(0, 1fr);
@@ -2175,13 +2549,48 @@ watch(
     }
 
     .md-turn-property-groups {
-        grid-template-columns: minmax(0, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.45rem;
+    }
+
+    .md-turn-property-group {
+        padding: 0.45rem 0.4rem 0.1rem;
+    }
+
+    .md-turn-property-group h4 {
+        overflow: hidden;
+        font-size: 0.68rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .md-turn-property-group .md-turn-card-stack {
+        min-height: 88px;
+        padding-inline: 0.15rem;
+    }
+
+    .md-turn-property-group .md-turn-card {
+        flex-basis: 52px;
+        width: 52px;
+        height: 80px;
+    }
+
+    .md-turn-property-group .md-turn-card + .md-turn-card {
+        margin-left: calc(-19px - 4px * var(--set-card-count, 4));
+    }
+
+    .md-turn-property-group .md-turn-card :deep(.mc-card) {
+        transform: scale(0.48);
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .md-turn-card--moved,
-    .md-turn-activity {
+    .md-turn-activity,
+    .md-turn-attention,
+    .md-turn-attention-icon,
+    .md-winner-trophy,
+    .md-winner-confetti-piece {
         animation: none;
     }
 }
@@ -2534,12 +2943,58 @@ watch(
 }
 
 .md-play-panel {
+    position: fixed;
+    z-index: 890;
+    left: 50%;
+    bottom: calc(290px + 0.75rem + env(safe-area-inset-bottom));
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
+    width: min(1180px, calc(100vw - 1rem));
+    max-height: calc(100dvh - 320px - env(safe-area-inset-bottom));
+    overflow: auto;
+    transform: translateX(-50%);
     gap: 1rem;
-    padding-top: 0.75rem;
-    border-top: 1px dashed var(--rc-border);
+    padding: 0.8rem 1rem;
+    border: 1px solid var(--rc-border);
+    border-radius: 12px;
+    background: var(--rc-surface);
+    color: var(--rc-text-on-surface);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+}
+
+.md-root--hand-collapsed .md-play-panel {
+    bottom: calc(5.5rem + env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 7rem - env(safe-area-inset-bottom));
+}
+
+.md-play-panel-header {
+    display: flex;
+    flex: 0 0 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.md-play-panel-header h3 {
+    overflow: hidden;
+    margin: 0;
+    font-size: 0.95rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.md-play-panel-close {
+    flex: 0 0 auto;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 1px solid var(--rc-border);
+    border-radius: 50%;
+    background: var(--rc-surface-alt);
+    color: var(--rc-text-on-surface);
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
 }
 
 .md-play-controls {
@@ -2700,6 +3155,19 @@ input[type='checkbox'] {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
         gap: 0.75rem;
+        width: calc(100vw - 1rem);
+        max-height: calc(100dvh - 310px - env(safe-area-inset-bottom));
+        bottom: calc(290px + 0.5rem + env(safe-area-inset-bottom));
+        padding: 0.75rem;
+    }
+
+    .md-root--hand-collapsed .md-play-panel {
+        bottom: calc(5.5rem + env(safe-area-inset-bottom));
+        max-height: calc(100dvh - 7rem - env(safe-area-inset-bottom));
+    }
+
+    .md-play-panel-header {
+        grid-column: 1 / -1;
     }
 
     .md-play-panel > :first-child {
