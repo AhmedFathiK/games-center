@@ -143,12 +143,13 @@ const referenceWildcardColors = computed(() => {
     return colors
 })
 
-const isWildcardFlipped = computed(() =>
-    props.entry.type === 'wildcard'
-    && !props.entry.any_color
-    && props.activeColor !== undefined
-    && referenceWildcardColors.value[1] === props.activeColor,
-)
+const isTwoColorCardFlipped = computed(() => {
+    if (props.activeColor === undefined) return false
+    if (props.entry.type === 'rent' && !props.entry.any_color) return props.entry.colors?.[1] === props.activeColor
+    return props.entry.type === 'wildcard'
+        && !props.entry.any_color
+        && referenceWildcardColors.value[1] === props.activeColor
+})
 
 const referenceWildcardRentCharts = computed(() => referenceWildcardColors.value.map(color => {
     const index = props.entry.colors?.indexOf(color) ?? -1
@@ -164,7 +165,7 @@ const referenceWildcardSetSizes = computed(() => referenceWildcardColors.value.m
 <template>
     <div
         class="mc-card"
-        :class="{ 'mc-card--flipped': isWildcardFlipped }"
+        :class="{ 'mc-card--flipped': isTwoColorCardFlipped, 'mc-card--detail': isLg }"
         :style="{ width: dims.w + 'px', height: dims.h + 'px', fontSize: (isLg ? 1 : 0.62) + 'rem' }"
     >
         <!-- Money -->
@@ -912,6 +913,10 @@ const referenceWildcardSetSizes = computed(() => referenceWildcardColors.value.m
 
 .mc-card--flipped {
     transform: rotate(180deg);
+}
+
+.mc-card--detail {
+    transition: none;
 }
 
 .mc-face {

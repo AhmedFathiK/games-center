@@ -33,6 +33,9 @@ const myId = computed(() => props.auth.user.id)
 const handOrder = ref<string[]>([])
 const handOrderLoaded = ref(false)
 const handOrderStorageKey = `masrawy-deal-hand-order:${props.room.id}:${props.auth.user.id}`
+const flippedCardIds = ref<string[]>([])
+const flippedCardsLoaded = ref(false)
+const flippedCardsStorageKey = `masrawy-deal-flipped-cards:${props.room.id}:${props.auth.user.id}`
 const isReorderingHand = ref(false)
 
 function reconcileHandOrder(hand: string[], preferredOrder: string[]): string[] {
@@ -60,7 +63,17 @@ onMounted(() => {
         // Sorting still works for this visit when local storage is unavailable.
     }
 
+    try {
+        const savedOrientations: unknown = JSON.parse(window.localStorage.getItem(flippedCardsStorageKey) ?? '[]')
+        if (Array.isArray(savedOrientations) && savedOrientations.every(id => typeof id === 'string')) {
+            flippedCardIds.value = savedOrientations
+        }
+    } catch {
+        // Hand card orientation stays in memory when local storage is unavailable.
+    }
+
     handOrderLoaded.value = true
+    flippedCardsLoaded.value = true
 })
 
 watch(handOrder, order => {
@@ -70,6 +83,16 @@ watch(handOrder, order => {
         window.localStorage.setItem(handOrderStorageKey, JSON.stringify(order))
     } catch {
         // Keep the in-memory order even when the browser blocks local storage.
+    }
+})
+
+watch(flippedCardIds, ids => {
+    if (!flippedCardsLoaded.value) return
+
+    try {
+        window.localStorage.setItem(flippedCardsStorageKey, JSON.stringify(ids))
+    } catch {
+        // Keep the in-memory orientation when local storage is unavailable.
     }
 })
 
@@ -130,6 +153,23 @@ function wildSetSizesFor(id: string): number[] | undefined {
 
 function label(id: string): string {
     return entryFor(id)?.label ?? id
+}
+
+function orientationColorsForCard(id: string): string[] {
+    const entry = entryFor(id)
+    const colors = entry?.colors ?? []
+    if (entry?.type === 'wildcard') {
+        if (colors.includes('green') && colors.includes('dark_blue')) return ['green', 'dark_blue']
+        if (colors.includes('brown') && colors.includes('light_blue')) return ['brown', 'light_blue']
+    }
+
+    return colors
+}
+
+function activeColorForCard(id: string): string | undefined {
+    const colors = orientationColorsForCard(id)
+    if (colors.length !== 2) return undefined
+    return colors[flippedCardIds.value.includes(id) ? 1 : 0]
 }
 
 function toggleHandReordering() {
@@ -320,28 +360,29 @@ const selectedIsWildRent = computed(() => selectedEntry.value?.type === 'rent' &
 const selectedIsPlainRent = computed(() => selectedEntry.value?.type === 'rent' && !selectedEntry.value.any_color)
 const selectedIsElBob = computed(() => selectedEntry.value?.type === 'wildcard' && selectedEntry.value.any_color)
 const selectedIsTwoColorWild = computed(() => selectedEntry.value?.type === 'wildcard' && !selectedEntry.value.any_color)
-const selectedWildcardFlipped = ref(false)
-
-const selectedWildcardColors = computed(() => {
-    const colors = selectedEntry.value?.colors ?? []
-    if (colors.includes('green') && colors.includes('dark_blue')) return ['green', 'dark_blue']
-    if (colors.includes('brown') && colors.includes('light_blue')) return ['brown', 'light_blue']
-    return colors
-})
 
 const activeWildcardColor = computed(() => {
     if (!selectedIsTwoColorWild.value) return undefined
-    return selectedWildcardColors.value[selectedWildcardFlipped.value ? 1 : 0]
+    return activeColorForCard(selectedEntry.value?.id ?? '')
+})
+
+const activeRentColor = computed(() => {
+    if (!selectedIsPlainRent.value) return undefined
+    return activeColorForCard(selectedEntry.value?.id ?? '')
 })
 
 function rotateSelectedWildcard() {
-    selectedWildcardFlipped.value = !selectedWildcardFlipped.value
+    const cardId = selectedEntry.value?.id
+    if (!cardId) return
+
+    flippedCardIds.value = flippedCardIds.value.includes(cardId)
+        ? flippedCardIds.value.filter(id => id !== cardId)
+        : [...flippedCardIds.value, cardId]
 }
 
 function selectCard(id: string) {
     selectedCardId.value = selectedCardId.value === id ? null : id
     confirmBankCardId.value = null
-    selectedWildcardFlipped.value = false
     // Reset any in-progress sub-form when switching cards.
     wildcardColor.value = ''
     targetId.value = null
@@ -431,9 +472,9 @@ function playBirthday(cardId: string) {
     submit({ type: 'play_birthday', card_id: cardId }, clearSelection)
 }
 
-function playRent(cardId: string, isWild: boolean) {
-    if (!rentColor.value) return
-    const payload: Record<string, FormDataConvertible> = { type: 'play_rent', card_id: cardId, color: rentColor.value }
+function playRent(cardId: string, isWild: boolean, color: string) {
+    if (!color) return
+    const payload: Record<string, FormDataConvertible> = { type: 'play_rent', card_id: cardId, color }
     if (isWild) {
         if (targetId.value === null) return
         payload.target_id = targetId.value
@@ -704,15 +745,15 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                             :class="{ 'md-card-btn--selected': selectedCardId === cardId }"
                             :aria-label="`${isReorderingHand ? 'Reorder' : 'Select'} ${label(cardId)}`"
                             :aria-pressed="selectedCardId === cardId"
-                            :disabled="!canAct || isReorderingHand"
+                            :disabled="!gameIsLive || isReorderingHand"
                             @click="selectCard(cardId)"
                         >
-                            <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                            <MasrawyCard :entry="entryFor(cardId)!" :active-color="activeColorForCard(cardId)" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
                         </button>
                     </div>
                 </VueDraggable>
 
-                <p v-if="!canAct" class="md-hint">
+                <p v-if="!canAct && !selectedEntry" class="md-hint">
                     {{ pending ? 'Waiting on a pending action.' : 'Wait for your turn to play a card.' }}
                 </p>
 
@@ -720,7 +761,7 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                     <MasrawyCard
                         :entry="selectedEntry"
                         size="lg"
-                        :active-color="selectedIsTwoColorWild ? activeWildcardColor : undefined"
+                        :active-color="selectedIsTwoColorWild ? activeWildcardColor : (selectedIsPlainRent ? activeRentColor : undefined)"
                         :rent-chart="rentChartFor(selectedEntry.id)"
                         :set-size="setSizeFor(selectedEntry.id)"
                         :wild-rent-charts="wildRentChartsFor(selectedEntry.id)"
@@ -728,6 +769,24 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                     />
 
                     <div class="md-play-controls">
+                        <p v-if="selectedIsTwoColorWild || selectedIsPlainRent" class="md-wildcard-active-hint">
+                            Top color is active:
+                            <strong>{{ colorLabel((selectedIsTwoColorWild ? activeWildcardColor : activeRentColor) ?? '') }}</strong>.
+                            Rotate 180° to switch.
+                        </p>
+                        <button
+                            v-if="selectedIsTwoColorWild || selectedIsPlainRent"
+                            class="md-btn md-btn--muted"
+                            type="button"
+                            @click="rotateSelectedWildcard"
+                        >
+                            ↻ Rotate 180°
+                        </button>
+                        <p v-if="!canAct" class="md-hint">
+                            {{ pending ? 'You can adjust this card while waiting for the response.' : 'You can prepare this card now. Play options unlock on your turn.' }}
+                        </p>
+
+                        <template v-if="canAct">
                         <!-- Money -->
                         <button v-if="selectedEntry.type === 'money'" class="md-btn" :disabled="submitting || playsLeft < 1" @click="playMoney(selectedEntry.id)">
                             Play as Money ({{ selectedEntry.value }}M)
@@ -742,11 +801,6 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
 
                         <!-- Two-color wildcard -->
                         <template v-if="selectedIsTwoColorWild">
-                            <p class="md-wildcard-active-hint">Top color is active: <strong>{{ colorLabel(activeWildcardColor ?? '') }}</strong>. Rotate 180° to switch.
-                            </p>
-                            <button class="md-btn md-btn--muted" type="button" @click="rotateSelectedWildcard">
-                                ↻ Rotate 180°
-                            </button>
                             <button class="md-btn" :disabled="submitting || playsLeft < 1 || !activeWildcardColor" @click="playProperty(selectedEntry.id, activeWildcardColor)">
                                 Play as Property ({{ colorLabel(activeWildcardColor ?? '') }})
                             </button>
@@ -806,9 +860,9 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
 
                         <!-- ELBIS! rent (regular or wild) -->
                         <template v-if="selectedIsPlainRent || selectedIsWildRent">
-                            <select v-model="rentColor" aria-label="Choose which property color to charge">
+                            <select v-if="selectedIsWildRent" v-model="rentColor" aria-label="Choose which property color to charge">
                                 <option value="" disabled>Which color to charge</option>
-                                <option v-for="c in (selectedIsPlainRent ? selectedEntry.colors : myOwnColors)" :key="c" :value="c">
+                                <option v-for="c in myOwnColors" :key="c" :value="c">
                                     {{ colorLabel(c) }}
                                 </option>
                             </select>
@@ -825,10 +879,10 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                             </fieldset>
                             <button
                                 class="md-btn"
-                                :disabled="submitting || playsLeft < (1 + doubleRentIds.length) || !rentColor || (selectedIsWildRent && targetId === null)"
-                                @click="playRent(selectedEntry.id, !!selectedIsWildRent)"
+                                :disabled="submitting || playsLeft < (1 + doubleRentIds.length) || !(selectedIsPlainRent ? activeRentColor : rentColor) || (selectedIsWildRent && targetId === null)"
+                                @click="playRent(selectedEntry.id, !!selectedIsWildRent, selectedIsPlainRent ? activeRentColor! : rentColor)"
                             >
-                                Play Rent
+                                Play Rent<span v-if="selectedIsPlainRent && activeRentColor"> ({{ colorLabel(activeRentColor) }})</span>
                             </button>
                         </template>
 
@@ -936,6 +990,7 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                         <button class="md-btn md-btn--muted" :disabled="submitting || !canDiscard" @click="discard(selectedEntry.id)">
                             Discard
                         </button>
+                        </template>
                     </div>
                 </div>
             </section>
