@@ -200,6 +200,28 @@ function seatFor(id: number | string): MasrawySeat | undefined {
     return table.value?.players.find(s => String(s.id) === String(id))
 }
 
+const selectedPropertySet = ref<{ playerId: number; color: string } | null>(null)
+const selectedPropertySetSeat = computed(() =>
+    selectedPropertySet.value ? seatFor(selectedPropertySet.value.playerId) : undefined,
+)
+const selectedPropertySetGroup = computed(() => {
+    if (!selectedPropertySet.value || !selectedPropertySetSeat.value) return undefined
+    return selectedPropertySetSeat.value.properties[selectedPropertySet.value.color]
+})
+const selectedPropertySetCardIds = computed(() => {
+    const group = selectedPropertySetGroup.value
+    if (!group) return []
+    return [...group.cards, ...(group.house ? [group.house] : []), ...(group.hotel ? [group.hotel] : [])]
+})
+
+function openPropertySet(playerId: number, color: string) {
+    selectedPropertySet.value = { playerId, color }
+}
+
+function closePropertySet() {
+    selectedPropertySet.value = null
+}
+
 const recentActivity = computed(() => [...(table.value?.recent_activity ?? [])].slice(-4).reverse())
 const currentTurnSeat = computed(() => table.value?.players.find((seat) => seat.id === table.value?.current_player_id));
 const currentTurnActivity = computed(() =>
@@ -1095,23 +1117,46 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
 
                         <div v-if="seat.bank.length > 0" class="md-seat-bank-group">
                             <p class="md-group-label">Bank · {{ seatBankTotal(seat) }}M</p>
-                            <div class="md-card-row">
-                                <MasrawyCard v-for="cardId in seat.bank" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                            <div class="md-seat-bank-stack" :aria-label="`${seat.bank.length} money cards in bank`">
+                                <span v-for="(cardId, index) in seat.bank" :key="cardId" class="md-seat-bank-card" :style="{ zIndex: index + 1 }">
+                                    <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                                </span>
                             </div>
                         </div>
                         <p v-else class="md-seat-bank">Bank: empty</p>
 
                         <div v-if="Object.keys(seat.properties).length > 0" class="md-seat-properties">
-                            <div v-for="(group, color) in seat.properties" :key="color" class="md-group">
-                                <p class="md-group-label">
-                                    {{ colorLabel(String(color)) }}
-                                    <span v-if="group.house"> + SHISHA</span>
-                                    <span v-if="group.hotel"> + WIL3A</span>
-                                </p>
-                                <div class="md-card-row">
-                                    <MasrawyCard v-for="cardId in group.cards" :key="cardId" :entry="entryFor(cardId)!" :active-color="entryFor(cardId)?.type === 'wildcard' ? String(color) : undefined" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
-                                </div>
-                            </div>
+                            <button
+                                v-for="(group, color) in seat.properties"
+                                :key="color"
+                                type="button"
+                                class="md-seat-set-preview"
+                                :aria-label="`View ${playerName(seat.id)}’s ${colorLabel(String(color))} set in detail`"
+                                @click="openPropertySet(seat.id, String(color))"
+                            >
+                                <span class="md-seat-set-heading">
+                                    <strong>{{ colorLabel(String(color)) }}</strong>
+                                    <small>{{ group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }} cards<span v-if="group.house"> · SHISHA</span><span v-if="group.hotel"> · WIL3A</span></small>
+                                </span>
+                                <span class="md-seat-set-stack" aria-hidden="true">
+                                    <span
+                                        v-for="(cardId, index) in [...group.cards, ...(group.house ? [group.house] : []), ...(group.hotel ? [group.hotel] : [])]"
+                                        :key="cardId"
+                                        class="md-seat-set-card"
+                                        :style="{ zIndex: index + 1 }"
+                                    >
+                                        <MasrawyCard
+                                            :entry="entryFor(cardId)!"
+                                            :active-color="entryFor(cardId)?.type === 'wildcard' ? String(color) : undefined"
+                                            :rent-chart="rentChartFor(cardId)"
+                                            :set-size="setSizeFor(cardId)"
+                                            :wild-rent-charts="wildRentChartsFor(cardId)"
+                                            :wild-set-sizes="wildSetSizesFor(cardId)"
+                                        />
+                                    </span>
+                                </span>
+                                <span class="md-seat-set-hint">Click to view cards</span>
+                            </button>
                         </div>
                     </div>
                 </details>
@@ -1232,6 +1277,43 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
                         <p v-else class="md-turn-modal-empty">Their moves will appear here as they play.</p>
                     </aside>
                 </div>
+            </section>
+        </div>
+
+        <div
+            v-if="selectedPropertySet && selectedPropertySetGroup && selectedPropertySetSeat"
+            class="md-set-modal-backdrop"
+            @click.self="closePropertySet"
+            @keydown.esc="closePropertySet"
+        >
+            <section class="md-set-modal" role="dialog" aria-modal="true" aria-labelledby="md-set-modal-title">
+                <header class="md-set-modal-header">
+                    <div>
+                        <p class="md-set-modal-eyebrow">{{ playerName(selectedPropertySetSeat.id) }}’S SET</p>
+                        <h2 id="md-set-modal-title">
+                            {{ colorLabel(selectedPropertySet.color) }}
+                            <span v-if="selectedPropertySetGroup.house"> · SHISHA</span>
+                            <span v-if="selectedPropertySetGroup.hotel"> · WIL3A</span>
+                        </h2>
+                    </div>
+                    <button class="md-set-modal-close" type="button" aria-label="Close set details" @click="closePropertySet">×</button>
+                </header>
+                <div class="md-set-modal-cards" :aria-label="`${selectedPropertySetCardIds.length} cards in ${colorLabel(selectedPropertySet.color)} set`">
+                    <div v-for="cardId in selectedPropertySetCardIds" :key="cardId" class="md-set-modal-card">
+                        <MasrawyCard
+                            :entry="entryFor(cardId)!"
+                            size="lg"
+                            :active-color="entryFor(cardId)?.type === 'wildcard' ? selectedPropertySet.color : undefined"
+                            :rent-chart="rentChartFor(cardId)"
+                            :set-size="setSizeFor(cardId)"
+                            :wild-rent-charts="wildRentChartsFor(cardId)"
+                            :wild-set-sizes="wildSetSizesFor(cardId)"
+                        />
+                    </div>
+                </div>
+                <footer class="md-set-modal-footer">
+                    <button class="md-btn md-btn--muted" type="button" @click="closePropertySet">Close</button>
+                </footer>
             </section>
         </div>
 
@@ -1439,6 +1521,260 @@ const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_tu
 .md-pay {
     flex-direction: column;
     align-items: flex-start;
+}
+
+.md-seat-properties {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+    gap: 0.65rem;
+}
+
+.md-seat-bank-stack {
+    display: flex;
+    align-items: flex-start;
+    min-height: 108px;
+    overflow: hidden;
+    padding: 0.2rem 0.2rem 0.4rem;
+}
+
+.md-seat-bank-card {
+    position: relative;
+    flex: 0 0 66px;
+    width: 66px;
+    height: 102px;
+}
+
+.md-seat-bank-card + .md-seat-bank-card {
+    margin-left: -39px;
+}
+
+.md-seat-bank-card :deep(.mc-card) {
+    transform: scale(0.61);
+    transform-origin: top left;
+}
+
+.md-seat-set-preview {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    min-width: 0;
+    min-height: 158px;
+    overflow: hidden;
+    padding: 0.6rem 0.65rem 0.5rem;
+    border: 1px solid var(--rc-border);
+    border-radius: 9px;
+    background: var(--rc-surface-alt);
+    color: var(--rc-text-on-surface);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.md-seat-set-preview:hover,
+.md-seat-set-preview:focus-visible {
+    border-color: var(--rc-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--rc-primary) 22%, transparent);
+    transform: translateY(-2px);
+}
+
+.md-seat-set-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.45rem;
+}
+
+.md-seat-set-heading strong {
+    font-size: 0.78rem;
+}
+
+.md-seat-set-heading small {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--rc-text-muted);
+    font-size: 0.64rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.md-seat-set-stack {
+    display: flex;
+    align-items: flex-start;
+    height: 108px;
+    overflow: hidden;
+    margin-top: 0.35rem;
+    padding-left: 0.1rem;
+}
+
+.md-seat-set-card {
+    position: relative;
+    flex: 0 0 66px;
+    width: 66px;
+    height: 102px;
+}
+
+.md-seat-set-card + .md-seat-set-card {
+    margin-left: -39px;
+}
+
+.md-seat-set-card :deep(.mc-card) {
+    transform: scale(0.61);
+    transform-origin: top left;
+}
+
+.md-seat-set-hint {
+    align-self: end;
+    color: var(--rc-text-muted);
+    font-size: 0.64rem;
+}
+
+.md-set-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(10, 15, 20, 0.8);
+}
+
+.md-set-modal {
+    display: flex;
+    flex-direction: column;
+    width: min(1100px, 100%);
+    max-height: min(92dvh, 900px);
+    overflow: hidden;
+    border: 1px solid var(--rc-border);
+    border-radius: 14px;
+    background: var(--rc-surface);
+    color: var(--rc-text-on-surface);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.md-set-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--rc-border);
+    background: var(--rc-surface-alt);
+}
+
+.md-set-modal-header h2,
+.md-set-modal-header p {
+    margin: 0;
+}
+
+.md-set-modal-eyebrow {
+    margin-bottom: 0.2rem !important;
+    color: var(--rc-primary);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+}
+
+.md-set-modal-header h2 {
+    font-family: var(--rc-font-display);
+    font-size: 1.25rem;
+}
+
+.md-set-modal-close {
+    display: inline-flex;
+    flex: 0 0 44px;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--rc-border);
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font-size: 2.25rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.md-set-modal-cards {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    min-height: 0;
+    overflow: auto;
+    padding: 1.25rem;
+}
+
+.md-set-modal-card {
+    flex: 0 0 220px;
+    width: 220px;
+}
+
+.md-set-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--rc-border);
+}
+
+@media (max-width: 600px) {
+    .md-seat-properties {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.45rem;
+    }
+
+    .md-seat-set-preview {
+        min-height: 148px;
+        padding: 0.5rem 0.45rem 0.4rem;
+    }
+
+    .md-seat-set-heading {
+        flex-wrap: wrap;
+        gap: 0.15rem 0.35rem;
+    }
+
+    .md-seat-set-heading strong {
+        font-size: 0.72rem;
+    }
+
+    .md-seat-set-heading small {
+        font-size: 0.58rem;
+    }
+
+    .md-seat-set-hint {
+        font-size: 0.58rem;
+    }
+
+    .md-seat-set-stack {
+        height: 88px;
+    }
+
+    .md-seat-set-card {
+        flex-basis: 52px;
+        width: 52px;
+        height: 80px;
+    }
+
+    .md-seat-set-card + .md-seat-set-card {
+        margin-left: -31px;
+    }
+
+    .md-seat-set-card :deep(.mc-card) {
+        transform: scale(0.48);
+    }
+
+    .md-set-modal-backdrop {
+        padding: 0.5rem;
+    }
+
+    .md-set-modal-header {
+        padding: 0.8rem 1rem;
+    }
+
+    .md-set-modal-cards {
+        gap: 0.65rem;
+        padding: 0.8rem;
+    }
+
 }
 
 .md-turn-modal-backdrop {
