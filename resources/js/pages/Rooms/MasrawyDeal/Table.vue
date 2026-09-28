@@ -791,6 +791,17 @@ watch(
 const payTotal = computed(() =>
     paySelection.value.reduce((sum, id) => sum + (you.value?.payable_assets?.[id] ?? 0), 0),
 )
+const totalPayable = computed(() =>
+    Object.values(you.value?.payable_assets ?? {}).reduce((sum, value) => sum + value, 0),
+)
+const cannotCoverOwed = computed(() => you.value?.owes !== null && you.value?.owes !== undefined && totalPayable.value < you.value.owes)
+const canSubmitPayment = computed(() =>
+    paySelection.value.length > 0 && (
+        cannotCoverOwed.value
+            ? paySelection.value.length === payableOptions.value.length
+            : payTotal.value >= (you.value?.owes ?? 0)
+    ),
+)
 
 function togglePayCard(id: string) {
     actionError.value = null
@@ -811,7 +822,7 @@ function collapsePayModal() {
 }
 
 function pay() {
-    if (paySelection.value.length === 0 || payTotal.value < (you.value?.owes ?? 0)) return
+    if (!canSubmitPayment.value) return
     submit({ type: 'pay', card_ids: [...paySelection.value] }, () => {
         paySelection.value = []
         isPayModalOpen.value = false
@@ -1662,6 +1673,9 @@ onUnmounted(() => {
                 </header>
 
                 <p v-if="actionError" class="md-pay-modal-error" role="alert">{{ actionError }}</p>
+                <p v-else-if="cannotCoverOwed" class="md-pay-modal-error" role="status">
+                    You only have {{ totalPayable }}M available. Select all your payable cards to pay what you can.
+                </p>
                 <p v-else-if="payTotal < you.owes" class="md-pay-modal-error" role="status">
                     Select at least {{ you.owes - payTotal }}M more to cover what you owe.
                 </p>
@@ -1704,8 +1718,8 @@ onUnmounted(() => {
                     >
                         3AND OMO
                     </button>
-                    <button class="md-btn md-btn--primary" :disabled="submitting || paySelection.length === 0 || payTotal < you.owes" @click="pay">
-                        Pay {{ payTotal }}M
+                    <button class="md-btn md-btn--primary" :disabled="submitting || !canSubmitPayment" @click="pay">
+                        {{ cannotCoverOwed ? 'Pay all available' : `Pay ${payTotal}M` }}
                     </button>
                 </footer>
             </section>
