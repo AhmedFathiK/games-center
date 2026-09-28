@@ -756,6 +756,7 @@ function moveWildcard() {
 function respondNo(targetIdForCharge: number) {
     const cardId = myJustSayNoCards.value[0]
     if (!cardId) return
+    if (pending.value?.kind === 'birthday') showBirthdayNotice.value = false
     submit({ type: 'respond_no', card_id: cardId, target_id: targetIdForCharge }, () => {
         paySelection.value = []
         isPayModalOpen.value = false
@@ -764,7 +765,21 @@ function respondNo(targetIdForCharge: number) {
 }
 
 function decline(targetIdForCharge: number) {
+    if (pending.value?.kind === 'birthday') showBirthdayNotice.value = false
     submit({ type: 'decline', target_id: targetIdForCharge })
+}
+
+function acceptBirthdayCharge() {
+    showBirthdayNotice.value = false
+
+    if (responsePrompt.value) {
+        decline(responsePrompt.value.targetId)
+        return
+    }
+
+    if (you.value?.owes !== null && you.value?.owes !== undefined) {
+        openPayModal()
+    }
 }
 
 function kickPlayer(playerId: number) {
@@ -1754,6 +1769,10 @@ onUnmounted(() => {
         <div v-if="responsePrompt && pending" class="md-response-choice-backdrop">
             <section class="md-response-choice" role="dialog" aria-modal="true" aria-labelledby="md-response-choice-title">
                 <p class="md-turn-modal-eyebrow">YOUR RESPONSE</p>
+                <div v-if="pending.kind === 'birthday'" class="md-response-choice-birthday">
+                    <img src="/assets/images/3id%20Milady%20Ya%20Kelab.png" alt="3id Milady Ya Kelab">
+                    <strong>3id Milady Ya Kelab</strong>
+                </div>
                 <h2 id="md-response-choice-title">{{ playerName(pending.source_id) }} played {{ label(pending.card_id) }}</h2>
                 <p>Do you want to cancel the action or pay the charge?</p>
                 <div class="md-response-choice-actions">
@@ -1788,12 +1807,12 @@ onUnmounted(() => {
             </section>
         </div>
 
-        <div v-if="showBirthdayNotice" class="md-jsn-notice-backdrop" @click.self="showBirthdayNotice = false" @keydown.esc="showBirthdayNotice = false">
+        <div v-if="showBirthdayNotice && !responsePrompt && myJustSayNoCards.length === 0" class="md-jsn-notice-backdrop" @click.self="showBirthdayNotice = false" @keydown.esc="showBirthdayNotice = false">
             <section class="md-jsn-notice" role="dialog" aria-modal="true" aria-labelledby="md-birthday-notice-title">
                 <button class="md-turn-modal-close md-jsn-notice-close" type="button" aria-label="Close notification" @click="showBirthdayNotice = false">×</button>
                 <img src="/assets/images/3id%20Milady%20Ya%20Kelab.png" alt="3id Milady Ya Kelab" class="md-jsn-notice-image">
                 <h2 id="md-birthday-notice-title">3id Milady Ya Kelab</h2>
-                <button class="md-btn md-btn--primary" type="button" @click="showBirthdayNotice = false">Continue</button>
+                <button class="md-btn md-btn--primary" type="button" :disabled="submitting" @click="acceptBirthdayCharge">Edfa3</button>
             </section>
         </div>
     </div>
@@ -3125,6 +3144,24 @@ onUnmounted(() => {
 
 .md-response-choice > * {
     margin: 0;
+}
+
+.md-response-choice-birthday {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--rc-primary);
+    font-weight: 800;
+    text-align: center;
+}
+
+.md-response-choice-birthday img {
+    display: block;
+    width: min(100%, 22rem);
+    max-height: 24vh;
+    border-radius: 0.65rem;
+    object-fit: contain;
 }
 
 .md-response-choice h2 {
