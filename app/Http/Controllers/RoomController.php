@@ -288,6 +288,12 @@ class RoomController extends Controller
             ]);
         }
 
+        if ((int) $room->host_id === (int) $user->id) {
+            throw ValidationException::withMessages([
+                'room' => 'The host cannot leave this room. Cancel the room if you want to close it.',
+            ]);
+        }
+
         if (! $room->players()->where('users.id', $user->id)->exists()) {
             throw ValidationException::withMessages([
                 'room' => 'You are not in this room.',
