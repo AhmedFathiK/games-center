@@ -70,7 +70,7 @@ function groupsOf(entries: CardCatalogEntry[], keyFor: (entry: CardCatalogEntry)
 const propertyGroups = computed(() => colors
     .map(color => ({
         key: color,
-        title: `${colorNames[color]} set`,
+        title: `${colorNames[color]} Manti2a`,
         cards: numberedCards(cards.value.filter(entry => entry.type === 'property' && entry.color === color)),
     }))
     .filter(group => group.cards.length > 0))
@@ -145,7 +145,7 @@ function wildSizesFor(entry: CardCatalogEntry): number[] | undefined {
             <div>
                 <p class="eyebrow">TEMPORARY DESIGN REVIEW</p>
                 <h1>Masrawy Deal card gallery</h1>
-                <p class="subtitle">Every card in the current deck, grouped by set and card type.</p>
+                <p class="subtitle">Every card in the current deck, grouped by Manti2a and card type.</p>
             </div>
             <div class="total-count"><strong>{{ totalCards }}</strong><span>cards</span></div>
         </header>
@@ -163,7 +163,7 @@ function wildSizesFor(entry: CardCatalogEntry): number[] | undefined {
         <section class="gallery-section">
             <h2 class="section-title">Properties</h2>
             <section v-for="group in propertyGroups" :key="`property-${group.key}`" class="gallery-group">
-                <div class="group-heading"><h3>{{ group.title }}</h3><span>{{ group.cards.length }} cards · set of {{ setSize[group.key] }}</span></div>
+                <div class="group-heading"><h3>{{ group.title }}</h3><span>{{ group.cards.length }} cards · Manti2a size {{ setSize[group.key] }}</span></div>
                 <div class="card-grid">
                     <article v-for="entry in group.cards" :key="entry.id" class="gallery-card">
                         <MasrawyCard :entry="entry" size="sm" :rent-chart="chartFor(entry)" :set-size="sizeFor(entry)" />

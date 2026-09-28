@@ -369,14 +369,14 @@ function activityDescription(event: MasrawyActivity): string {
         case 'play_property': return `played ${cardName} into ${color}`
         case 'bank_card': return `banked ${cardName} as money (${entryFor(event.card_id ?? '')?.value ?? 0}M)`
         case 'play_pass_go': return `played ${cardName} and drew 2 cards`
-        case 'play_shisha': return `added SHISHA to the ${color} set`
-        case 'play_wil3a': return `added WIL3A to the ${color} set`
+        case 'play_shisha': return `added SHISHA to the ${color} Manti2a`
+        case 'play_wil3a': return `added WIL3A to the ${color} Manti2a`
         case 'play_debt_collector': return `played ${cardName} against ${target}`
         case 'play_birthday': return `played ${cardName} against everyone`
         case 'play_rent': return `played ${cardName} for ${color} rent${target ? ` against ${target}` : ''}${event.double_rent_card_ids.length ? ' (doubled)' : ''}`
         case 'play_sly_deal': return `played ${cardName} and took ${targetCardName} from ${target}`
         case 'play_forced_deal': return `played ${cardName} and swapped ${targetCardName} for ${giveCardName}`
-        case 'play_deal_breaker': return `played ${cardName} and took the ${colorLabel(event.target_color ?? '')} set from ${target}`
+        case 'play_deal_breaker': return `played ${cardName} and took the ${colorLabel(event.target_color ?? '')} Manti2a from ${target}`
         case 'move_wildcard': return `moved ${cardName} to ${color}`
         case 'discard': return `discarded ${cardName}`
         case 'respond_no': return `played ${cardName} to stop an action`
@@ -1092,21 +1092,21 @@ onUnmounted(() => {
 
                         <!-- SHISHA / WIL3A -->
                         <template v-if="selectedEntry.action === 'house'">
-                            <select v-model="targetColor" aria-label="Choose a complete set for SHISHA">
-                                <option value="" disabled>Choose a complete set</option>
+                            <select v-model="targetColor" aria-label="Choose a complete Manti2a for SHISHA">
+                                <option value="" disabled>Choose a complete Manti2a</option>
                                 <option v-for="c in myShishaColors" :key="c" :value="c">{{ colorLabel(c) }}</option>
                             </select>
                             <button class="md-btn" :disabled="submitting || playsLeft < 1 || !targetColor" @click="playShisha(selectedEntry.id, targetColor)">
-                                Play SHISHA on {{ targetColor ? colorLabel(targetColor) : 'a set' }}
+                                Play SHISHA on {{ targetColor ? colorLabel(targetColor) : 'a Manti2a' }}
                             </button>
                         </template>
                         <template v-if="selectedEntry.action === 'hotel'">
-                            <select v-model="targetColor" aria-label="Choose a set with SHISHA for WIL3A">
-                                <option value="" disabled>Choose a complete set with SHISHA</option>
+                            <select v-model="targetColor" aria-label="Choose a Manti2a with SHISHA for WIL3A">
+                                <option value="" disabled>Choose a complete Manti2a with SHISHA</option>
                                 <option v-for="c in myWil3aColors" :key="c" :value="c">{{ colorLabel(c) }}</option>
                             </select>
                             <button class="md-btn" :disabled="submitting || playsLeft < 1 || !targetColor" @click="playWil3a(selectedEntry.id, targetColor)">
-                                Play WIL3A on {{ targetColor ? colorLabel(targetColor) : 'a set' }}
+                                Play WIL3A on {{ targetColor ? colorLabel(targetColor) : 'a Manti2a' }}
                             </button>
                         </template>
 
@@ -1172,7 +1172,7 @@ onUnmounted(() => {
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
                             <p v-if="targetId !== null && targetStealablePropertyGroups.length === 0" class="md-hint">
-                                That player has no available properties to take; complete sets can’t be taken.
+                                That player has no available properties to take; complete Manati2 can’t be taken.
                             </p>
                             <div v-if="targetStealablePropertyGroups.length" class="md-property-choice-groups" aria-label="Choose a property to take">
                                 <section v-for="group in targetStealablePropertyGroups" :key="group.color" class="md-property-choice-group">
@@ -1211,7 +1211,7 @@ onUnmounted(() => {
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
                             <p v-if="targetId !== null && targetStealablePropertyGroups.length === 0" class="md-hint">
-                                That player has no available properties to swap; complete sets can’t be taken.
+                                That player has no available properties to swap; complete Manati2 can’t be taken.
                             </p>
                             <div v-if="targetStealablePropertyGroups.length" class="md-property-choice-groups" aria-label="Choose their property to take">
                                 <section v-for="group in targetStealablePropertyGroups" :key="group.color" class="md-property-choice-group">
@@ -1234,7 +1234,7 @@ onUnmounted(() => {
                             </div>
                             <p v-if="targetCardId" class="md-hint">Choose one of your properties to give:</p>
                             <p v-if="targetCardId && myStealablePropertyGroups.length === 0" class="md-hint">
-                                You have no properties available to swap; complete sets can’t be given.
+                                You have no properties available to swap; complete Manati2 can’t be given.
                             </p>
                             <div v-if="targetCardId && myStealablePropertyGroups.length" class="md-property-choice-groups" aria-label="Choose one of your properties to give">
                                 <section v-for="group in myStealablePropertyGroups" :key="group.color" class="md-property-choice-group">
@@ -1272,21 +1272,21 @@ onUnmounted(() => {
 
                         <!-- HAT wa lamo2akhza EL SHORT! / Deal Breaker -->
                         <template v-if="selectedEntry.action === 'deal_breaker'">
-                            <select v-model="targetId" aria-label="Choose whose complete set to take" @change="resetTargetSelections">
+                            <select v-model="targetId" aria-label="Choose whose complete Manti2a to take" @change="resetTargetSelections">
                                 <option :value="null" disabled>Choose a player</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
                             <p v-if="targetId !== null && opponentCompleteSetColors(targetOpponent).length === 0" class="md-hint">
-                                That player has no complete sets to take.
+                                That player has no complete Manati2 to take.
                             </p>
-                            <select v-model="dealBreakerColor" :disabled="targetId === null || opponentCompleteSetColors(targetOpponent).length === 0" aria-label="Choose their complete set">
-                                <option value="" disabled>Choose one of their complete sets</option>
+                            <select v-model="dealBreakerColor" :disabled="targetId === null || opponentCompleteSetColors(targetOpponent).length === 0" aria-label="Choose their complete Manti2a">
+                                <option value="" disabled>Choose one of their complete Manati2</option>
                                 <option v-for="c in opponentCompleteSetColors(targetOpponent)" :key="c" :value="c">
                                     {{ colorLabel(c) }}
                                 </option>
                             </select>
                             <button class="md-btn" :disabled="submitting || playsLeft < 1 || targetId === null || !dealBreakerColor" @click="playDealBreaker(selectedEntry.id)">
-                                Take Complete Set
+                                Take Complete Manti2a
                             </button>
                         </template>
 
@@ -1381,7 +1381,7 @@ onUnmounted(() => {
                                 :key="color"
                                 type="button"
                                 class="md-seat-set-preview"
-                                :aria-label="`View ${playerName(seat.id)}’s ${colorLabel(String(color))} set in detail`"
+                                :aria-label="`View ${playerName(seat.id)}’s ${colorLabel(String(color))} Manti2a in detail`"
                                 @click="openPropertySet(seat.id, String(color))"
                             >
                                 <span class="md-seat-set-heading">
@@ -1486,7 +1486,7 @@ onUnmounted(() => {
 
                         <section class="md-turn-modal-section">
                             <h3>
-                                Properties <span>{{ Object.keys(turnViewSeat.properties).length }} sets</span>
+                                Properties <span>{{ Object.keys(turnViewSeat.properties).length }} Manati2</span>
                             </h3>
                             <div v-if="Object.keys(turnViewSeat.properties).length" class="md-turn-property-groups">
                                 <div v-for="(group, color) in turnViewSeat.properties" :key="color" class="md-turn-property-group">
@@ -1556,16 +1556,16 @@ onUnmounted(() => {
             <section class="md-set-modal" role="dialog" aria-modal="true" aria-labelledby="md-set-modal-title">
                 <header class="md-set-modal-header">
                     <div>
-                        <p class="md-set-modal-eyebrow">{{ playerName(selectedPropertySetSeat.id) }}’S SET</p>
+                        <p class="md-set-modal-eyebrow">{{ playerName(selectedPropertySetSeat.id) }}’S MANTI2A</p>
                         <h2 id="md-set-modal-title">
                             {{ colorLabel(selectedPropertySet.color) }}
                             <span v-if="selectedPropertySetGroup.house"> · SHISHA</span>
                             <span v-if="selectedPropertySetGroup.hotel"> · WIL3A</span>
                         </h2>
                     </div>
-                    <button class="md-set-modal-close" type="button" aria-label="Close set details" @click="closePropertySet">×</button>
+                    <button class="md-set-modal-close" type="button" aria-label="Close Manti2a details" @click="closePropertySet">×</button>
                 </header>
-                <div class="md-set-modal-cards" :aria-label="`${selectedPropertySetCardIds.length} cards in ${colorLabel(selectedPropertySet.color)} set`">
+                <div class="md-set-modal-cards" :aria-label="`${selectedPropertySetCardIds.length} cards in ${colorLabel(selectedPropertySet.color)} Manti2a`">
                     <div v-for="cardId in selectedPropertySetCardIds" :key="cardId" class="md-set-modal-card">
                         <MasrawyCard
                             :entry="entryFor(cardId)!"
@@ -1637,7 +1637,7 @@ onUnmounted(() => {
                 <span class="md-winner-trophy" aria-hidden="true">🏆</span>
                 <p class="md-turn-modal-eyebrow">GAME OVER</p>
                 <h2 id="md-winner-title">{{ room.winner === String(myId) ? 'You won!' : `${playerName(room.winner ?? '')} wins!` }}</h2>
-                <p>{{ room.winner === String(myId) ? 'Congratulations! You completed the winning sets.' : `${playerName(room.winner ?? '')} completed the winning sets.` }}</p>
+                <p>{{ room.winner === String(myId) ? 'Congratulations! You completed the winning Manati2.' : `${playerName(room.winner ?? '')} completed the winning Manati2.` }}</p>
                 <button class="md-btn md-btn--primary" type="button" @click="winnerModalDismissed = true">Celebrate!</button>
             </section>
         </div>

@@ -671,11 +671,11 @@ class MasrawyDealGame extends AbstractGame
         $group = $state['properties'][(string) $user->id][$color] ?? null;
 
         if ($group === null || ! $this->colorGroupIsComplete($group, $color)) {
-            throw new \InvalidArgumentException('SHISHA can only be placed on one of your own complete sets.');
+            throw new \InvalidArgumentException('SHISHA can only be placed on one of your own complete Manti2a.');
         }
 
         if ($group['house'] !== null) {
-            throw new \InvalidArgumentException('That set already has a SHISHA on it.');
+            throw new \InvalidArgumentException('That Manti2a already has a SHISHA on it.');
         }
 
         $state = $this->spendCardFromHand($state, $user, $cardId);
@@ -697,15 +697,15 @@ class MasrawyDealGame extends AbstractGame
         $group = $state['properties'][(string) $user->id][$color] ?? null;
 
         if ($group === null || ! $this->colorGroupIsComplete($group, $color)) {
-            throw new \InvalidArgumentException('WIL3A can only be placed on one of your own complete sets.');
+            throw new \InvalidArgumentException('WIL3A can only be placed on one of your own complete Manti2a.');
         }
 
         if ($group['house'] === null) {
-            throw new \InvalidArgumentException('WIL3A can only be placed on a set that already has a SHISHA.');
+            throw new \InvalidArgumentException('WIL3A can only be placed on a Manti2a that already has a SHISHA.');
         }
 
         if ($group['hotel'] !== null) {
-            throw new \InvalidArgumentException('That set already has a WIL3A on it.');
+            throw new \InvalidArgumentException('That Manti2a already has a WIL3A on it.');
         }
 
         $state = $this->spendCardFromHand($state, $user, $cardId);
@@ -922,7 +922,7 @@ class MasrawyDealGame extends AbstractGame
             (int) $user->id,
             $givenCardId,
             'Choose one of your own properties to give.',
-            'You cannot give up a property from a complete set.',
+            'You cannot give up a property from a complete Manti2a.',
         );
         $placeColor = $this->resolvePlacementColor($takenCardId, $takenColor, $payload['color'] ?? null);
 
@@ -987,7 +987,7 @@ class MasrawyDealGame extends AbstractGame
         $group = $state['properties'][$ownerId][$color] ?? null;
 
         if ($group === null || ! $this->colorGroupIsComplete($group, $color)) {
-            throw new \InvalidArgumentException('Choose one of that player\'s complete sets.');
+            throw new \InvalidArgumentException('Choose one of that player\'s complete Manati2.');
         }
     }
 
@@ -1001,7 +1001,7 @@ class MasrawyDealGame extends AbstractGame
         int $ownerId,
         string $cardId,
         string $missingMessage = 'Choose one of that player\'s properties.',
-        string $completeMessage = 'You cannot take a property from a complete set.',
+        string $completeMessage = 'You cannot take a property from a complete Manti2a.',
     ): string {
         foreach ($state['properties'][$ownerId] ?? [] as $color => $group) {
             if (! in_array($cardId, $group['cards'], true)) {
@@ -1361,7 +1361,7 @@ class MasrawyDealGame extends AbstractGame
             $sourceId,
             $pending['give_card_id'],
             'Choose one of your own properties to give.',
-            'You cannot give up a property from a complete set.',
+            'You cannot give up a property from a complete Manti2a.',
         );
 
         $state = $this->moveProperty($state, $targetId, $takenFrom, $sourceId, $pending['color'], $pending['target_card_id']);
