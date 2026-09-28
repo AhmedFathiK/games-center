@@ -114,6 +114,16 @@ class MasrawyDealGame extends AbstractGame
             $events[] = new JustSayNoCountered((int) $recipientId, (int) $room->id);
         }
 
+        if (($payload['type'] ?? null) === 'play_birthday' && ($activity['type'] ?? null) === 'play_birthday') {
+            $actorId = (int) ($activity['player_id'] ?? 0);
+
+            foreach ($state['turn_order'] ?? [] as $playerId) {
+                if ((int) $playerId !== $actorId) {
+                    $events[] = new BirthdayPlayed((int) $playerId, (int) $room->id);
+                }
+            }
+        }
+
         return $events;
     }
 

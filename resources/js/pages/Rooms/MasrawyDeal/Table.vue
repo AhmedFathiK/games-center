@@ -39,6 +39,7 @@ const flippedCardsStorageKey = `masrawy-deal-flipped-cards:${props.room.id}:${pr
 const isReorderingHand = ref(false)
 const isHandCollapsed = ref(false)
 const showJustSayNoNotice = ref(false)
+const showBirthdayNotice = ref(false)
 
 function reconcileHandOrder(hand: string[], preferredOrder: string[]): string[] {
     const cardsInHand = new Set(hand)
@@ -59,6 +60,9 @@ onMounted(() => {
     window.Echo.private(`App.Models.User.${myId.value}`)
         .listen('.masrawy.just_say_no_countered', (event: { room_id: number }) => {
             if (event.room_id === props.room.id) showJustSayNoNotice.value = true
+        })
+        .listen('.masrawy.birthday_played', (event: { room_id: number }) => {
+            if (event.room_id === props.room.id) showBirthdayNotice.value = true
         })
 
     try {
@@ -263,9 +267,9 @@ const currentTurnActivity = computed(() =>
     (table.value?.turn_activity ?? []).filter((event) => event.player_id === table.value?.current_player_id),
 );
 const turnViewActivity = computed(() =>
-    (showingPreviousTurn.value ? previousTurnActivity.value : currentTurnActivity.value)
-        .filter(event => event.type !== 'draw'),
+    showingPreviousTurn.value ? previousTurnActivity.value : currentTurnActivity.value,
 )
+const turnViewMoveCount = computed(() => turnViewActivity.value.filter(event => event.type !== 'draw').length)
 const currentTurnMoveCardIds = computed(
     () =>
         new Set(
@@ -1523,7 +1527,7 @@ onUnmounted(() => {
 
                     <aside class="md-turn-modal-log" aria-label="Current player's moves">
                         <h3>
-                            Moves this turn <span>{{ turnViewActivity.length }}</span>
+                            Moves this turn <span>{{ turnViewMoveCount }}</span>
                         </h3>
                         <ol v-if="turnViewActivity.length">
                             <li v-for="(event, index) in turnViewActivity" :key="event.id" class="md-turn-activity" :class="{ 'md-turn-activity--latest': index === turnViewActivity.length - 1 }">
@@ -1741,6 +1745,15 @@ onUnmounted(() => {
                 <img src="/assets/images/Da%203and%20Omo%20Ya%20Adham.png" alt="Da 3and Omo Ya Adham" class="md-jsn-notice-image">
                 <h2 id="md-jsn-notice-title">Da 3and Omo Ya Adham</h2>
                 <button class="md-btn md-btn--primary" type="button" @click="showJustSayNoNotice = false">Continue</button>
+            </section>
+        </div>
+
+        <div v-if="showBirthdayNotice" class="md-jsn-notice-backdrop" @click.self="showBirthdayNotice = false" @keydown.esc="showBirthdayNotice = false">
+            <section class="md-jsn-notice" role="dialog" aria-modal="true" aria-labelledby="md-birthday-notice-title">
+                <button class="md-turn-modal-close md-jsn-notice-close" type="button" aria-label="Close notification" @click="showBirthdayNotice = false">×</button>
+                <img src="/assets/images/3id%20Milady%20Ya%20Kelab.png" alt="3id Milady Ya Kelab" class="md-jsn-notice-image">
+                <h2 id="md-birthday-notice-title">3id Milady Ya Kelab</h2>
+                <button class="md-btn md-btn--primary" type="button" @click="showBirthdayNotice = false">Continue</button>
             </section>
         </div>
     </div>
@@ -3484,7 +3497,7 @@ onUnmounted(() => {
     border: 1px solid color-mix(in srgb, #f59e0b 55%, var(--rc-border));
     border-left: 4px solid #f59e0b;
     border-radius: 7px;
-    background: color-mix(in srgb, #f59e0b 13%, var(--rc-surface-alt));
+    background: rgb(245 158 11 / 18%);
     color: var(--rc-text-on-surface);
     font-size: 0.85rem;
     font-weight: 700;
