@@ -3,6 +3,7 @@
 namespace App\Games\MasrawyDeal;
 
 use App\Games\AbstractGame;
+use App\Events\JustSayNoCountered;
 use App\Models\Room;
 use App\Models\User;
 
@@ -101,6 +102,21 @@ use App\Models\User;
  */
 class MasrawyDealGame extends AbstractGame
 {
+    public function eventsAfterAction(Room $room, array $payload): array
+    {
+        $events = parent::eventsAfterAction($room, $payload);
+        $state = $room->game_state ?? [];
+        $activities = $state['recent_activity'] ?? [];
+        $activity = $activities === [] ? [] : $activities[array_key_last($activities)];
+        $recipientId = $activity['jsn_notice_recipient_id'] ?? null;
+
+        if (is_numeric($recipientId)) {
+            $events[] = new JustSayNoCountered((int) $recipientId, (int) $room->id);
+        }
+
+        return $events;
+    }
+
     /** Normal per-turn draw, per official rules. */
     private const NORMAL_DRAW_COUNT = 2;
 
@@ -222,6 +238,13 @@ class MasrawyDealGame extends AbstractGame
             };
 
             $activityPayload = $payload;
+            if ($type === 'respond_no') {
+                $targetId = (int) ($payload['target_id'] ?? 0);
+                $chain = $state['pending']['charges'][$targetId]['chain'] ?? [];
+                $activityPayload['jsn_notice_recipient_id'] = $chain === []
+                    ? (int) $state['pending']['source_id']
+                    : (int) $chain[array_key_last($chain)]['player_id'];
+            }
             if ($type === 'pay') {
                 $activityPayload['target_id'] = (int) $state['pending']['source_id'];
             }
@@ -355,6 +378,17 @@ class MasrawyDealGame extends AbstractGame
             $catalog[$cardId] = CardCatalog::get($cardId);
         }
 
+        $recentActivity = array_map(static function (array $event): array {
+            unset($event['jsn_notice_recipient_id']);
+
+            return $event;
+        }, $state['recent_activity'] ?? []);
+        $turnActivity = array_map(static function (array $event): array {
+            unset($event['jsn_notice_recipient_id']);
+
+            return $event;
+        }, $state['turn_activity'] ?? []);
+
         return [
             'you' => $you,
             'table' => [
@@ -366,8 +400,8 @@ class MasrawyDealGame extends AbstractGame
                 'discard_pile' => $state['discard_pile'],
                 'players' => $seats,
                 'pending' => $pending,
-                'recent_activity' => $state['recent_activity'] ?? [],
-                'turn_activity' => $state['turn_activity'] ?? [],
+                'recent_activity' => $recentActivity,
+                'turn_activity' => $turnActivity,
                 'catalog' => $catalog,
                 'rent_chart' => CardCatalog::RENT_CHART,
                 'set_size' => CardCatalog::SET_SIZE,
@@ -1637,6 +1671,7 @@ class MasrawyDealGame extends AbstractGame
                 : (is_string($payload['card_id'] ?? null) ? (CardCatalog::get($payload['card_id'])['color'] ?? null) : null),
             'target_color' => is_string($payload['target_color'] ?? null) ? $payload['target_color'] : null,
             'double_rent_card_ids' => array_values(array_filter($payload['double_rent_card_ids'] ?? [], 'is_string')),
+            'jsn_notice_recipient_id' => isset($payload['jsn_notice_recipient_id']) ? (int) $payload['jsn_notice_recipient_id'] : null,
         ];
 
         $state['activity_sequence'] = $event['id'];

@@ -38,6 +38,7 @@ const flippedCardsLoaded = ref(false)
 const flippedCardsStorageKey = `masrawy-deal-flipped-cards:${props.room.id}:${props.auth.user.id}`
 const isReorderingHand = ref(false)
 const isHandCollapsed = ref(false)
+const showJustSayNoNotice = ref(false)
 
 function reconcileHandOrder(hand: string[], preferredOrder: string[]): string[] {
     const cardsInHand = new Set(hand)
@@ -55,6 +56,11 @@ watch(
 )
 
 onMounted(() => {
+    window.Echo.private(`App.Models.User.${myId.value}`)
+        .listen('.masrawy.just_say_no_countered', (event: { room_id: number }) => {
+            if (event.room_id === props.room.id) showJustSayNoNotice.value = true
+        })
+
     try {
         const savedOrder: unknown = JSON.parse(window.localStorage.getItem(handOrderStorageKey) ?? '[]')
         if (Array.isArray(savedOrder) && savedOrder.every(id => typeof id === 'string')) {
@@ -432,6 +438,12 @@ const myOpenResponses = computed(() =>
 const myJustSayNoCards = computed(() =>
     (you.value?.hand ?? []).filter(id => entryFor(id)?.action === 'just_say_no'),
 )
+const responsePrompt = computed(() =>
+    myOpenResponses.value.find(entry => entry.charge?.phase === 'responding') ?? null,
+)
+const paymentReconsideration = computed(() =>
+    myOpenResponses.value.find(entry => entry.charge?.phase === 'paying') ?? null,
+)
 
 // --- Generic action submission --------------------------------------------
 
@@ -691,13 +703,10 @@ function moveWildcard() {
 
 // --- Responding to a pending action (Just Say No / decline) ---------------
 
-const respondCardByTarget = ref<Record<string, string>>({})
-
 function respondNo(targetIdForCharge: number) {
-    const cardId = respondCardByTarget.value[String(targetIdForCharge)]
+    const cardId = myJustSayNoCards.value[0]
     if (!cardId) return
     submit({ type: 'respond_no', card_id: cardId, target_id: targetIdForCharge }, () => {
-        respondCardByTarget.value[String(targetIdForCharge)] = ''
         paySelection.value = []
         isPayModalOpen.value = false
         isPayModalCollapsed.value = false
@@ -788,6 +797,7 @@ watch(
 
 onUnmounted(() => {
     if (previousTurnTimer !== null) clearTimeout(previousTurnTimer)
+    window.Echo.leavePrivateChannel(`App.Models.User.${myId.value}`)
 })
 </script>
 
@@ -846,33 +856,6 @@ onUnmounted(() => {
                         <span v-if="charge.outcome"> — {{ charge.outcome }}</span>
                     </li>
                 </ul>
-
-                <!-- My response window(s) -->
-                <div v-for="entry in myOpenResponses" :key="entry.targetId" class="md-respond">
-                    <p v-if="entry.charge?.phase === 'paying'">
-                        You can still play DA 3AND OMMO... before choosing payment{{ pending.kind === 'birthday' || pending.kind === 'rent' ? ` (for ${playerName(entry.targetId)})` : '' }}.
-                    </p>
-                    <p v-else>
-                        You may respond{{ pending.kind === 'birthday' || pending.kind === 'rent' ? ` (for ${playerName(entry.targetId)})` : '' }}:
-                    </p>
-
-                    <select v-model="respondCardByTarget[String(entry.targetId)]" :disabled="myJustSayNoCards.length === 0" aria-label="Choose a Just Say No card">
-                        <option value="" disabled>Choose a DA 3AND OMMO... card</option>
-                        <option v-for="cardId in myJustSayNoCards" :key="cardId" :value="cardId">
-                            {{ label(cardId) }}
-                        </option>
-                    </select>
-                    <button
-                        class="md-btn"
-                        :disabled="submitting || !respondCardByTarget[String(entry.targetId)]"
-                        @click="respondNo(entry.targetId)"
-                    >
-                        {{ entry.charge?.phase === 'paying' ? 'Play DA 3AND OMMO... instead' : 'Play It' }}
-                    </button>
-                    <button v-if="entry.charge?.phase !== 'paying'" class="md-btn md-btn--muted" :disabled="submitting" @click="decline(entry.targetId)">
-                        Decline
-                    </button>
-                </div>
 
             </section>
 
@@ -1600,10 +1583,56 @@ onUnmounted(() => {
 
                 <footer class="md-pay-modal-footer">
                     <button class="md-btn md-btn--muted" @click="collapsePayModal">Collapse</button>
+                    <button
+                        v-if="paymentReconsideration && myJustSayNoCards.length > 0"
+                        class="md-btn md-btn--muted"
+                        type="button"
+                        :disabled="submitting"
+                        @click="respondNo(paymentReconsideration.targetId)"
+                    >
+                        3AND OMO
+                    </button>
                     <button class="md-btn md-btn--primary" :disabled="submitting || paySelection.length === 0 || payTotal < you.owes" @click="pay">
                         Pay {{ payTotal }}M
                     </button>
                 </footer>
+            </section>
+        </div>
+
+        <div v-if="responsePrompt && pending" class="md-response-choice-backdrop">
+            <section class="md-response-choice" role="dialog" aria-modal="true" aria-labelledby="md-response-choice-title">
+                <p class="md-turn-modal-eyebrow">YOUR RESPONSE</p>
+                <h2 id="md-response-choice-title">{{ playerName(pending.source_id) }} played {{ label(pending.card_id) }}</h2>
+                <p>Do you want to cancel the action or pay the charge?</p>
+                <div class="md-response-choice-actions">
+                    <button
+                        v-if="myJustSayNoCards.length > 0"
+                        class="md-btn md-btn--primary"
+                        type="button"
+                        :disabled="submitting"
+                        @click="respondNo(responsePrompt.targetId)"
+                    >
+                        3AND OMO
+                    </button>
+                    <button
+                        class="md-btn md-btn--muted"
+                        type="button"
+                        :disabled="submitting"
+                        @click="decline(responsePrompt.targetId)"
+                    >
+                        EDFA3
+                    </button>
+                </div>
+                <p v-if="actionError" class="md-pay-modal-error" role="alert">{{ actionError }}</p>
+            </section>
+        </div>
+
+        <div v-if="showJustSayNoNotice" class="md-jsn-notice-backdrop" @click.self="showJustSayNoNotice = false" @keydown.esc="showJustSayNoNotice = false">
+            <section class="md-jsn-notice" role="dialog" aria-modal="true" aria-labelledby="md-jsn-notice-title">
+                <button class="md-turn-modal-close md-jsn-notice-close" type="button" aria-label="Close notification" @click="showJustSayNoNotice = false">×</button>
+                <img src="/assets/images/Da%203and%20Omo%20Ya%20Adham.png" alt="Da 3and Omo Ya Adham" class="md-jsn-notice-image">
+                <h2 id="md-jsn-notice-title">Da 3and Omo Ya Adham</h2>
+                <button class="md-btn md-btn--primary" type="button" @click="showJustSayNoNotice = false">Continue</button>
             </section>
         </div>
     </div>
@@ -1814,22 +1843,6 @@ onUnmounted(() => {
     margin: 0 0 0.75rem;
     font-size: 0.85rem;
     color: var(--rc-text-muted);
-}
-
-.md-respond,
-.md-pay {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px dashed var(--rc-border);
-}
-
-.md-pay {
-    flex-direction: column;
-    align-items: flex-start;
 }
 
 .md-seat-properties {
@@ -2876,6 +2889,95 @@ onUnmounted(() => {
     font-weight: 700;
 }
 
+.md-response-choice-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(10, 15, 20, 0.78);
+}
+
+.md-jsn-notice-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgb(15 23 42 / 78%);
+}
+
+.md-jsn-notice {
+    position: relative;
+    display: flex;
+    width: min(100%, 28rem);
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    border: 1px solid rgb(250 204 21 / 50%);
+    border-radius: 1.25rem;
+    background: #111827;
+    padding: 1.5rem;
+    text-align: center;
+    box-shadow: 0 24px 80px rgb(0 0 0 / 45%);
+}
+
+.md-jsn-notice-image {
+    display: block;
+    width: 100%;
+    max-height: 55vh;
+    border-radius: 0.75rem;
+    object-fit: contain;
+}
+
+.md-jsn-notice h2 {
+    margin: 0;
+    color: #fde047;
+    font-size: 1.35rem;
+    font-weight: 800;
+}
+
+.md-jsn-notice-close {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 1;
+}
+
+.md-response-choice {
+    display: grid;
+    gap: 0.85rem;
+    width: min(500px, 100%);
+    padding: 1.4rem;
+    border: 1px solid var(--rc-border);
+    border-radius: 14px;
+    background: var(--rc-surface);
+    color: var(--rc-text-on-surface);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+}
+
+.md-response-choice > * {
+    margin: 0;
+}
+
+.md-response-choice h2 {
+    font-family: var(--rc-font-display);
+    font-size: clamp(1.2rem, 4vw, 1.65rem);
+}
+
+.md-response-choice > p:not(.md-turn-modal-eyebrow, .md-pay-modal-error) {
+    color: var(--rc-text-muted);
+}
+
+.md-response-choice-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    margin-top: 0.25rem;
+}
+
 .md-pay-modal-footer {
     justify-content: flex-end;
     padding-top: 0.75rem;
@@ -3195,7 +3297,6 @@ onUnmounted(() => {
     color: var(--rc-text-on-surface);
 }
 
-.md-respond select,
 .md-panel select {
     min-width: 0;
     max-width: 100%;
