@@ -103,9 +103,21 @@ watch(flippedCardIds, ids => {
     }
 })
 
-const topDiscardCardId = computed(() => {
+const discardStackCardIds = computed(() => {
     const pile = table.value?.discard_pile ?? []
-    return pile[pile.length - 1] ?? ''
+    const topCardId = pile[pile.length - 1]
+    if (!topCardId) return []
+
+    const latestActivity = table.value?.recent_activity.at(-1)
+    const rentPlayCardIds = latestActivity?.type === 'play_rent' && latestActivity.card_id
+        ? [latestActivity.card_id, ...latestActivity.double_rent_card_ids]
+        : []
+    const pileTopCards = pile.slice(-rentPlayCardIds.length)
+    const rentPlayIsStillOnTop = rentPlayCardIds.length > 1
+        && pileTopCards.length === rentPlayCardIds.length
+        && rentPlayCardIds.every((cardId, index) => pileTopCards[index] === cardId)
+
+    return rentPlayIsStillOnTop ? rentPlayCardIds : [topCardId]
 })
 
 const COLORS = [
@@ -251,7 +263,8 @@ const currentTurnActivity = computed(() =>
     (table.value?.turn_activity ?? []).filter((event) => event.player_id === table.value?.current_player_id),
 );
 const turnViewActivity = computed(() =>
-    showingPreviousTurn.value ? previousTurnActivity.value : currentTurnActivity.value,
+    (showingPreviousTurn.value ? previousTurnActivity.value : currentTurnActivity.value)
+        .filter(event => event.type !== 'draw'),
 )
 const currentTurnMoveCardIds = computed(
     () =>
@@ -425,6 +438,7 @@ const paymentReason = computed(() => {
     return `Pay ${cardName}${color} from ${source}`
 })
 const canAct = computed(() => gameIsLive.value && pending.value === null && isMyTurn.value)
+const canPlayCard = computed(() => canAct.value && table.value?.has_drawn_this_turn === true)
 const playsLeft = computed(() => 3 - (table.value?.cards_played_this_turn ?? 0))
 
 // Charges I'm currently expected to answer (Just Say No or decline).
@@ -534,6 +548,16 @@ const activeRentColor = computed(() => {
     return activeColorForCard(selectedEntry.value?.id ?? '')
 })
 
+const selectedRentColor = computed(() => selectedIsPlainRent.value ? activeRentColor.value : rentColor.value)
+
+function rentColorIssue(color: string): string | null {
+    const cards = mySeat.value?.properties[color]?.cards ?? []
+    if (cards.length === 0) return `You have no ${colorLabel(color)} properties to charge rent on.`
+    if (cards.every(cardId => entryFor(cardId)?.any_color)) return 'EL BOB wildcards alone cannot earn rent.'
+
+    return null
+}
+
 function rotateSelectedWildcard() {
     const cardId = selectedEntry.value?.id
     if (!cardId) return
@@ -545,6 +569,7 @@ function rotateSelectedWildcard() {
 
 function selectCard(id: string) {
     selectedCardId.value = selectedCardId.value === id ? null : id
+    actionError.value = null
     confirmBankCardId.value = null
     // Reset any in-progress sub-form when switching cards.
     wildcardColor.value = ''
@@ -561,6 +586,7 @@ function resetTargetSelections() {
     targetCardId.value = ''
     dealBreakerColor.value = ''
     wildcardColor.value = ''
+    giveCardId.value = ''
 }
 
 function clearSelection() {
@@ -602,6 +628,20 @@ function opponentPropertyCards(seat?: MasrawySeat): { id: string; group: string 
     return out
 }
 
+function stealablePropertyGroups(seat?: MasrawySeat): { color: string; cardIds: string[] }[] {
+    if (!seat) return []
+
+    return Object.entries(seat.properties)
+        .filter(([color, group]) => {
+            const hasEnoughCards = group.cards.length >= (table.value?.set_size[color] ?? Number.POSITIVE_INFINITY)
+            const hasNonElBobCard = group.cards.some(cardId => !entryFor(cardId)?.any_color)
+
+            return !hasEnoughCards || !hasNonElBobCard
+        })
+        .map(([color, group]) => ({ color, cardIds: group.cards }))
+        .filter(group => group.cardIds.length > 0)
+}
+
 function opponentCompleteSetColors(seat?: MasrawySeat): string[] {
     if (!seat) return []
 
@@ -613,9 +653,13 @@ function opponentCompleteSetColors(seat?: MasrawySeat): string[] {
 const myDoubleRentCards = computed(() =>
     (you.value?.hand ?? []).filter(id => entryFor(id)?.action === 'double_rent'),
 )
+const maxDoubleRentCardsThisPlay = computed(() => Math.min(2, Math.max(0, playsLeft.value - 1)))
 
-const myOwnPropertyCards = computed(() => opponentPropertyCards(mySeat.value))
+const targetStealablePropertyGroups = computed(() => stealablePropertyGroups(targetOpponent.value))
+const myStealablePropertyGroups = computed(() => stealablePropertyGroups(mySeat.value))
 const myOwnColors = computed(() => Object.keys(mySeat.value?.properties ?? {}))
+const rentableMyColors = computed(() => myOwnColors.value.filter(color => rentColorIssue(color) === null))
+const selectedRentIssue = computed(() => selectedRentColor.value ? rentColorIssue(selectedRentColor.value) : null)
 const myCompleteSetColors = computed(() => myOwnColors.value.filter(color => {
     const group = mySeat.value?.properties[color]
     return Boolean(group && group.cards.length >= (table.value?.set_size[color] ?? Number.POSITIVE_INFINITY))
@@ -999,11 +1043,14 @@ onUnmounted(() => {
                         >
                             ↻ Rotate 180°
                         </button>
-                        <p v-if="!canAct" class="md-hint">
+                        <p v-if="isMyTurn && pending === null && !table.has_drawn_this_turn" class="md-hint">
+                            Draw before playing a card.
+                        </p>
+                        <p v-else-if="!canAct" class="md-hint">
                             {{ pending ? 'You can adjust this card while waiting for the response.' : 'You can prepare this card now. Play options unlock on your turn.' }}
                         </p>
 
-                        <template v-if="canAct">
+                        <template v-if="canPlayCard">
                         <!-- Money -->
                         <button v-if="selectedEntry.type === 'money'" class="md-btn" :disabled="submitting || playsLeft < 1" @click="playMoney(selectedEntry.id)">
                             Play as Money ({{ selectedEntry.value }}M)
@@ -1077,26 +1124,37 @@ onUnmounted(() => {
 
                         <!-- ELBIS! rent (regular or wild) -->
                         <template v-if="selectedIsPlainRent || selectedIsWildRent">
-                            <select v-if="selectedIsWildRent" v-model="rentColor" aria-label="Choose which property color to charge">
+                            <p v-if="selectedIsPlainRent && selectedRentIssue" class="md-action-warning" role="alert">
+                                {{ selectedRentIssue }} Rotate the rent card to check its other color.
+                            </p>
+                            <p v-if="selectedIsWildRent && rentableMyColors.length === 0" class="md-action-warning" role="alert">
+                                {{ myOwnColors.length ? 'EL BOB wildcards alone cannot earn rent.' : 'You have no properties to charge rent on.' }}
+                            </p>
+                            <select v-if="selectedIsWildRent && rentableMyColors.length > 0" v-model="rentColor" aria-label="Choose which property color to charge">
                                 <option value="" disabled>Which color to charge</option>
-                                <option v-for="c in myOwnColors" :key="c" :value="c">
+                                <option v-for="c in rentableMyColors" :key="c" :value="c">
                                     {{ colorLabel(c) }}
                                 </option>
                             </select>
-                            <select v-if="selectedIsWildRent" v-model="targetId" aria-label="Choose the player to charge">
+                            <select v-if="selectedIsWildRent && rentableMyColors.length > 0" v-model="targetId" aria-label="Choose the player to charge">
                                 <option :value="null" disabled>Choose a player</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
-                            <fieldset v-if="myDoubleRentCards.length > 0" class="md-fieldset">
+                            <fieldset v-if="myDoubleRentCards.length > 0 && playsLeft > 1" class="md-fieldset">
                                 <legend>ELBIS X 2 (optional, doubles the rent, each costs a play)</legend>
                                 <label v-for="c in myDoubleRentCards" :key="c" class="md-pay-option">
-                                    <input type="checkbox" :value="c" v-model="doubleRentIds" />
+                                    <input
+                                        type="checkbox"
+                                        :value="c"
+                                        v-model="doubleRentIds"
+                                        :disabled="!doubleRentIds.includes(c) && doubleRentIds.length >= maxDoubleRentCardsThisPlay"
+                                    />
                                     {{ label(c) }}
                                 </label>
                             </fieldset>
                             <button
                                 class="md-btn"
-                                :disabled="submitting || playsLeft < (1 + doubleRentIds.length) || !(selectedIsPlainRent ? activeRentColor : rentColor) || (selectedIsWildRent && targetId === null)"
+                                :disabled="submitting || playsLeft < (1 + doubleRentIds.length) || !(selectedIsPlainRent ? activeRentColor : rentColor) || Boolean(selectedRentIssue) || (selectedIsWildRent && (targetId === null || rentableMyColors.length === 0))"
                                 @click="playRent(selectedEntry.id, !!selectedIsWildRent, selectedIsPlainRent ? activeRentColor! : rentColor)"
                             >
                                 Play Rent<span v-if="selectedIsPlainRent && activeRentColor"> ({{ colorLabel(activeRentColor) }})</span>
@@ -1109,15 +1167,28 @@ onUnmounted(() => {
                                 <option :value="null" disabled>Choose a player</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
-                            <p v-if="targetId !== null && opponentPropertyCards(targetOpponent).length === 0" class="md-hint">
-                                That player has no properties to take.
+                            <p v-if="targetId !== null && targetStealablePropertyGroups.length === 0" class="md-hint">
+                                That player has no available properties to take; complete sets can’t be taken.
                             </p>
-                            <select v-model="targetCardId" :disabled="targetId === null" aria-label="Choose the property to take" @change="wildcardColor = ''">
-                                <option value="" disabled>Choose a property of theirs</option>
-                                <option v-for="c in opponentPropertyCards(targetOpponent)" :key="c.id" :value="c.id">
-                                    {{ label(c.id) }} ({{ colorLabel(c.group) }})
-                                </option>
-                            </select>
+                            <div v-if="targetStealablePropertyGroups.length" class="md-property-choice-groups" aria-label="Choose a property to take">
+                                <section v-for="group in targetStealablePropertyGroups" :key="group.color" class="md-property-choice-group">
+                                    <h4>{{ colorLabel(group.color) }}</h4>
+                                    <div class="md-property-choice-cards">
+                                        <button
+                                            v-for="cardId in group.cardIds"
+                                            :key="cardId"
+                                            type="button"
+                                            class="md-property-choice-card"
+                                            :class="{ 'md-property-choice-card--selected': targetCardId === cardId }"
+                                            :aria-label="`Take ${label(cardId)} from ${playerName(targetId!)}`"
+                                            :aria-pressed="targetCardId === cardId"
+                                            @click="targetCardId = cardId; wildcardColor = ''"
+                                        >
+                                            <MasrawyCard :entry="entryFor(cardId)!" :active-color="entryFor(cardId)?.type === 'wildcard' ? group.color : undefined" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                                        </button>
+                                    </div>
+                                </section>
+                            </div>
                             <select v-if="targetCardId && entryFor(targetCardId)?.type === 'wildcard'" v-model="wildcardColor" aria-label="Choose the taken wildcard's new color">
                                 <option value="">Keep current color</option>
                                 <option v-for="c in (entryFor(targetCardId)?.any_color ? COLORS : entryFor(targetCardId)?.colors)" :key="c" :value="c">
@@ -1135,21 +1206,51 @@ onUnmounted(() => {
                                 <option :value="null" disabled>Choose a player</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
-                            <p v-if="targetId !== null && opponentPropertyCards(targetOpponent).length === 0" class="md-hint">
-                                That player has no properties to swap.
+                            <p v-if="targetId !== null && targetStealablePropertyGroups.length === 0" class="md-hint">
+                                That player has no available properties to swap; complete sets can’t be taken.
                             </p>
-                            <select v-model="targetCardId" :disabled="targetId === null" aria-label="Choose their property to take" @change="wildcardColor = ''">
-                                <option value="" disabled>Choose a property of theirs to take</option>
-                                <option v-for="c in opponentPropertyCards(targetOpponent)" :key="c.id" :value="c.id">
-                                    {{ label(c.id) }} ({{ colorLabel(c.group) }})
-                                </option>
-                            </select>
-                            <select v-model="giveCardId" aria-label="Choose one of your properties to give">
-                                <option value="" disabled>Choose one of your properties to give</option>
-                                <option v-for="c in myOwnPropertyCards" :key="c.id" :value="c.id">
-                                    {{ label(c.id) }} ({{ colorLabel(c.group) }})
-                                </option>
-                            </select>
+                            <div v-if="targetStealablePropertyGroups.length" class="md-property-choice-groups" aria-label="Choose their property to take">
+                                <section v-for="group in targetStealablePropertyGroups" :key="group.color" class="md-property-choice-group">
+                                    <h4>{{ colorLabel(group.color) }} · {{ playerName(targetId!) }}</h4>
+                                    <div class="md-property-choice-cards">
+                                        <button
+                                            v-for="cardId in group.cardIds"
+                                            :key="cardId"
+                                            type="button"
+                                            class="md-property-choice-card"
+                                            :class="{ 'md-property-choice-card--selected': targetCardId === cardId }"
+                                            :aria-label="`Take ${label(cardId)} from ${playerName(targetId!)}`"
+                                            :aria-pressed="targetCardId === cardId"
+                                            @click="targetCardId = cardId; wildcardColor = ''"
+                                        >
+                                            <MasrawyCard :entry="entryFor(cardId)!" :active-color="entryFor(cardId)?.type === 'wildcard' ? group.color : undefined" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                                        </button>
+                                    </div>
+                                </section>
+                            </div>
+                            <p v-if="targetCardId" class="md-hint">Choose one of your properties to give:</p>
+                            <p v-if="targetCardId && myStealablePropertyGroups.length === 0" class="md-hint">
+                                You have no properties available to swap; complete sets can’t be given.
+                            </p>
+                            <div v-if="targetCardId && myStealablePropertyGroups.length" class="md-property-choice-groups" aria-label="Choose one of your properties to give">
+                                <section v-for="group in myStealablePropertyGroups" :key="group.color" class="md-property-choice-group">
+                                    <h4>{{ colorLabel(group.color) }} · You</h4>
+                                    <div class="md-property-choice-cards">
+                                        <button
+                                            v-for="cardId in group.cardIds"
+                                            :key="cardId"
+                                            type="button"
+                                            class="md-property-choice-card"
+                                            :class="{ 'md-property-choice-card--selected': giveCardId === cardId }"
+                                            :aria-label="`Give ${label(cardId)} from ${colorLabel(group.color)}`"
+                                            :aria-pressed="giveCardId === cardId"
+                                            @click="giveCardId = cardId"
+                                        >
+                                            <MasrawyCard :entry="entryFor(cardId)!" :active-color="entryFor(cardId)?.type === 'wildcard' ? group.color : undefined" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                                        </button>
+                                    </div>
+                                </section>
+                            </div>
                             <select v-if="targetCardId && entryFor(targetCardId)?.type === 'wildcard'" v-model="wildcardColor" aria-label="Choose the taken wildcard's new color">
                                 <option value="">Keep current color</option>
                                 <option v-for="c in (entryFor(targetCardId)?.any_color ? COLORS : entryFor(targetCardId)?.colors)" :key="c" :value="c">
@@ -1315,7 +1416,14 @@ onUnmounted(() => {
             <section v-if="table.discard_pile.length > 0" class="md-discard">
                 <h3 class="md-section-title">Discard Pile</h3>
                 <div class="md-discard-stack" :aria-label="`Top card of discard pile; ${table.discard_pile.length} cards in pile`">
-                    <MasrawyCard :entry="entryFor(topDiscardCardId)!" :rent-chart="rentChartFor(topDiscardCardId)" :set-size="setSizeFor(topDiscardCardId)" :wild-rent-charts="wildRentChartsFor(topDiscardCardId)" :wild-set-sizes="wildSetSizesFor(topDiscardCardId)" />
+                    <div
+                        v-for="(cardId, index) in discardStackCardIds"
+                        :key="cardId"
+                        class="md-discard-play-card"
+                        :style="{ zIndex: index + 1, '--discard-card-offset': `${index * 3}px` }"
+                    >
+                        <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                    </div>
                 </div>
             </section>
 
@@ -1422,7 +1530,7 @@ onUnmounted(() => {
                                 <span class="md-turn-activity-dot" aria-hidden="true"></span>
                                 <div>
                                     <strong>{{ activityDescription(event) }}</strong>
-                                    <small>Move {{ event.id }}</small>
+                                    <small>Move {{ index + 1 }}</small>
                                     <div v-if="activityCardLabels(event).length" class="md-turn-activity-cards">
                                         <span v-for="cardLabel in activityCardLabels(event)" :key="cardLabel">{{ cardLabel }}</span>
                                     </div>
@@ -3134,6 +3242,12 @@ onUnmounted(() => {
     margin: 0 0.375rem 0.375rem 0;
 }
 
+.md-discard-play-card {
+    position: absolute;
+    inset: 0 auto auto 0;
+    transform: translate(var(--discard-card-offset), var(--discard-card-offset));
+}
+
 .md-discard-stack::before,
 .md-discard-stack::after {
     content: '';
@@ -3262,6 +3376,72 @@ onUnmounted(() => {
     max-width: 100%;
 }
 
+.md-property-choice-groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+    gap: 0.6rem;
+    flex: 1 1 100%;
+    width: 100%;
+    max-height: 300px;
+    overflow: auto;
+    padding: 0.25rem;
+}
+
+.md-property-choice-group {
+    min-width: 0;
+    padding: 0.55rem;
+    border: 1px solid var(--rc-border);
+    border-radius: 8px;
+    background: var(--rc-surface-alt);
+}
+
+.md-property-choice-group h4 {
+    margin: 0 0 0.5rem;
+    color: var(--rc-text-muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.md-property-choice-cards {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.45rem;
+}
+
+.md-property-choice-card {
+    display: block;
+    flex: 0 0 66px;
+    width: 66px;
+    height: 102px;
+    overflow: visible;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+    transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.md-property-choice-card :deep(.mc-card) {
+    transform: scale(0.61);
+    transform-origin: top left;
+}
+
+.md-property-choice-card :deep(.mc-card--flipped) {
+    transform: translate(61%, 61%) rotate(180deg) scale(0.61);
+    transform-origin: top left;
+}
+
+.md-property-choice-card:hover {
+    transform: translateY(-2px);
+}
+
+.md-property-choice-card--selected {
+    border-color: var(--rc-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--rc-primary) 30%, transparent);
+}
+
 .md-play-controls > .md-btn:not(.md-btn--muted) {
     background: var(--rc-primary);
     border-color: var(--rc-primary);
@@ -3295,6 +3475,19 @@ onUnmounted(() => {
     margin: 0;
     color: var(--rc-text-muted);
     font-size: 0.85rem;
+}
+
+.md-action-warning {
+    width: 100%;
+    margin: 0;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid color-mix(in srgb, #f59e0b 55%, var(--rc-border));
+    border-left: 4px solid #f59e0b;
+    border-radius: 7px;
+    background: color-mix(in srgb, #f59e0b 13%, var(--rc-surface-alt));
+    color: var(--rc-text-on-surface);
+    font-size: 0.85rem;
+    font-weight: 700;
 }
 
 .md-wildcard-active-hint strong {
@@ -3436,6 +3629,20 @@ input[type='checkbox'] {
     .md-play-controls .md-fieldset {
         width: 100%;
         min-width: 0;
+    }
+
+    .md-property-choice-card {
+        flex-basis: 52px;
+        width: 52px;
+        height: 80px;
+    }
+
+    .md-property-choice-card :deep(.mc-card) {
+        transform: scale(0.48);
+    }
+
+    .md-property-choice-card :deep(.mc-card--flipped) {
+        transform: translate(48%, 48%) rotate(180deg) scale(0.48);
     }
 
     .md-turn-status {

@@ -603,7 +603,6 @@ onUnmounted(() => {
                             {{ joiningRoom ? 'Joining…' : 'Join Room' }}
                         </button>
 
-                        <p v-else-if="isHost" class="rc-muted">You are the host of this room and can’t leave it. Cancel the room to close it.</p>
                         <p v-else class="rc-muted">You are in this room.</p>
 
                         <button
