@@ -1968,8 +1968,8 @@ onUnmounted(() => {
 }
 
 .md-seat-set-card :deep(.mc-card--flipped) {
-    transform: scale(0.61) rotate(180deg);
-    transform-origin: center center;
+    transform: translate(61%, 61%) rotate(180deg) scale(0.61);
+    transform-origin: top left;
 }
 
 .md-seat-set-hint {
@@ -2114,8 +2114,8 @@ onUnmounted(() => {
     }
 
     .md-seat-set-card :deep(.mc-card--flipped) {
-        transform: scale(0.48) rotate(180deg);
-        transform-origin: center center;
+        transform: translate(48%, 48%) rotate(180deg) scale(0.48);
+        transform-origin: top left;
     }
 
     .md-set-modal-backdrop {
@@ -2345,8 +2345,8 @@ onUnmounted(() => {
 }
 
 .md-turn-property-group .md-turn-card :deep(.mc-card--flipped) {
-    transform: scale(0.61) rotate(180deg);
-    transform-origin: center center;
+    transform: translate(61%, 61%) rotate(180deg) scale(0.61);
+    transform-origin: top left;
 }
 
 .md-turn-modal-log {
@@ -2740,8 +2740,8 @@ onUnmounted(() => {
     }
 
         .md-turn-property-group .md-turn-card :deep(.mc-card--flipped) {
-            transform: scale(0.48) rotate(180deg);
-            transform-origin: center center;
+            transform: translate(48%, 48%) rotate(180deg) scale(0.48);
+            transform-origin: top left;
     }
 }
 
