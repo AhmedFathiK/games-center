@@ -220,6 +220,82 @@ class MasrawyDealGame extends AbstractGame
         ];
     }
 
+    /**
+     * Remove an in-progress player and return every card they still own
+     * to the draw pile. The room controller keeps the player roster and
+     * game state in sync with this state change.
+     *
+     * @return array<string, mixed>
+     */
+    public function removePlayer(Room $room, int $playerId): array
+    {
+        $state = $room->game_state ?? [];
+        $turnOrder = array_map('intval', $state['turn_order'] ?? []);
+
+        if (! in_array($playerId, $turnOrder, true)) {
+            throw new \InvalidArgumentException('That player is not in this game.');
+        }
+
+        $playerKey = (string) $playerId;
+        $cards = [
+            ...($state['hands'][$playerKey] ?? []),
+            ...($state['banks'][$playerKey] ?? []),
+        ];
+
+        foreach ($state['properties'][$playerKey] ?? [] as $group) {
+            array_push($cards, ...$group['cards']);
+
+            foreach (['house', 'hotel'] as $building) {
+                if ($group[$building] !== null) {
+                    $cards[] = $group[$building];
+                }
+            }
+        }
+
+        $state['draw_pile'] = [...($state['draw_pile'] ?? []), ...$cards];
+        shuffle($state['draw_pile']);
+
+        unset($state['hands'][$playerKey], $state['banks'][$playerKey], $state['properties'][$playerKey]);
+        $state['turn_order'] = array_values(array_filter(
+            $turnOrder,
+            static fn (int $id): bool => $id !== $playerId,
+        ));
+
+        $pending = $state['pending'] ?? null;
+        if ($pending !== null) {
+            if ((int) $pending['source_id'] === $playerId) {
+                // The action was initiated by the removed player, so no
+                // remaining response or payment should resolve it.
+                $state['pending'] = null;
+            } else {
+                unset($state['pending']['charges'][$playerKey], $state['pending']['charges'][$playerId]);
+                $state = $this->settlePending($state);
+            }
+        }
+
+        if ((int) ($state['current_player_id'] ?? 0) === $playerId) {
+            $oldIndex = array_search($playerId, $turnOrder, true);
+            $nextPlayerId = null;
+
+            for ($offset = 1; $offset < count($turnOrder); $offset++) {
+                $candidate = $turnOrder[($oldIndex + $offset) % count($turnOrder)];
+                if ($candidate !== $playerId) {
+                    $nextPlayerId = $candidate;
+                    break;
+                }
+            }
+
+            if ($nextPlayerId !== null) {
+                $state['current_player_id'] = $nextPlayerId;
+                $state['turn_number'] = (int) ($state['turn_number'] ?? 1) + 1;
+                $state['cards_played_this_turn'] = 0;
+                $state['has_drawn_this_turn'] = false;
+            }
+        }
+
+        return $state;
+    }
+
     public function submitAction(Room $room, User $user, array $payload): array
     {
         $state = $room->game_state;

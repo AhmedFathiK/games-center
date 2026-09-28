@@ -40,6 +40,8 @@ const isReorderingHand = ref(false)
 const isHandCollapsed = ref(false)
 const showJustSayNoNotice = ref(false)
 const showBirthdayNotice = ref(false)
+const kickingPlayerId = ref<number | null>(null)
+const hostKickError = ref<string | null>(null)
 
 function reconcileHandOrder(hand: string[], preferredOrder: string[]): string[] {
     const cardsInHand = new Set(hand)
@@ -765,6 +767,20 @@ function decline(targetIdForCharge: number) {
     submit({ type: 'decline', target_id: targetIdForCharge })
 }
 
+function kickPlayer(playerId: number) {
+    kickingPlayerId.value = playerId
+    hostKickError.value = null
+
+    router.post(`/rooms/${props.room.id}/kick/${playerId}`, {}, {
+        onError: errors => {
+            hostKickError.value = Object.values(errors)[0] ?? 'Unable to remove that player.'
+        },
+        onFinish: () => {
+            kickingPlayerId.value = null
+        },
+    })
+}
+
 // --- Paying -------------------------------------------------------------
 
 const paySelection = ref<string[]>([])
@@ -1350,6 +1366,7 @@ onUnmounted(() => {
             <!-- Players -->
             <section class="md-players">
                 <h3 class="md-section-title">Players</h3>
+                <p v-if="hostKickError" role="alert" class="md-error">{{ hostKickError }}</p>
                 <details
                     v-for="seat in table.players"
                     :key="seat.id"
@@ -1367,6 +1384,15 @@ onUnmounted(() => {
                     </summary>
 
                     <div class="md-seat-content">
+                        <button
+                            v-if="gameIsLive && isHost && seat.id !== myId && table.players.length > room.game.minimum_players"
+                            class="md-btn md-btn--muted"
+                            type="button"
+                            :disabled="kickingPlayerId === seat.id"
+                            @click="kickPlayer(seat.id)"
+                        >
+                            {{ kickingPlayerId === seat.id ? 'Removing…' : 'Kick from game' }}
+                        </button>
                         <p v-if="seat.hand" class="md-seat-hand">Hand: {{ seat.hand_count }} card(s)</p>
 
                         <div v-if="seat.hand" class="md-card-row">

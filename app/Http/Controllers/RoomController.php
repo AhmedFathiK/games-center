@@ -316,9 +316,11 @@ class RoomController extends Controller
             ]);
         }
 
-        if (! $room->isWaiting()) {
+        $isInProgressMasrawy = $room->isInProgress() && $room->game->slug === 'masrawy-deal';
+
+        if (! $room->isWaiting() && ! $isInProgressMasrawy) {
             throw ValidationException::withMessages([
-                'room' => 'Players can only be removed while the room is waiting to start.',
+                'room' => 'Players can only be removed from a waiting room or an in-progress Masrawy Deal game.',
             ]);
         }
 
@@ -334,7 +336,22 @@ class RoomController extends Controller
             ]);
         }
 
-        $room->players()->detach($user->id);
+        if ($isInProgressMasrawy && $room->players()->count() <= GameRegistry::get($room->game->slug)->minimumPlayers()) {
+            throw ValidationException::withMessages([
+                'room' => 'The game needs at least two players to continue.',
+            ]);
+        }
+
+        DB::transaction(function () use ($room, $user, $isInProgressMasrawy): void {
+            if ($isInProgressMasrawy) {
+                $game = GameRegistry::get($room->game->slug);
+                $room->update(['game_state' => $game->removePlayer($room, (int) $user->id)]);
+            }
+
+            $room->players()->detach($user->id);
+        });
+
+        $room->refresh();
         broadcast(new PlayerKicked($room, $user));
 
         return redirect()->route('rooms.show', $room);
