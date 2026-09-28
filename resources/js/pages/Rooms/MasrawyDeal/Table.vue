@@ -106,6 +106,7 @@ const COLORS = [
     'brown', 'light_blue', 'pink', 'orange', 'red',
     'yellow', 'green', 'dark_blue', 'railroad', 'utility',
 ]
+const BANK_VISIBLE_CARD_LIMIT = 5
 
 function colorLabel(color: string): string {
     return color
@@ -295,13 +296,20 @@ watch(
     (nextTable, previousTable) => {
         if (!nextTable || !previousTable || nextTable.turn_number === previousTable.turn_number) return
 
+        if (previousTurnTimer !== null) {
+            clearTimeout(previousTurnTimer)
+            previousTurnTimer = null
+        }
         previousTurnSnapshot.value = {
             playerId: previousTable.current_player_id,
             activity: previousTable.turn_activity.filter((event) => event.player_id === previousTable.current_player_id),
         }
         dismissedTurnPlayerId.value = null
+        if (previousTable.current_player_id === myId.value) {
+            showingPreviousTurn.value = false
+            return
+        }
         showingPreviousTurn.value = true
-        if (previousTurnTimer !== null) clearTimeout(previousTurnTimer)
         previousTurnTimer = setTimeout(() => {
             showingPreviousTurn.value = false
             previousTurnTimer = null
@@ -383,6 +391,14 @@ const payableOptions = computed(() => {
 
 function seatBankTotal(seat: MasrawySeat): number {
     return seat.bank.reduce((total, cardId) => total + (entryFor(cardId)?.value ?? 0), 0)
+}
+
+function visibleBankCards(cardIds: string[]): string[] {
+    return cardIds.slice(-BANK_VISIBLE_CARD_LIMIT)
+}
+
+function hiddenBankCardCount(cardIds: string[]): number {
+    return Math.max(0, cardIds.length - BANK_VISIBLE_CARD_LIMIT)
 }
 
 // --- Turn / pending state -----------------------------------------------
@@ -1260,8 +1276,11 @@ onUnmounted(() => {
 
                         <div v-if="seat.bank.length > 0" class="md-seat-bank-group">
                             <p class="md-group-label">Bank · {{ seatBankTotal(seat) }}M</p>
-                            <div class="md-seat-bank-stack" :aria-label="`${seat.bank.length} money cards in bank`">
-                                <span v-for="(cardId, index) in seat.bank" :key="cardId" class="md-seat-bank-card" :style="{ zIndex: index + 1 }">
+                            <div class="md-seat-bank-stack" :aria-label="`${seat.bank.length} money cards in bank; showing the newest ${Math.min(seat.bank.length, BANK_VISIBLE_CARD_LIMIT)}`">
+                                <span v-if="hiddenBankCardCount(seat.bank) > 0" class="md-seat-bank-overflow" aria-hidden="true">
+                                    +{{ hiddenBankCardCount(seat.bank) }}
+                                </span>
+                                <span v-for="(cardId, index) in visibleBankCards(seat.bank)" :key="cardId" class="md-seat-bank-card" :style="{ zIndex: index + 1 }">
                                     <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
                                 </span>
                             </div>
@@ -1348,8 +1367,11 @@ onUnmounted(() => {
                                 Bank <span>{{ seatBankTotal(turnViewSeat) }}M</span>
                             </h3>
                             <div v-if="turnViewSeat.bank.length" class="md-turn-card-stack md-turn-card-stack--bank">
+                                <div v-if="hiddenBankCardCount(turnViewSeat.bank) > 0" class="md-turn-card md-turn-card--overflow" aria-hidden="true">
+                                    +{{ hiddenBankCardCount(turnViewSeat.bank) }}
+                                </div>
                                 <div
-                                    v-for="(cardId, index) in turnViewSeat.bank"
+                                    v-for="(cardId, index) in visibleBankCards(turnViewSeat.bank)"
                                     :key="cardId"
                                     class="md-turn-card"
                                     :class="{ 'md-turn-card--moved': currentTurnMoveCardIds.has(cardId) }"
@@ -1824,6 +1846,26 @@ onUnmounted(() => {
     padding: 0.2rem 0.2rem 0.4rem;
 }
 
+.md-seat-bank-overflow {
+    position: relative;
+    z-index: 0;
+    display: flex;
+    align-items: center;
+    flex: 0 0 66px;
+    width: 66px;
+    height: 102px;
+    border: 1px dashed var(--rc-border);
+    border-radius: 8px;
+    background: var(--rc-surface-alt);
+    box-shadow: 2px -2px 0 -1px var(--rc-border), 4px -4px 0 -1px var(--rc-border);
+    justify-content: start;
+    padding-left: 2px;
+    box-sizing: border-box;
+    color: var(--rc-text-muted);
+    font-size: 0.58rem;
+    font-weight: 800;
+}
+
 .md-seat-bank-card {
     position: relative;
     flex: 0 0 66px;
@@ -1832,6 +1874,10 @@ onUnmounted(() => {
 }
 
 .md-seat-bank-card + .md-seat-bank-card {
+    margin-left: -39px;
+}
+
+.md-seat-bank-overflow + .md-seat-bank-card {
     margin-left: -39px;
 }
 
@@ -1906,6 +1952,10 @@ onUnmounted(() => {
 .md-seat-set-card :deep(.mc-card) {
     transform: scale(0.61);
     transform-origin: top left;
+}
+
+.md-seat-set-card :deep(.mc-card--flipped) {
+    transform: scale(0.61) rotate(180deg);
 }
 
 .md-seat-set-hint {
@@ -2047,6 +2097,10 @@ onUnmounted(() => {
 
     .md-seat-set-card :deep(.mc-card) {
         transform: scale(0.48);
+    }
+
+    .md-seat-set-card :deep(.mc-card--flipped) {
+        transform: scale(0.48) rotate(180deg);
     }
 
     .md-set-modal-backdrop {
@@ -2194,13 +2248,45 @@ onUnmounted(() => {
 
 .md-turn-card--moved {
     z-index: 20 !important;
-    transform: translateY(-8px) scale(1.04);
-    filter: drop-shadow(0 0 8px #facc15) drop-shadow(0 0 16px rgba(250, 204, 21, 0.72));
+    outline: 2px solid #facc15;
+    outline-offset: 2px;
     animation: md-turn-card-highlight 1.1s ease-in-out 2;
+}
+
+.md-turn-card--overflow {
+    display: flex;
+    align-items: center;
+    flex-basis: 106px;
+    height: 154px;
+    border: 1px dashed var(--rc-border);
+    border-radius: 10px;
+    background: var(--rc-surface-alt);
+    box-shadow: 2px -2px 0 -1px var(--rc-border), 4px -4px 0 -1px var(--rc-border);
+    justify-content: start;
+    padding-left: 8px;
+    box-sizing: border-box;
+    color: var(--rc-text-muted);
+    font-size: 0.85rem;
+    font-weight: 800;
 }
 
 .md-turn-card-stack--bank {
     overflow-x: auto;
+}
+
+@keyframes md-turn-card-highlight {
+    0%,
+    100% {
+        outline-color: rgba(250, 204, 21, 0.55);
+        outline-width: 1px;
+        outline-offset: 1px;
+    }
+
+    50% {
+        outline-color: #facc15;
+        outline-width: 3px;
+        outline-offset: 3px;
+    }
 }
 
 .md-turn-property-groups {
@@ -2241,6 +2327,10 @@ onUnmounted(() => {
 .md-turn-property-group .md-turn-card :deep(.mc-card) {
     transform: scale(0.61);
     transform-origin: top left;
+}
+
+.md-turn-property-group .md-turn-card :deep(.mc-card--flipped) {
+    transform: scale(0.61) rotate(180deg);
 }
 
 .md-turn-modal-log {
@@ -2542,16 +2632,6 @@ onUnmounted(() => {
     bottom: calc(min(48dvh, 330px) + 1rem + env(safe-area-inset-bottom));
 }
 
-@keyframes md-turn-card-highlight {
-    0%,
-    100% {
-        filter: drop-shadow(0 0 5px #facc15);
-    }
-    50% {
-        filter: drop-shadow(0 0 12px #facc15) drop-shadow(0 0 20px rgba(250, 204, 21, 0.8));
-    }
-}
-
 @keyframes md-turn-activity-in {
     from {
         opacity: 0.4;
@@ -2641,6 +2721,10 @@ onUnmounted(() => {
 
     .md-turn-property-group .md-turn-card :deep(.mc-card) {
         transform: scale(0.48);
+    }
+
+    .md-turn-property-group .md-turn-card :deep(.mc-card--flipped) {
+        transform: scale(0.48) rotate(180deg);
     }
 }
 
