@@ -40,6 +40,7 @@ const isReorderingHand = ref(false)
 const isHandCollapsed = ref(false)
 const showJustSayNoNotice = ref(false)
 const showBirthdayNotice = ref(false)
+const isResponsePromptCollapsed = ref(false)
 const kickingPlayerId = ref<number | null>(null)
 const hostKickError = ref<string | null>(null)
 
@@ -64,7 +65,10 @@ onMounted(() => {
             if (event.room_id === props.room.id) showJustSayNoNotice.value = true
         })
         .listen('.masrawy.birthday_played', (event: { room_id: number }) => {
-            if (event.room_id === props.room.id) showBirthdayNotice.value = true
+            if (event.room_id === props.room.id) {
+                showBirthdayNotice.value = true
+                router.reload({ only: ['room'] })
+            }
         })
 
     try {
@@ -208,6 +212,11 @@ function toggleHandReordering() {
 function playerName(id: number | string): string {
     const found = props.room.players.find(p => String(p.id) === String(id))
     return found?.name ?? `Player #${id}`
+}
+
+function propertyColorForCard(playerId: number, cardId: string): string | undefined {
+    const seat = table.value?.players.find(player => player.id === playerId)
+    return Object.entries(seat?.properties ?? {}).find(([, group]) => group.cards.includes(cardId))?.[0]
 }
 
 const mySeat = computed<MasrawySeat | undefined>(() =>
@@ -461,8 +470,22 @@ const myJustSayNoCards = computed(() =>
 const responsePrompt = computed(() =>
     myOpenResponses.value.find(entry => entry.charge?.phase === 'responding') ?? null,
 )
+const responseIsPayment = computed(() =>
+    pending.value !== null && ['debt_collector', 'birthday', 'rent'].includes(pending.value.kind),
+)
 const paymentReconsideration = computed(() =>
     myOpenResponses.value.find(entry => entry.charge?.phase === 'paying') ?? null,
+)
+
+watch(
+    () => {
+        if (!responsePrompt.value || !pending.value) return ''
+        const chainLength = pending.value.charges[String(responsePrompt.value.targetId)]?.chain.length ?? 0
+        return `${pending.value.kind}:${pending.value.card_id}:${responsePrompt.value.targetId}:${chainLength}`
+    },
+    () => {
+        isResponsePromptCollapsed.value = false
+    },
 )
 
 // --- Generic action submission --------------------------------------------
@@ -756,6 +779,7 @@ function moveWildcard() {
 function respondNo(targetIdForCharge: number) {
     const cardId = myJustSayNoCards.value[0]
     if (!cardId) return
+    isResponsePromptCollapsed.value = false
     if (pending.value?.kind === 'birthday') showBirthdayNotice.value = false
     submit({ type: 'respond_no', card_id: cardId, target_id: targetIdForCharge }, () => {
         paySelection.value = []
@@ -765,8 +789,14 @@ function respondNo(targetIdForCharge: number) {
 }
 
 function decline(targetIdForCharge: number) {
+    isResponsePromptCollapsed.value = false
     if (pending.value?.kind === 'birthday') showBirthdayNotice.value = false
     submit({ type: 'decline', target_id: targetIdForCharge })
+}
+
+function collapseResponsePrompt() {
+    isResponsePromptCollapsed.value = true
+    showJustSayNoNotice.value = false
 }
 
 function acceptBirthdayCharge() {
@@ -1766,15 +1796,42 @@ onUnmounted(() => {
             </section>
         </div>
 
-        <div v-if="responsePrompt && pending" class="md-response-choice-backdrop">
+        <div v-if="responsePrompt && pending && !isResponsePromptCollapsed" class="md-response-choice-backdrop">
             <section class="md-response-choice" role="dialog" aria-modal="true" aria-labelledby="md-response-choice-title">
-                <p class="md-turn-modal-eyebrow">YOUR RESPONSE</p>
+                <div class="md-response-choice-header">
+                    <p class="md-turn-modal-eyebrow">YOUR RESPONSE</p>
+                    <button class="md-response-choice-collapse" type="button" @click="collapseResponsePrompt">Review table</button>
+                </div>
                 <div v-if="pending.kind === 'birthday'" class="md-response-choice-birthday">
                     <img src="/assets/images/3id%20Milady%20Ya%20Kelab.png" alt="3id Milady Ya Kelab">
                     <strong>3id Milady Ya Kelab</strong>
                 </div>
                 <h2 id="md-response-choice-title">{{ playerName(pending.source_id) }} played {{ label(pending.card_id) }}</h2>
-                <p>Do you want to cancel the action or pay the charge?</p>
+                <div v-if="pending.target_card_id || pending.give_card_id" class="md-response-property-cards">
+                    <div v-if="pending.target_card_id && entryFor(pending.target_card_id)" class="md-response-property-card">
+                        <strong>Card being taken</strong>
+                        <MasrawyCard
+                            :entry="entryFor(pending.target_card_id)!"
+                            :active-color="propertyColorForCard(responsePrompt.targetId, pending.target_card_id)"
+                            :rent-chart="rentChartFor(pending.target_card_id)"
+                            :set-size="setSizeFor(pending.target_card_id)"
+                            :wild-rent-charts="wildRentChartsFor(pending.target_card_id)"
+                            :wild-set-sizes="wildSetSizesFor(pending.target_card_id)"
+                        />
+                    </div>
+                    <div v-if="pending.give_card_id && entryFor(pending.give_card_id)" class="md-response-property-card">
+                        <strong>Card you would give</strong>
+                        <MasrawyCard
+                            :entry="entryFor(pending.give_card_id)!"
+                            :active-color="propertyColorForCard(pending.source_id, pending.give_card_id)"
+                            :rent-chart="rentChartFor(pending.give_card_id)"
+                            :set-size="setSizeFor(pending.give_card_id)"
+                            :wild-rent-charts="wildRentChartsFor(pending.give_card_id)"
+                            :wild-set-sizes="wildSetSizesFor(pending.give_card_id)"
+                        />
+                    </div>
+                </div>
+                <p>{{ responseIsPayment ? 'Do you want to cancel the action or pay the charge?' : 'Do you want to cancel this action or let it happen?' }}</p>
                 <div class="md-response-choice-actions">
                     <button
                         v-if="myJustSayNoCards.length > 0"
@@ -1791,12 +1848,21 @@ onUnmounted(() => {
                         :disabled="submitting"
                         @click="decline(responsePrompt.targetId)"
                     >
-                        EDFA3
+                        {{ responseIsPayment ? 'EDFA3' : 'Let it happen' }}
                     </button>
                 </div>
                 <p v-if="actionError" class="md-pay-modal-error" role="alert">{{ actionError }}</p>
             </section>
         </div>
+
+        <button
+            v-if="responsePrompt && pending && isResponsePromptCollapsed"
+            class="md-response-choice-reopen"
+            type="button"
+            @click="isResponsePromptCollapsed = false"
+        >
+            Respond to {{ label(pending.card_id) }}
+        </button>
 
         <div v-if="showJustSayNoNotice" class="md-jsn-notice-backdrop" @click.self="showJustSayNoNotice = false" @keydown.esc="showJustSayNoNotice = false">
             <section class="md-jsn-notice" role="dialog" aria-modal="true" aria-labelledby="md-jsn-notice-title">
@@ -3134,6 +3200,9 @@ onUnmounted(() => {
     display: grid;
     gap: 0.85rem;
     width: min(500px, 100%);
+    max-height: min(88dvh, 760px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 1.4rem;
     border: 1px solid var(--rc-border);
     border-radius: 14px;
@@ -3144,6 +3213,65 @@ onUnmounted(() => {
 
 .md-response-choice > * {
     margin: 0;
+}
+
+.md-response-choice-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.md-response-choice-collapse {
+    border: 1px solid var(--rc-border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--rc-text-muted);
+    padding: 0.35rem 0.7rem;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.md-response-choice-collapse:hover {
+    color: var(--rc-text-on-surface);
+}
+
+.md-response-property-cards {
+    display: flex;
+    gap: 0.75rem;
+    overflow-x: auto;
+    padding: 0.25rem 0 0.5rem;
+}
+
+.md-response-property-card {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 8rem;
+    color: var(--rc-text-muted);
+    font-size: 0.8rem;
+    text-align: center;
+}
+
+.md-response-choice-reopen {
+    position: fixed;
+    z-index: 1400;
+    bottom: calc(1rem + env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    border: 1px solid var(--rc-primary);
+    border-radius: 999px;
+    background: var(--rc-surface);
+    color: var(--rc-text-on-surface);
+    padding: 0.8rem 1.15rem;
+    font: inherit;
+    font-weight: 800;
+    box-shadow: 0 8px 28px rgb(0 0 0 / 35%);
+    cursor: pointer;
 }
 
 .md-response-choice-birthday {
