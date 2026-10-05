@@ -2,8 +2,10 @@ export interface Auth {
     user: User;
 }
 
-export interface SharedData {
+export interface SharedData extends Record<string, unknown> {
     name: string;
+    locale: string;
+    availableLocales: string[];
     quote: { message: string; author: string };
     auth: Auth;
     ziggy: {
@@ -19,6 +21,7 @@ export interface User {
     id: number;
     name: string;
     email: string;
+    locale: 'en' | 'ar';
     avatar?: string;
     email_verified_at: string | null;
     created_at: string;

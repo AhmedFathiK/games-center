@@ -2,8 +2,10 @@
 import { computed, ref } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
+import { useI18n } from '@/i18n'
 
 defineOptions({ layout: AppLayout })
+const { t, gameName } = useI18n()
 
 interface ConfigurationField {
     type: 'integer' | 'boolean'
@@ -79,7 +81,11 @@ function selectGame(game: Game) {
 }
 
 function fieldLabel(key: string) {
-    return key.replace(/_/g, ' ')
+    const label = key
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, character => character.toUpperCase())
+
+    return t(label)
 }
 
 function stepMaxPlayers(delta: number) {
@@ -132,9 +138,9 @@ async function createRoom() {
     <div class="gc-page">
         <div class="gc-container">
             <header class="gc-header">
-                <p class="gc-eyebrow">Games Center</p>
-                <h1 class="gc-title">Choose a Game</h1>
-                <p class="gc-subtitle">Choose a game, configure your room, and invite your friends.</p>
+            <p class="gc-eyebrow">Games Center</p>
+                <h1 class="gc-title">{{ t('Choose a Game') }}</h1>
+                <p class="gc-subtitle">{{ t('Choose a game, configure your room, and invite your friends.') }}</p>
             </header>
 
             <!-- Path 1: Join by code — a full entry point on its own, not
@@ -144,15 +150,15 @@ async function createRoom() {
                  relationship between joining and hosting is obvious
                  rather than implied by layout alone. -->
             <section class="gc-joinbar">
-                <p class="gc-joinbar-eyebrow gc-mono">Have a room code?</p>
-                <h2 class="gc-joinbar-title">Join an Existing Room</h2>
+                <p class="gc-joinbar-eyebrow gc-mono">{{ t('Have a room code?') }}</p>
+                <h2 class="gc-joinbar-title">{{ t('Join an Existing Room') }}</h2>
 
                 <form class="gc-joinbar-form" @submit.prevent="joinByCode">
                     <input
                         v-model="roomCode"
                         type="text"
                         class="gc-joinbar-input gc-mono"
-                        placeholder="ROOM CODE"
+                        :placeholder="t('ROOM CODE')"
                         maxlength="8"
                         autocomplete="off"
                         autocapitalize="characters"
@@ -164,7 +170,7 @@ async function createRoom() {
                         class="gc-joinbar-btn"
                         :disabled="joiningByCode || !roomCode.trim()"
                     >
-                        {{ joiningByCode ? 'Joining…' : 'Join Room' }}
+                        {{ joiningByCode ? t('Joining…') : t('Join Room') }}
                     </button>
                 </form>
 
@@ -172,7 +178,7 @@ async function createRoom() {
             </section>
 
             <div class="gc-or-divider" aria-hidden="true">
-                <span>or</span>
+                <span>{{ t('or') }}</span>
             </div>
 
             <!-- Path 2: Create a room — the module rail + configuration
@@ -180,8 +186,8 @@ async function createRoom() {
                  heading sits above the entire console rather than just
                  the rail, matching how the join path above is framed. -->
             <section class="gc-path-header">
-                <p class="gc-joinbar-eyebrow gc-mono">Want to host?</p>
-                <h2 class="gc-joinbar-title">Create a New Room</h2>
+                <p class="gc-joinbar-eyebrow gc-mono">{{ t('Want to host?') }}</p>
+                <h2 class="gc-joinbar-title">{{ t('Create a New Room') }}</h2>
             </section>
 
             <div class="gc-console" :class="{ 'gc-console--active': selectedGame }">
@@ -198,34 +204,34 @@ async function createRoom() {
                         <span class="gc-module-cursor" aria-hidden="true">&gt;</span>
 
                         <span class="gc-module-body">
-                            <span class="gc-module-name">{{ game.name }}</span>
+                            <span class="gc-module-name">{{ gameName(game.slug, game.name) }}</span>
 
                             <span v-if="game.description" class="gc-module-desc">
                                 {{ game.description }}
                             </span>
 
                             <span class="gc-mono gc-range">
-                                {{ game.minimum_players }}–{{ game.maximum_players }} players
+                                {{ game.minimum_players }}–{{ game.maximum_players }} {{ t('players') }}
                             </span>
                         </span>
                     </button>
 
                     <p v-if="props.games.length === 0" class="gc-empty">
-                        No games are available right now.
+                        {{ t('No games are available right now.') }}
                     </p>
                 </div>
 
                 <!-- Configuration panel -->
                 <div v-if="selectedGame" class="gc-panel">
                     <div class="gc-panel-header">
-                        <h2 class="gc-panel-title">{{ selectedGame.name }}</h2>
+                        <h2 class="gc-panel-title">{{ gameName(selectedGame.slug, selectedGame.name) }}</h2>
                         <span class="gc-tag">
-                            {{ selectedGame.host_is_player ? 'Host plays too' : "Host doesn't play" }}
+                            {{ selectedGame.host_is_player ? t('Host plays too') : t("Host doesn't play") }}
                         </span>
                     </div>
 
                     <div class="gc-field">
-                        <label class="gc-field-label">Maximum players</label>
+                        <label class="gc-field-label">{{ t('Maximum players') }}</label>
                         <div class="gc-stepper">
                             <button
                                 type="button"
@@ -295,7 +301,7 @@ async function createRoom() {
                         :disabled="creatingRoom"
                         @click="createRoom"
                     >
-                        {{ creatingRoom ? 'Creating Room…' : 'Create Room' }}
+                        {{ creatingRoom ? t('Creating Room…') : t('Create Room') }}
                     </button>
                 </div>
             </div>
@@ -309,8 +315,8 @@ async function createRoom() {
                 <span class="gc-module-cursor" aria-hidden="true">+</span>
 
                 <span class="gc-module-body">
-                    <span class="gc-module-name">More games on the way</span>
-                    <span class="gc-module-desc">Phase 10 and other titles are in development.</span>
+                    <span class="gc-module-name">{{ t('More games on the way') }}</span>
+                    <span class="gc-module-desc">{{ t('Phase 10 and other titles are in development.') }}</span>
                 </span>
             </div>
         </div>

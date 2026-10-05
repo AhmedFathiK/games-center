@@ -3,8 +3,22 @@
 use App\Games\MasrawyDeal\CardCatalog;
 use App\Http\Controllers\GameController;
 use App\Http\Controllers\RoomController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+
+Route::post('/locale', function (Request $request) {
+    $validated = $request->validate(['locale' => ['required', 'in:en,ar']]);
+
+    if ($user = $request->user()) {
+        $user->locale = $validated['locale'];
+        $user->save();
+    } else {
+        $request->session()->put('locale', $validated['locale']);
+    }
+
+    return back();
+})->name('locale.update');
 
 Route::get('/', function () {
     return Inertia::render('Index');

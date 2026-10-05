@@ -3,6 +3,7 @@ import { Head, Link, useForm, usePage } from '@inertiajs/vue3'
 import { ref } from 'vue'
 import AppLayout from '@/layouts/AppLayout.vue'
 import SettingsNav from '@/components/SettingsNav.vue'
+import { useI18n } from '@/i18n'
 import DeleteAccountModal from '@/components/DeleteAccountModal.vue'
 import { type SharedData, type User } from '@/types'
 
@@ -22,6 +23,7 @@ const form = useForm({
     name: user.name,
     email: user.email,
 })
+const { t } = useI18n()
 
 const showSaved = ref(false)
 
@@ -38,29 +40,29 @@ const submit = () => {
 
 <template>
     <div class="st-page">
-        <Head title="Profile settings" />
+        <Head :title="t('Profile settings')" />
 
         <div class="st-container">
             <header class="st-header">
-                <h1 class="st-title">Settings</h1>
-                <p class="st-subtitle">Manage your profile and account settings.</p>
+                <h1 class="st-title">{{ t('Settings') }}</h1>
+                    <p class="st-subtitle">{{ t('Manage your profile and account settings.') }}</p>
             </header>
 
             <SettingsNav />
 
             <section class="st-section">
-                <h2 class="st-section-title">Profile information</h2>
-                <p class="st-section-desc">Update your name and email address</p>
+                <h2 class="st-section-title">{{ t('Profile information') }}</h2>
+                <p class="st-section-desc">{{ t('Update your name and email address') }}</p>
 
                 <form @submit.prevent="submit" class="st-form">
                     <div class="st-field">
-                        <label for="name" class="st-label">Name</label>
-                        <input id="name" v-model="form.name" required autocomplete="name" class="st-input" placeholder="Full name" />
-                        <p v-if="form.errors.name" role="alert" class="st-error">{{ form.errors.name }}</p>
+                        <label for="name" class="st-label">{{ t('Name') }}</label>
+                        <input id="name" v-model="form.name" required autocomplete="name" class="st-input" :placeholder="t('Full name')" />
+                        <p v-if="form.errors.name" role="alert" class="st-error">{{ t(form.errors.name) }}</p>
                     </div>
 
                     <div class="st-field">
-                        <label for="email" class="st-label">Email address</label>
+                        <label for="email" class="st-label">{{ t('Email address') }}</label>
                         <input
                             id="email"
                             v-model="form.email"
@@ -68,26 +70,26 @@ const submit = () => {
                             required
                             autocomplete="username"
                             class="st-input"
-                            placeholder="Email address"
+                            :placeholder="t('Email address')"
                         />
-                        <p v-if="form.errors.email" role="alert" class="st-error">{{ form.errors.email }}</p>
+                        <p v-if="form.errors.email" role="alert" class="st-error">{{ t(form.errors.email) }}</p>
                     </div>
 
                     <div v-if="mustVerifyEmail && !user.email_verified_at" class="st-verify-notice">
                         <p>
-                            Your email address is unverified.
+                            {{ t('Your email address is unverified.') }}
                             <Link :href="route('verification.send')" method="post" as="button" class="st-link">
-                                Click here to re-send the verification email.
+                                {{ t('Click here to re-send the verification email.') }}
                             </Link>
                         </p>
                         <p v-if="status === 'verification-link-sent'" class="st-verify-sent">
-                            A new verification link has been sent to your email address.
+                            {{ t('A new verification link has been sent to your email address.') }}
                         </p>
                     </div>
 
                     <div class="st-save-row">
-                        <button type="submit" class="st-save-btn" :disabled="form.processing">Save</button>
-                        <span v-if="showSaved" class="st-saved-text">Saved.</span>
+                        <button type="submit" class="st-save-btn" :disabled="form.processing">{{ t('Save') }}</button>
+                        <span v-if="showSaved" class="st-saved-text">{{ t('Saved.') }}</span>
                     </div>
                 </form>
             </section>

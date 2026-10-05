@@ -18,12 +18,14 @@ import type { FormDataConvertible } from '@inertiajs/core'
 import { VueDraggable } from 'vue-draggable-plus'
 import type { Room, AuthUser, MasrawyYou, MasrawyTableState, MasrawySeat, CardCatalogEntry, MasrawyActivity } from '@/types/room'
 import MasrawyCard from './Card.vue'
+import { useI18n } from '@/i18n'
 
 const props = defineProps<{
     room: Room
     auth: { user: AuthUser }
     isHost: boolean
 }>()
+const { t } = useI18n()
 
 // This component only ever renders for Masrawy Deal rooms (Show.vue's
 // game.slug check), so room.you/room.table are always this game's shapes.
@@ -38,6 +40,7 @@ const flippedCardsLoaded = ref(false)
 const flippedCardsStorageKey = `masrawy-deal-flipped-cards:${props.room.id}:${props.auth.user.id}`
 const isReorderingHand = ref(false)
 const isHandCollapsed = ref(false)
+const activeHandTab = ref<'hand' | 'properties'>('hand')
 const showJustSayNoNotice = ref(false)
 const showBirthdayNotice = ref(false)
 const isResponsePromptCollapsed = ref(false)
@@ -376,25 +379,28 @@ function activityDescription(event: MasrawyActivity): string {
     const color = event.color ? colorLabel(event.color) : ''
 
     switch (event.type) {
-        case 'play_money': return `banked ${cardName}`
-        case 'play_property': return `played ${cardName} into ${color}`
-        case 'bank_card': return `banked ${cardName} as money (${entryFor(event.card_id ?? '')?.value ?? 0}M)`
-        case 'play_pass_go': return `played ${cardName} and drew 2 cards`
-        case 'play_shisha': return `added SHISHA to the ${color} Manti2a`
-        case 'play_wil3a': return `added WIL3A to the ${color} Manti2a`
-        case 'play_debt_collector': return `played ${cardName} against ${target}`
-        case 'play_birthday': return `played ${cardName} against everyone`
-        case 'play_rent': return `played ${cardName} for ${color} rent${target ? ` against ${target}` : ''}${event.double_rent_card_ids.length ? ' (doubled)' : ''}`
-        case 'play_sly_deal': return `played ${cardName} and took ${targetCardName} from ${target}`
-        case 'play_forced_deal': return `played ${cardName} and swapped ${targetCardName} for ${giveCardName}`
-        case 'play_deal_breaker': return `played ${cardName} and took the ${colorLabel(event.target_color ?? '')} Manti2a from ${target}`
-        case 'move_wildcard': return `moved ${cardName} to ${color}`
-        case 'discard': return `discarded ${cardName}`
-        case 'respond_no': return `played ${cardName} to stop an action`
-        case 'decline': return `declined the charge from ${target}`
-        case 'pay': return `paid ${event.card_ids.map(id => label(id)).join(', ')}${target ? ` to ${target}` : ''}`
-        case 'draw': return 'drew cards'
-        default: return 'made a move'
+        case 'play_money': return t('banked :card', { card: cardName })
+        case 'play_property': return t('played :card into :color', { card: cardName, color })
+        case 'bank_card': return t('banked :card as money (:amount M)', { card: cardName, amount: entryFor(event.card_id ?? '')?.value ?? 0 })
+        case 'play_pass_go': return t('played :card and drew 2 cards', { card: cardName })
+        case 'play_shisha': return t('added SHISHA to the :color Manti2a', { color })
+        case 'play_wil3a': return t('added WIL3A to the :color Manti2a', { color })
+        case 'play_debt_collector': return t('played :card against :target', { card: cardName, target })
+        case 'play_birthday': return t('played :card against everyone', { card: cardName })
+        case 'play_rent':
+            return `${t('played :card for :color rent', { card: cardName, color })}${target ? ` ${t('against :target', { target })}` : ''}${event.double_rent_card_ids.length ? ` ${t('(doubled)')}` : ''}`
+        case 'play_sly_deal': return t('played :card and took :targetCard from :target', { card: cardName, targetCard: targetCardName, target })
+        case 'play_forced_deal': return t('played :card and swapped :targetCard for :giveCard', { card: cardName, targetCard: targetCardName, giveCard: giveCardName })
+        case 'play_deal_breaker': return t('played :card and took the :color Manti2a from :target', { card: cardName, color: colorLabel(event.target_color ?? ''), target })
+        case 'move_wildcard': return t('moved :card to :color', { card: cardName, color })
+        case 'discard': return t('discarded :card', { card: cardName })
+        case 'respond_no': return t('played :card to stop an action', { card: cardName })
+        case 'decline': return t('declined the charge from :target', { target })
+        case 'pay': return target
+            ? t('paid :cards to :target', { cards: event.card_ids.map(id => label(id)).join('، '), target })
+            : t('paid :cards', { cards: event.card_ids.map(id => label(id)).join('، ') })
+        case 'draw': return t('drew cards')
+        default: return t('made a move')
     }
 }
 
@@ -444,13 +450,17 @@ const gameIsLive = computed(() => props.room.status === 'in_progress')
 const isMyTurn = computed(() => gameIsLive.value && table.value?.current_player_id === myId.value)
 const pending = computed(() => table.value?.pending ?? null)
 const paymentReason = computed(() => {
-    if (!pending.value) return 'Pay charge'
+    if (!pending.value) return t('Pay charge')
 
     const source = playerName(pending.value.source_id)
     const cardName = label(pending.value.card_id)
-    const color = pending.value.color ? ` for ${colorLabel(pending.value.color)} rent` : ''
-
-    return `Pay ${cardName}${color} from ${source}`
+    return pending.value.color
+        ? t('Pay :cardName for :color rent from :source', {
+              cardName,
+              color: colorLabel(pending.value.color),
+              source,
+          })
+        : t('Pay :cardName from :source', { cardName, source })
 })
 const canAct = computed(() => gameIsLive.value && pending.value === null && isMyTurn.value)
 const canPlayCard = computed(() => canAct.value && table.value?.has_drawn_this_turn === true)
@@ -917,7 +927,7 @@ watch(
 
 onUnmounted(() => {
     if (previousTurnTimer !== null) clearTimeout(previousTurnTimer)
-    window.Echo.leavePrivateChannel(`App.Models.User.${myId.value}`)
+    window.Echo.leave(`App.Models.User.${myId.value}`)
 })
 </script>
 
@@ -927,14 +937,14 @@ onUnmounted(() => {
              Show.vue's branch guard already keeps this component from
              rendering for — this is a defensive fallback, not an expected
              path, so it stays a plain message rather than a full layout. -->
-        <p v-if="!table || !you" class="md-hint">Loading…</p>
+            <p v-if="!table || !you" class="md-hint">{{ t('Loading…') }}</p>
 
         <template v-else>
             <p v-if="room.status === 'finished'" class="md-banner">
-                {{ room.winner === String(myId) ? 'You won!' : `${playerName(room.winner ?? '')} won.` }}
+                {{ room.winner === String(myId) ? t('You won!') : t(':name won.', { name: playerName(room.winner ?? '') }) }}
             </p>
             <p v-else-if="room.status === 'cancelled'" class="md-banner">
-                Room cancelled. Hands are shown below for reference.
+                {{ t('Room cancelled. Hands are shown below for reference.') }}
             </p>
 
             <p v-if="actionError && !isPayModalOpen" role="alert" class="md-error">{{ actionError }}</p>
@@ -943,16 +953,16 @@ onUnmounted(() => {
             <section class="md-summary">
                 <div class="md-summary-row">
                     <span class="md-turn-status" :class="{ 'md-turn-status--mine': isMyTurn }" aria-live="polite">
-                        <strong>{{ isMyTurn ? 'YOUR TURN' : `${playerName(table.current_player_id)}’S TURN` }}</strong>
-                        <span v-if="nextPlayerId !== null">Next: {{ playerName(nextPlayerId) }}</span>
+                        <strong>{{ isMyTurn ? t('YOUR TURN') : t(':name’s turn', { name: playerName(table.current_player_id) }) }}</strong>
+                        <span v-if="nextPlayerId !== null">{{ t('Next: :name', { name: playerName(nextPlayerId) }) }}</span>
                     </span>
-                    <span>Plays left this turn: <strong>{{ playsLeft }}</strong></span>
-                    <span>Draw pile: <strong>{{ table.draw_pile_count }}</strong></span>
-                    <span>Discard pile: <strong>{{ table.discard_pile.length }}</strong></span>
+                    <span>{{ t('Plays left this turn:') }} <strong>{{ playsLeft }}</strong></span>
+                    <span>{{ t('Draw pile:') }} <strong>{{ table.draw_pile_count }}</strong></span>
+                    <span>{{ t('Discard pile:') }} <strong>{{ table.discard_pile.length }}</strong></span>
                 </div>
 
-                <div v-if="recentActivity.length" class="md-activity" aria-live="polite" aria-label="Recent plays">
-                    <strong class="md-activity-title">Recent plays</strong>
+                <div v-if="recentActivity.length" class="md-activity" aria-live="polite" :aria-label="t('Recent plays')">
+                    <strong class="md-activity-title">{{ t('Recent plays') }}</strong>
                     <ol>
                         <li v-for="event in recentActivity" :key="event.id">
                             <strong>{{ playerName(event.player_id) }}</strong> {{ activityDescription(event) }}
@@ -965,8 +975,7 @@ onUnmounted(() => {
             <!-- Pending action banner -->
             <section v-if="pending" class="md-pending">
                 <p class="md-pending-title">
-                    {{ playerName(pending.source_id) }} played
-                    {{ label(pending.card_id) }}{{ pending.multiplier && pending.multiplier > 1 ? ` (×${pending.multiplier})` : '' }}
+                    {{ t(':name played :card', { name: playerName(pending.source_id), card: label(pending.card_id) }) }}{{ pending.multiplier && pending.multiplier > 1 ? ` (×${pending.multiplier})` : '' }}
                 </p>
 
                 <ul class="md-charges">
@@ -985,8 +994,8 @@ onUnmounted(() => {
                     <button
                         class="md-hand-expand"
                         type="button"
-                        :aria-label="`Show hand cards (${you.hand.length})`"
-                        title="Show hand cards"
+                        :aria-label="t('Show hand cards (:count)', { count: you.hand.length })"
+                        :title="t('Show hand cards (:count)', { count: you.hand.length })"
                         @click="isHandCollapsed = false"
                     >
                         <span aria-hidden="true">▤</span>
@@ -998,102 +1007,172 @@ onUnmounted(() => {
                         type="button"
                         :disabled="submitting"
                         @click="draw"
-                    >Draw</button>
+                    >{{ t('Draw') }}</button>
                 </template>
-                <div v-else class="md-hand-header">
-                    <h3 class="md-section-title">Your Hand ({{ you.hand.length }}/7)</h3>
-                    <div class="md-hand-actions">
+                <div v-else class="md-hand-panel">
+                    <div class="md-hand-header">
+                        <h3 class="md-section-title">{{ activeHandTab === 'hand' ? t('Your Hand (:count/7)', { count: you.hand.length }) : t('My properties') }}</h3>
+                        <div class="md-hand-actions">
+                            <button
+                                v-if="activeHandTab === 'hand' && you.hand.length > 1"
+                                class="md-btn md-btn--muted"
+                                :aria-pressed="isReorderingHand"
+                                @click="toggleHandReordering"
+                            >
+                                {{ t(isReorderingHand ? 'Done sorting' : 'Sort hand') }}
+                            </button>
+                            <button
+                                v-if="activeHandTab === 'hand' && isMyTurn && !table.has_drawn_this_turn && pending === null"
+                                class="md-btn md-btn--primary"
+                                type="button"
+                                :disabled="submitting"
+                                @click="draw"
+                            >{{ t('Draw') }}</button>
+                            <button
+                                v-if="activeHandTab === 'hand' && isMyTurn && table.has_drawn_this_turn && pending === null && !overHandLimit && playsLeft > 0"
+                                class="md-btn"
+                                :disabled="submitting"
+                                @click="endTurn"
+                            >
+                                {{ t('End Turn') }}
+                            </button>
+                            <button
+                                class="md-btn md-btn--muted md-hand-collapse"
+                                type="button"
+                                :aria-label="t('Collapse hand cards')"
+                                :title="t('Collapse hand cards')"
+                                @click="isHandCollapsed = true"
+                            >
+                                ↓
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="md-hand-tabs" role="tablist" :aria-label="t('Your cards')">
                         <button
-                            class="md-btn md-btn--muted md-hand-collapse"
+                            id="md-hand-tab"
+                            class="md-hand-tab"
+                            :class="{ 'md-hand-tab--active': activeHandTab === 'hand' }"
                             type="button"
-                            aria-label="Collapse hand cards"
-                            title="Collapse hand cards"
-                            @click="isHandCollapsed = true"
+                            role="tab"
+                            :aria-selected="activeHandTab === 'hand'"
+                            aria-controls="md-hand-panel"
+                            @click="activeHandTab = 'hand'"
                         >
-                            ↓
+                            {{ t('Hand cards') }} <span>{{ you.hand.length }}</span>
                         </button>
                         <button
-                            v-if="you.hand.length > 1"
-                            class="md-btn md-btn--muted"
-                            :aria-pressed="isReorderingHand"
-                            @click="toggleHandReordering"
-                        >
-                            {{ isReorderingHand ? 'Done sorting' : 'Sort hand' }}
-                        </button>
-                        <button
-                            v-if="isMyTurn && !table.has_drawn_this_turn && pending === null"
-                            class="md-btn md-btn--primary"
+                            id="md-properties-tab"
+                            class="md-hand-tab"
+                            :class="{ 'md-hand-tab--active': activeHandTab === 'properties' }"
                             type="button"
-                            :disabled="submitting"
-                            @click="draw"
-                        >Draw</button>
-                        <button
-                            v-if="isMyTurn && table.has_drawn_this_turn && pending === null && !overHandLimit && playsLeft > 0"
-                            class="md-btn"
-                            :disabled="submitting"
-                            @click="endTurn"
+                            role="tab"
+                            :aria-selected="activeHandTab === 'properties'"
+                            aria-controls="md-hand-panel"
+                            @click="activeHandTab = 'properties'; isReorderingHand = false"
                         >
-                            End Turn
+                            {{ t('My properties') }} <span>{{ Object.keys(mySeat?.properties ?? {}).length }}</span>
                         </button>
+                    </div>
+
+                    <div id="md-hand-panel" class="md-hand-content" role="tabpanel" :aria-labelledby="activeHandTab === 'hand' ? 'md-hand-tab' : 'md-properties-tab'">
+                        <template v-if="activeHandTab === 'hand'">
+                            <p v-if="isReorderingHand" class="md-hint md-hand-sort-hint">
+                                {{ t('Press and hold a card, then drag it to reorder. Your order is saved on this device.') }}
+                            </p>
+
+                            <p v-if="isMyTurn && overHandLimit" class="md-hint">
+                                {{ t('Discard down to 7 cards before ending your turn.') }}
+                            </p>
+
+                            <VueDraggable
+                                v-model="handOrder"
+                                class="md-card-row md-card-row--hand"
+                                :class="{ 'md-card-row--hand-sorting': isReorderingHand }"
+                                :disabled="!isReorderingHand"
+                                :animation="180"
+                                :delay="160"
+                                :delay-on-touch-only="true"
+                                :touch-start-threshold="5"
+                                :fallback-tolerance="5"
+                                :force-fallback="true"
+                                :fallback-on-body="true"
+                                :scroll="true"
+                                :scroll-sensitivity="60"
+                                :scroll-speed="10"
+                                direction="horizontal"
+                                ghost-class="md-hand-card--ghost"
+                                chosen-class="md-hand-card--chosen"
+                                drag-class="md-hand-card--dragging"
+                            >
+                                <div v-for="cardId in handOrder" :key="cardId" class="md-hand-card">
+                                    <button
+                                        class="md-card-btn"
+                                        :class="{ 'md-card-btn--selected': selectedCardId === cardId }"
+                                        :aria-label="`${t(isReorderingHand ? 'Reorder' : 'Select')} ${label(cardId)}`"
+                                        :aria-pressed="selectedCardId === cardId"
+                                        :disabled="!gameIsLive || isReorderingHand"
+                                        @click="selectCard(cardId)"
+                                    >
+                                        <MasrawyCard :entry="entryFor(cardId)!" :active-color="activeColorForCard(cardId)" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                                    </button>
+                                </div>
+                            </VueDraggable>
+
+                            <p v-if="!canAct && !selectedEntry" class="md-hint">
+                                {{ pending ? t('Waiting on a pending action.') : t('Wait for your turn to play a card.') }}
+                            </p>
+                        </template>
+
+                        <template v-else>
+                            <div v-if="mySeat && Object.keys(mySeat.properties).length > 0" class="md-seat-properties md-my-properties">
+                                <button
+                                    v-for="(group, color) in mySeat.properties"
+                                    :key="color"
+                                    type="button"
+                                    class="md-seat-set-preview"
+                                    :aria-label="t('View :name’s :color Manti2a in detail', { name: playerName(myId), color: colorLabel(String(color)) })"
+                                    @click="openPropertySet(myId, String(color))"
+                                >
+                                    <span class="md-seat-set-heading">
+                                        <strong>{{ colorLabel(String(color)) }}</strong>
+                                        <small>{{ t(':count cards', { count: group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }) }}<span v-if="group.house"> · SHISHA</span><span v-if="group.hotel"> · WIL3A</span></small>
+                                    </span>
+                                    <span
+                                        class="md-seat-set-stack"
+                                        aria-hidden="true"
+                                        :style="{ '--set-card-count': group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }"
+                                    >
+                                        <span
+                                            v-for="(cardId, index) in [...group.cards, ...(group.house ? [group.house] : []), ...(group.hotel ? [group.hotel] : [])]"
+                                            :key="cardId"
+                                            class="md-seat-set-card"
+                                            :style="{ zIndex: index + 1 }"
+                                        >
+                                            <MasrawyCard
+                                                :entry="entryFor(cardId)!"
+                                                :active-color="entryFor(cardId)?.type === 'wildcard' ? String(color) : undefined"
+                                                :rent-chart="rentChartFor(cardId)"
+                                                :set-size="setSizeFor(cardId)"
+                                                :wild-rent-charts="wildRentChartsFor(cardId)"
+                                                :wild-set-sizes="wildSetSizesFor(cardId)"
+                                            />
+                                        </span>
+                                    </span>
+                                    <span class="md-seat-set-hint">{{ t('Click to view cards') }}</span>
+                                </button>
+                            </div>
+                            <p v-else class="md-hint">{{ t('No properties on the table yet') }}</p>
+                        </template>
                     </div>
                 </div>
-
-                <p v-if="isReorderingHand" class="md-hint md-hand-sort-hint">
-                    Press and hold a card, then drag it to reorder. Your order is saved on this device.
-                </p>
-
-                <p v-if="isMyTurn && overHandLimit" class="md-hint">
-                    Discard down to 7 cards before ending your turn.
-                </p>
-
-                <VueDraggable
-                    v-model="handOrder"
-                    class="md-card-row md-card-row--hand"
-                    :class="{ 'md-card-row--hand-sorting': isReorderingHand }"
-                    :disabled="!isReorderingHand"
-                    :animation="180"
-                    :delay="160"
-                    :delay-on-touch-only="true"
-                    :touch-start-threshold="5"
-                    :fallback-tolerance="5"
-                    :force-fallback="true"
-                    :fallback-on-body="true"
-                    :scroll="true"
-                    :scroll-sensitivity="60"
-                    :scroll-speed="10"
-                    direction="horizontal"
-                    ghost-class="md-hand-card--ghost"
-                    chosen-class="md-hand-card--chosen"
-                    drag-class="md-hand-card--dragging"
-                >
-                    <div
-                        v-for="cardId in handOrder"
-                        :key="cardId"
-                        class="md-hand-card"
-                    >
-                        <button
-                            class="md-card-btn"
-                            :class="{ 'md-card-btn--selected': selectedCardId === cardId }"
-                            :aria-label="`${isReorderingHand ? 'Reorder' : 'Select'} ${label(cardId)}`"
-                            :aria-pressed="selectedCardId === cardId"
-                            :disabled="!gameIsLive || isReorderingHand"
-                            @click="selectCard(cardId)"
-                        >
-                            <MasrawyCard :entry="entryFor(cardId)!" :active-color="activeColorForCard(cardId)" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
-                        </button>
-                    </div>
-                </VueDraggable>
-
-                <p v-if="!canAct && !selectedEntry" class="md-hint">
-                    {{ pending ? 'Waiting on a pending action.' : 'Wait for your turn to play a card.' }}
-                </p>
 
             </section>
 
             <section v-if="selectedEntry" class="md-play-panel">
                     <header class="md-play-panel-header">
                         <h3>{{ label(selectedEntry.id) }}</h3>
-                        <button class="md-play-panel-close" type="button" aria-label="Close card options" @click="clearSelection">×</button>
+                        <button class="md-play-panel-close" type="button" :aria-label="t('Close card options')" @click="clearSelection">×</button>
                     </header>
                     <MasrawyCard
                         :entry="selectedEntry"
@@ -1107,9 +1186,9 @@ onUnmounted(() => {
 
                     <div class="md-play-controls">
                         <p v-if="selectedIsTwoColorWild || selectedIsPlainRent" class="md-wildcard-active-hint">
-                            Top color is active:
+                            {{ t('Top color is active:') }}
                             <strong>{{ colorLabel((selectedIsTwoColorWild ? activeWildcardColor : activeRentColor) ?? '') }}</strong>.
-                            Rotate 180° to switch.
+                            {{ t('Rotate 180° to switch.') }}
                         </p>
                         <button
                             v-if="selectedIsTwoColorWild || selectedIsPlainRent"
@@ -1117,85 +1196,85 @@ onUnmounted(() => {
                             type="button"
                             @click="rotateSelectedWildcard"
                         >
-                            ↻ Rotate 180°
+                            {{ t('Rotate 180°') }}
                         </button>
                         <p v-if="isMyTurn && pending === null && !table.has_drawn_this_turn" class="md-hint">
-                            Draw before playing a card.
+                            {{ t('Draw before playing a card.') }}
                         </p>
                         <p v-else-if="!canAct" class="md-hint">
-                            {{ pending ? 'You can adjust this card while waiting for the response.' : 'You can prepare this card now. Play options unlock on your turn.' }}
+                            {{ t(pending ? 'You can adjust this card while waiting for the response.' : 'You can prepare this card now. Play options unlock on your turn.') }}
                         </p>
 
                         <template v-if="canPlayCard">
                         <!-- Money -->
                         <button v-if="selectedEntry.type === 'money'" class="md-btn" :disabled="submitting || playsLeft < 1" @click="playMoney(selectedEntry.id)">
-                            Play as Money ({{ selectedEntry.value }}M)
+                            {{ t('Play as Money (:amount M)', { amount: selectedEntry.value }) }}
                         </button>
 
                         <!-- Plain property -->
                         <template v-if="selectedEntry.type === 'property'">
                             <button class="md-btn" :disabled="submitting || playsLeft < 1" @click="playProperty(selectedEntry.id)">
-                                Play as Property ({{ colorLabel(selectedEntry.color!) }})
+                                {{ t('Play as Property (:color)', { color: colorLabel(selectedEntry.color!) }) }}
                             </button>
                         </template>
 
                         <!-- Two-color wildcard -->
                         <template v-if="selectedIsTwoColorWild">
                             <button class="md-btn" :disabled="submitting || playsLeft < 1 || !activeWildcardColor" @click="playProperty(selectedEntry.id, activeWildcardColor)">
-                                Play as Property ({{ colorLabel(activeWildcardColor ?? '') }})
+                                {{ t('Play as Property (:color)', { color: colorLabel(activeWildcardColor ?? '') }) }}
                             </button>
                         </template>
 
                         <!-- Any-color (EL BOB) wildcard -->
                         <template v-if="selectedIsElBob">
-                            <select v-model="wildcardColor" aria-label="Choose the property color">
-                                <option value="" disabled>Choose a color</option>
+                            <select v-model="wildcardColor" :aria-label="t('Choose the property color')">
+                                <option value="" disabled>{{ t('Choose a color') }}</option>
                                 <option v-for="c in COLORS" :key="c" :value="c">{{ colorLabel(c) }}</option>
                             </select>
                             <button class="md-btn" :disabled="submitting || playsLeft < 1 || !wildcardColor" @click="playProperty(selectedEntry.id, wildcardColor)">
-                                Play as Property
+                                {{ t('Play as Property') }}
                             </button>
                         </template>
 
                         <!-- GARAB 7AZAK / Pass Go -->
                         <button v-if="selectedEntry.action === 'pass_go'" class="md-btn" :disabled="submitting || playsLeft < 1" @click="playPassGo(selectedEntry.id)">
-                            Play Pass Go (draw 2)
+                            {{ t('Play Pass Go (draw 2)') }}
                         </button>
 
                         <!-- SHISHA / WIL3A -->
                         <template v-if="selectedEntry.action === 'house'">
-                            <select v-model="targetColor" aria-label="Choose a complete Manti2a for SHISHA">
-                                <option value="" disabled>Choose a complete Manti2a</option>
+                            <select v-model="targetColor" :aria-label="t('Choose a complete Manti2a for SHISHA')">
+                                <option value="" disabled>{{ t('Choose a complete Manti2a') }}</option>
                                 <option v-for="c in myShishaColors" :key="c" :value="c">{{ colorLabel(c) }}</option>
                             </select>
                             <button class="md-btn" :disabled="submitting || playsLeft < 1 || !targetColor" @click="playShisha(selectedEntry.id, targetColor)">
-                                Play SHISHA on {{ targetColor ? colorLabel(targetColor) : 'a Manti2a' }}
+                                {{ t('Play SHISHA on :color', { color: targetColor ? colorLabel(targetColor) : t('a Manti2a') }) }}
                             </button>
                         </template>
                         <template v-if="selectedEntry.action === 'hotel'">
-                            <select v-model="targetColor" aria-label="Choose a Manti2a with SHISHA for WIL3A">
-                                <option value="" disabled>Choose a complete Manti2a with SHISHA</option>
+                            <select v-model="targetColor" :aria-label="t('Choose a Manti2a with SHISHA for WIL3A')">
+                                <option value="" disabled>{{ t('Choose a complete Manti2a with SHISHA') }}</option>
                                 <option v-for="c in myWil3aColors" :key="c" :value="c">{{ colorLabel(c) }}</option>
                             </select>
                             <button class="md-btn" :disabled="submitting || playsLeft < 1 || !targetColor" @click="playWil3a(selectedEntry.id, targetColor)">
-                                Play WIL3A on {{ targetColor ? colorLabel(targetColor) : 'a Manti2a' }}
+                                {{ t('Play WIL3A on :color', { color: targetColor ? colorLabel(targetColor) : t('a Manti2a') }) }}
                             </button>
                         </template>
 
                         <!-- HAT 5 FI KEES / Debt Collector -->
                         <template v-if="selectedEntry.action === 'debt_collector'">
-                            <select v-model="targetId" aria-label="Choose a player to charge">
-                                <option :value="null" disabled>Choose a player</option>
+                            <select v-model="targetId" :aria-label="t('Choose a player to charge')">
+                                <option :value="null" disabled>{{ t('Choose a player') }}</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
                             <button class="md-btn" :disabled="submitting || playsLeft < 1 || targetId === null" @click="playDebtCollector(selectedEntry.id)">
-                                Play (charge 5M)
+                                {{ t('Play (charge 5M)') }}
                             </button>
                         </template>
 
                         <!-- 3ID MILADY YA KELAB / Birthday -->
                         <button v-if="selectedEntry.action === 'birthday'" class="md-btn" :disabled="submitting || playsLeft < 1" @click="playBirthday(selectedEntry.id)">
-                            Play (2M from everyone)
+                            {{ t('Play (2M from everyone)') }}
                         </button>
 
                         <!-- ELBIS! rent (regular or wild) -->
@@ -1206,18 +1285,18 @@ onUnmounted(() => {
                             <p v-if="selectedIsWildRent && rentableMyColors.length === 0" class="md-action-warning" role="alert">
                                 {{ myOwnColors.length ? 'EL BOB wildcards alone cannot earn rent.' : 'You have no properties to charge rent on.' }}
                             </p>
-                            <select v-if="selectedIsWildRent && rentableMyColors.length > 0" v-model="rentColor" aria-label="Choose which property color to charge">
-                                <option value="" disabled>Which color to charge</option>
+                            <select v-if="selectedIsWildRent && rentableMyColors.length > 0" v-model="rentColor" :aria-label="t('Which color to charge')">
+                                <option value="" disabled>{{ t('Which color to charge') }}</option>
                                 <option v-for="c in rentableMyColors" :key="c" :value="c">
                                     {{ colorLabel(c) }}
                                 </option>
                             </select>
-                            <select v-if="selectedIsWildRent && rentableMyColors.length > 0" v-model="targetId" aria-label="Choose the player to charge">
-                                <option :value="null" disabled>Choose a player</option>
+                            <select v-if="selectedIsWildRent && rentableMyColors.length > 0" v-model="targetId" :aria-label="t('Choose the player to charge')">
+                                <option :value="null" disabled>{{ t('Choose a player') }}</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
                             <fieldset v-if="myDoubleRentCards.length > 0 && playsLeft > 1" class="md-fieldset">
-                                <legend>ELBIS X 2 (optional, doubles the rent, each costs a play)</legend>
+                                <legend>{{ t('ELBIS X 2 (optional, doubles the rent, each costs a play)') }}</legend>
                                 <label v-for="c in myDoubleRentCards" :key="c" class="md-pay-option">
                                     <input
                                         type="checkbox"
@@ -1233,20 +1312,20 @@ onUnmounted(() => {
                                 :disabled="submitting || playsLeft < (1 + doubleRentIds.length) || !(selectedIsPlainRent ? activeRentColor : rentColor) || Boolean(selectedRentIssue) || (selectedIsWildRent && (targetId === null || rentableMyColors.length === 0))"
                                 @click="playRent(selectedEntry.id, !!selectedIsWildRent, selectedIsPlainRent ? activeRentColor! : rentColor)"
                             >
-                                Play Rent<span v-if="selectedIsPlainRent && activeRentColor"> ({{ colorLabel(activeRentColor) }})</span>
+                                {{ t('Play Rent') }}<span v-if="selectedIsPlainRent && activeRentColor"> ({{ colorLabel(activeRentColor) }})</span>
                             </button>
                         </template>
 
                         <!-- KHOD AMA 2OLAK / Sly Deal -->
                         <template v-if="selectedEntry.action === 'sly_deal'">
-                            <select v-model="targetId" aria-label="Choose whose property to take" @change="resetTargetSelections">
-                                <option :value="null" disabled>Choose a player</option>
+                            <select v-model="targetId" :aria-label="t('Choose whose property to take')" @change="resetTargetSelections">
+                                <option :value="null" disabled>{{ t('Choose a player') }}</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
                             <p v-if="targetId !== null && targetStealablePropertyGroups.length === 0" class="md-hint">
-                                That player has no available properties to take; complete Manati2 can’t be taken.
+                                {{ t('That player has no available properties to take; complete Manati2 can’t be taken.') }}
                             </p>
-                            <div v-if="targetStealablePropertyGroups.length" class="md-property-choice-groups" aria-label="Choose a property to take">
+                            <div v-if="targetStealablePropertyGroups.length" class="md-property-choice-groups" :aria-label="t('Choose a property to take')">
                                 <section v-for="group in targetStealablePropertyGroups" :key="group.color" class="md-property-choice-group">
                                     <h4>{{ colorLabel(group.color) }}</h4>
                                     <div class="md-property-choice-cards">
@@ -1256,7 +1335,7 @@ onUnmounted(() => {
                                             type="button"
                                             class="md-property-choice-card"
                                             :class="{ 'md-property-choice-card--selected': targetCardId === cardId }"
-                                            :aria-label="`Take ${label(cardId)} from ${playerName(targetId!)}`"
+                                            :aria-label="t('Take :card from :player', { card: label(cardId), player: playerName(targetId!) })"
                                             :aria-pressed="targetCardId === cardId"
                                             @click="targetCardId = cardId; wildcardColor = ''"
                                         >
@@ -1265,27 +1344,27 @@ onUnmounted(() => {
                                     </div>
                                 </section>
                             </div>
-                            <select v-if="targetCardId && entryFor(targetCardId)?.type === 'wildcard'" v-model="wildcardColor" aria-label="Choose the taken wildcard's new color">
-                                <option value="">Keep current color</option>
+                            <select v-if="targetCardId && entryFor(targetCardId)?.type === 'wildcard'" v-model="wildcardColor" :aria-label="t('Choose the taken wildcard’s new color')">
+                                <option value="">{{ t('Keep current color') }}</option>
                                 <option v-for="c in (entryFor(targetCardId)?.any_color ? COLORS : entryFor(targetCardId)?.colors)" :key="c" :value="c">
                                     {{ colorLabel(c) }}
                                 </option>
                             </select>
                             <button class="md-btn" :disabled="submitting || playsLeft < 1 || targetId === null || !targetCardId" @click="playSlyDeal(selectedEntry.id)">
-                                Take Property
+                                {{ t('Take Property') }}
                             </button>
                         </template>
 
                         <!-- MA.. TEEGY WANA AGY! / Forced Deal -->
                         <template v-if="selectedEntry.action === 'forced_deal'">
-                            <select v-model="targetId" aria-label="Choose whose property to take and replace" @change="resetTargetSelections">
-                                <option :value="null" disabled>Choose a player</option>
+                            <select v-model="targetId" :aria-label="t('Choose whose property to take and replace')" @change="resetTargetSelections">
+                                <option :value="null" disabled>{{ t('Choose a player') }}</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
                             <p v-if="targetId !== null && targetStealablePropertyGroups.length === 0" class="md-hint">
-                                That player has no available properties to swap; complete Manati2 can’t be taken.
+                                {{ t('That player has no available properties to swap; complete Manati2 can’t be taken.') }}
                             </p>
-                            <div v-if="targetStealablePropertyGroups.length" class="md-property-choice-groups" aria-label="Choose their property to take">
+                            <div v-if="targetStealablePropertyGroups.length" class="md-property-choice-groups" :aria-label="t('Choose their property to take')">
                                 <section v-for="group in targetStealablePropertyGroups" :key="group.color" class="md-property-choice-group">
                                     <h4>{{ colorLabel(group.color) }} · {{ playerName(targetId!) }}</h4>
                                     <div class="md-property-choice-cards">
@@ -1295,7 +1374,7 @@ onUnmounted(() => {
                                             type="button"
                                             class="md-property-choice-card"
                                             :class="{ 'md-property-choice-card--selected': targetCardId === cardId }"
-                                            :aria-label="`Take ${label(cardId)} from ${playerName(targetId!)}`"
+                                            :aria-label="t('Take :card from :player', { card: label(cardId), player: playerName(targetId!) })"
                                             :aria-pressed="targetCardId === cardId"
                                             @click="targetCardId = cardId; wildcardColor = ''"
                                         >
@@ -1304,13 +1383,13 @@ onUnmounted(() => {
                                     </div>
                                 </section>
                             </div>
-                            <p v-if="targetCardId" class="md-hint">Choose one of your properties to give:</p>
+                            <p v-if="targetCardId" class="md-hint">{{ t('Choose one of your properties to give:') }}</p>
                             <p v-if="targetCardId && myStealablePropertyGroups.length === 0" class="md-hint">
-                                You have no properties available to swap; complete Manati2 can’t be given.
+                                {{ t('You have no properties available to swap; complete Manati2 can’t be given.') }}
                             </p>
-                            <div v-if="targetCardId && myStealablePropertyGroups.length" class="md-property-choice-groups" aria-label="Choose one of your properties to give">
+                            <div v-if="targetCardId && myStealablePropertyGroups.length" class="md-property-choice-groups" :aria-label="t('Choose one of your properties to give')">
                                 <section v-for="group in myStealablePropertyGroups" :key="group.color" class="md-property-choice-group">
-                                    <h4>{{ colorLabel(group.color) }} · You</h4>
+                                    <h4>{{ colorLabel(group.color) }}{{ t(' · You') }}</h4>
                                     <div class="md-property-choice-cards">
                                         <button
                                             v-for="cardId in group.cardIds"
@@ -1318,7 +1397,7 @@ onUnmounted(() => {
                                             type="button"
                                             class="md-property-choice-card"
                                             :class="{ 'md-property-choice-card--selected': giveCardId === cardId }"
-                                            :aria-label="`Give ${label(cardId)} from ${colorLabel(group.color)}`"
+                                            :aria-label="t('Give :card from :color', { card: label(cardId), color: colorLabel(group.color) })"
                                             :aria-pressed="giveCardId === cardId"
                                             @click="giveCardId = cardId"
                                         >
@@ -1327,8 +1406,8 @@ onUnmounted(() => {
                                     </div>
                                 </section>
                             </div>
-                            <select v-if="targetCardId && entryFor(targetCardId)?.type === 'wildcard'" v-model="wildcardColor" aria-label="Choose the taken wildcard's new color">
-                                <option value="">Keep current color</option>
+                            <select v-if="targetCardId && entryFor(targetCardId)?.type === 'wildcard'" v-model="wildcardColor" :aria-label="t('Choose the taken wildcard’s new color')">
+                                <option value="">{{ t('Keep current color') }}</option>
                                 <option v-for="c in (entryFor(targetCardId)?.any_color ? COLORS : entryFor(targetCardId)?.colors)" :key="c" :value="c">
                                     {{ colorLabel(c) }}
                                 </option>
@@ -1338,27 +1417,27 @@ onUnmounted(() => {
                                 :disabled="submitting || playsLeft < 1 || targetId === null || !targetCardId || !giveCardId"
                                 @click="playForcedDeal(selectedEntry.id)"
                             >
-                                Swap Properties
+                                {{ t('Swap Properties') }}
                             </button>
                         </template>
 
                         <!-- HAT wa lamo2akhza EL SHORT! / Deal Breaker -->
                         <template v-if="selectedEntry.action === 'deal_breaker'">
-                            <select v-model="targetId" aria-label="Choose whose complete Manti2a to take" @change="resetTargetSelections">
-                                <option :value="null" disabled>Choose a player</option>
+                            <select v-model="targetId" :aria-label="t('Choose whose complete Manti2a to take')" @change="resetTargetSelections">
+                                <option :value="null" disabled>{{ t('Choose a player') }}</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
                             <p v-if="targetId !== null && opponentCompleteSetColors(targetOpponent).length === 0" class="md-hint">
-                                That player has no complete Manati2 to take.
+                                {{ t('That player has no complete Manati2 to take.') }}
                             </p>
-                            <select v-model="dealBreakerColor" :disabled="targetId === null || opponentCompleteSetColors(targetOpponent).length === 0" aria-label="Choose their complete Manti2a">
-                                <option value="" disabled>Choose one of their complete Manati2</option>
+                            <select v-model="dealBreakerColor" :disabled="targetId === null || opponentCompleteSetColors(targetOpponent).length === 0" :aria-label="t('Choose their complete Manti2a')">
+                                <option value="" disabled>{{ t('Choose one of their complete Manati2') }}</option>
                                 <option v-for="c in opponentCompleteSetColors(targetOpponent)" :key="c" :value="c">
                                     {{ colorLabel(c) }}
                                 </option>
                             </select>
                             <button class="md-btn" :disabled="submitting || playsLeft < 1 || targetId === null || !dealBreakerColor" @click="playDealBreaker(selectedEntry.id)">
-                                Take Complete Manti2a
+                                {{ t('Take Complete Manti2a') }}
                             </button>
                         </template>
 
@@ -1369,20 +1448,20 @@ onUnmounted(() => {
                             :disabled="submitting || playsLeft < 1"
                             @click="requestBankCard(selectedEntry.id)"
                         >
-                            Bank instead · worth {{ selectedEntry.value }}M
+                            {{ t('Bank instead · worth :amount M', { amount: selectedEntry.value }) }}
                         </button>
 
                         <div v-if="confirmBankCardId === selectedEntry.id" class="md-bank-confirm" role="alertdialog" aria-labelledby="md-bank-confirm-title">
-                            <strong id="md-bank-confirm-title">Bank {{ label(selectedEntry.id) }} for {{ selectedEntry.value }}M?</strong>
-                            <p>This uses a play and permanently gives up this card’s effect.</p>
+                            <strong id="md-bank-confirm-title">{{ t('Bank :card for :amount M?', { card: label(selectedEntry.id), amount: selectedEntry.value }) }}</strong>
+                            <p>{{ t('This uses a play and permanently gives up this card’s effect.') }}</p>
                             <div>
-                                <button class="md-btn md-btn--primary" :disabled="submitting" @click="confirmBankCard">Confirm bank</button>
-                                <button class="md-btn md-btn--muted" :disabled="submitting" @click="cancelBankCard">Keep card</button>
+                                <button class="md-btn md-btn--primary" :disabled="submitting" @click="confirmBankCard">{{ t('Confirm bank') }}</button>
+                                <button class="md-btn md-btn--muted" :disabled="submitting" @click="cancelBankCard">{{ t('Keep card') }}</button>
                             </div>
                         </div>
 
                         <button class="md-btn md-btn--muted" :disabled="submitting || !canDiscard" @click="discard(selectedEntry.id)">
-                            Discard
+                            {{ t('Discard') }}
                         </button>
                         </template>
                     </div>
@@ -1390,27 +1469,27 @@ onUnmounted(() => {
 
             <!-- Move a wildcard (free, on your own turn, no pending action) -->
             <section v-if="canAct && myWildcards.length > 0" class="md-panel">
-                <h3 class="md-section-title">Move a Wildcard (free)</h3>
-                <select v-model="moveWildcardId" aria-label="Choose one of your wildcards to move" @change="moveWildcardColor = ''">
-                    <option value="" disabled>Choose one of your wildcards</option>
+                <h3 class="md-section-title">{{ t('Move a Wildcard (free)') }}</h3>
+                <select v-model="moveWildcardId" :aria-label="t('Choose one of your wildcards to move')" @change="moveWildcardColor = ''">
+                    <option value="" disabled>{{ t('Choose one of your wildcards') }}</option>
                     <option v-for="c in myWildcards" :key="c.id" :value="c.id">
                         {{ label(c.id) }} (currently {{ colorLabel(c.group) }})
                     </option>
                 </select>
-                <select v-model="moveWildcardColor" :disabled="!moveWildcardId" aria-label="Choose the wildcard's new color">
-                    <option value="" disabled>New color</option>
+                <select v-model="moveWildcardColor" :disabled="!moveWildcardId" :aria-label="t('Choose the wildcard’s new color')">
+                    <option value="" disabled>{{ t('New color') }}</option>
                     <option v-for="c in moveWildcardValidColors(moveWildcardId)" :key="c" :value="c">
                         {{ colorLabel(c) }}
                     </option>
                 </select>
                 <button class="md-btn" :disabled="submitting || !moveWildcardId || !moveWildcardColor" @click="moveWildcard">
-                    Move
+                    {{ t('Move') }}
                 </button>
             </section>
 
             <!-- Players -->
             <section class="md-players">
-                <h3 class="md-section-title">Players</h3>
+                <h3 class="md-section-title">{{ t('Players') }}</h3>
                 <p v-if="hostKickError" role="alert" class="md-error">{{ hostKickError }}</p>
                 <details
                     v-for="seat in table.players"
@@ -1420,11 +1499,11 @@ onUnmounted(() => {
                 >
                     <summary class="md-seat-summary">
                         <span class="md-seat-name">
-                            {{ playerName(seat.id) }}<span v-if="seat.id === myId"> (you)</span>
-                            <span v-if="seat.id === table.current_player_id" class="md-seat-turn-tag">— current turn</span>
+                            {{ playerName(seat.id) }}<span v-if="seat.id === myId"> {{ t('(you)') }}</span>
+                            <span v-if="seat.id === table.current_player_id" class="md-seat-turn-tag">{{ t('— current turn') }}</span>
                         </span>
                         <span class="md-seat-meta">
-                            Hand {{ seat.hand_count }} · Bank {{ seatBankTotal(seat) }}M · {{ Object.keys(seat.properties).length }} property groups
+                            {{ t('Hand :count · Bank :bank M · :groups property groups', { count: seat.hand_count, bank: seatBankTotal(seat), groups: Object.keys(seat.properties).length }) }}
                         </span>
                     </summary>
 
@@ -1436,17 +1515,17 @@ onUnmounted(() => {
                             :disabled="kickingPlayerId === seat.id"
                             @click="kickPlayer(seat.id)"
                         >
-                            {{ kickingPlayerId === seat.id ? 'Removing…' : 'Kick from game' }}
+                            {{ kickingPlayerId === seat.id ? t('Removing…') : t('Kick from game') }}
                         </button>
-                        <p v-if="seat.hand" class="md-seat-hand">Hand: {{ seat.hand_count }} card(s)</p>
+                        <p v-if="seat.hand" class="md-seat-hand">{{ t('Hand: :count card(s)', { count: seat.hand_count }) }}</p>
 
                         <div v-if="seat.hand" class="md-card-row">
                             <MasrawyCard v-for="cardId in seat.hand" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
                         </div>
 
                         <div v-if="seat.bank.length > 0" class="md-seat-bank-group">
-                            <p class="md-group-label">Bank · {{ seatBankTotal(seat) }}M</p>
-                            <div class="md-seat-bank-stack" :aria-label="`${seat.bank.length} money cards in bank; showing the newest ${Math.min(seat.bank.length, BANK_VISIBLE_CARD_LIMIT)}`">
+                            <p class="md-group-label">{{ t('Bank · :amount M', { amount: seatBankTotal(seat) }) }}</p>
+                            <div class="md-seat-bank-stack" :aria-label="t(':count money cards in bank; showing the newest :shown', { count: seat.bank.length, shown: Math.min(seat.bank.length, BANK_VISIBLE_CARD_LIMIT) })">
                                 <span v-if="hiddenBankCardCount(seat.bank) > 0" class="md-seat-bank-overflow" aria-hidden="true">
                                     +{{ hiddenBankCardCount(seat.bank) }}
                                 </span>
@@ -1455,20 +1534,20 @@ onUnmounted(() => {
                                 </span>
                             </div>
                         </div>
-                        <p v-else class="md-seat-bank">Bank: empty</p>
+                        <p v-else class="md-seat-bank">{{ t('Bank: empty') }}</p>
 
-                        <div v-if="Object.keys(seat.properties).length > 0" class="md-seat-properties">
+                        <div v-if="seat.id !== myId && Object.keys(seat.properties).length > 0" class="md-seat-properties">
                             <button
                                 v-for="(group, color) in seat.properties"
                                 :key="color"
                                 type="button"
                                 class="md-seat-set-preview"
-                                :aria-label="`View ${playerName(seat.id)}’s ${colorLabel(String(color))} Manti2a in detail`"
+                                :aria-label="t('View :name’s :color Manti2a in detail', { name: playerName(seat.id), color: colorLabel(String(color)) })"
                                 @click="openPropertySet(seat.id, String(color))"
                             >
                                 <span class="md-seat-set-heading">
                                     <strong>{{ colorLabel(String(color)) }}</strong>
-                                    <small>{{ group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }} cards<span v-if="group.house"> · SHISHA</span><span v-if="group.hotel"> · WIL3A</span></small>
+                                    <small>{{ t(':count cards', { count: group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }) }}<span v-if="group.house"> · SHISHA</span><span v-if="group.hotel"> · WIL3A</span></small>
                                 </span>
                                 <span
                                     class="md-seat-set-stack"
@@ -1491,7 +1570,7 @@ onUnmounted(() => {
                                         />
                                     </span>
                                 </span>
-                                <span class="md-seat-set-hint">Click to view cards</span>
+                                <span class="md-seat-set-hint">{{ t('Click to view cards') }}</span>
                             </button>
                         </div>
                     </div>
@@ -1500,8 +1579,8 @@ onUnmounted(() => {
 
             <!-- Discard pile -->
             <section v-if="table.discard_pile.length > 0" class="md-discard">
-                <h3 class="md-section-title">Discard Pile</h3>
-                <div class="md-discard-stack" :aria-label="`Top card of discard pile; ${table.discard_pile.length} cards in pile`">
+                <h3 class="md-section-title">{{ t('Discard Pile') }}</h3>
+                <div class="md-discard-stack" :aria-label="t('Top card of discard pile; :count cards in pile', { count: table.discard_pile.length })">
                     <div
                         v-for="(cardId, index) in discardStackCardIds"
                         :key="cardId"
@@ -1523,25 +1602,25 @@ onUnmounted(() => {
             class="md-turn-modal-reopen"
             @click="dismissedTurnPlayerId = null"
         >
-            Watch {{ playerName(turnViewSeat.id) }}’s turn
+            {{ t('Watch :name’s turn', { name: playerName(turnViewSeat.id) }) }}
         </button>
 
         <div v-if="showTurnModal && turnViewSeat" class="md-turn-modal-backdrop" @click.self="dismissTurnModal" @keydown.esc="dismissTurnModal">
             <section class="md-turn-modal" role="dialog" aria-modal="true" aria-labelledby="md-turn-modal-title">
                 <header class="md-turn-modal-header">
                     <div>
-                        <p class="md-turn-modal-eyebrow">LIVE TURN</p>
-                        <h2 id="md-turn-modal-title">{{ playerName(turnViewSeat.id) }} is playing</h2>
-                        <p class="md-turn-modal-hand-count">{{ turnViewSeat.hand_count }} cards in hand · hand stays private</p>
+                        <p class="md-turn-modal-eyebrow">{{ t('LIVE TURN') }}</p>
+                        <h2 id="md-turn-modal-title">{{ t(':name is playing', { name: playerName(turnViewSeat.id) }) }}</h2>
+                        <p class="md-turn-modal-hand-count">{{ t(':count cards in hand · hand stays private', { count: turnViewSeat.hand_count }) }}</p>
                     </div>
-                    <button class="md-turn-modal-close" type="button" aria-label="Close turn view" @click="dismissTurnModal">×</button>
+                    <button class="md-turn-modal-close" type="button" :aria-label="t('Close turn view')" @click="dismissTurnModal">×</button>
                 </header>
 
                 <div class="md-turn-modal-body">
                     <div class="md-turn-modal-tableau">
                         <section class="md-turn-modal-section">
                             <h3>
-                                Bank <span>{{ seatBankTotal(turnViewSeat) }}M</span>
+                                {{ t('Bank') }} <span>{{ seatBankTotal(turnViewSeat) }}M</span>
                             </h3>
                             <div v-if="turnViewSeat.bank.length" class="md-turn-card-stack md-turn-card-stack--bank">
                                 <div v-if="hiddenBankCardCount(turnViewSeat.bank) > 0" class="md-turn-card md-turn-card--overflow" aria-hidden="true">
@@ -1563,12 +1642,12 @@ onUnmounted(() => {
                                     />
                                 </div>
                             </div>
-                            <p v-else class="md-turn-modal-empty">No bank cards yet</p>
+                            <p v-else class="md-turn-modal-empty">{{ t('No bank cards yet') }}</p>
                         </section>
 
                         <section class="md-turn-modal-section">
                             <h3>
-                                Properties <span>{{ Object.keys(turnViewSeat.properties).length }} Manati2</span>
+                                {{ t('Properties') }} <span>{{ Object.keys(turnViewSeat.properties).length }} {{ t('Manati2') }}</span>
                             </h3>
                             <div v-if="Object.keys(turnViewSeat.properties).length" class="md-turn-property-groups">
                                 <div v-for="(group, color) in turnViewSeat.properties" :key="color" class="md-turn-property-group">
@@ -1603,27 +1682,27 @@ onUnmounted(() => {
                                     </div>
                                 </div>
                             </div>
-                            <p v-else class="md-turn-modal-empty">No properties on the table yet</p>
+                            <p v-else class="md-turn-modal-empty">{{ t('No properties on the table yet') }}</p>
                         </section>
                     </div>
 
-                    <aside class="md-turn-modal-log" aria-label="Current player's moves">
+                    <aside class="md-turn-modal-log" :aria-label="t('Current player’s moves')">
                         <h3>
-                            Moves this turn <span>{{ turnViewMoveCount }}</span>
+                            {{ t('Moves this turn') }} <span>{{ turnViewMoveCount }}</span>
                         </h3>
                         <ol v-if="turnViewActivity.length">
                             <li v-for="(event, index) in turnViewActivity" :key="event.id" class="md-turn-activity" :class="{ 'md-turn-activity--latest': index === turnViewActivity.length - 1 }">
                                 <span class="md-turn-activity-dot" aria-hidden="true"></span>
                                 <div>
                                     <strong>{{ activityDescription(event) }}</strong>
-                                    <small>Move {{ index + 1 }}</small>
+                                    <small>{{ t('Move :number', { number: index + 1 }) }}</small>
                                     <div v-if="activityCardLabels(event).length" class="md-turn-activity-cards">
                                         <span v-for="cardLabel in activityCardLabels(event)" :key="cardLabel">{{ cardLabel }}</span>
                                     </div>
                                 </div>
                             </li>
                         </ol>
-                        <p v-else class="md-turn-modal-empty">Their moves will appear here as they play.</p>
+                        <p v-else class="md-turn-modal-empty">{{ t('Their moves will appear here as they play.') }}</p>
                     </aside>
                 </div>
             </section>
@@ -1638,16 +1717,16 @@ onUnmounted(() => {
             <section class="md-set-modal" role="dialog" aria-modal="true" aria-labelledby="md-set-modal-title">
                 <header class="md-set-modal-header">
                     <div>
-                        <p class="md-set-modal-eyebrow">{{ playerName(selectedPropertySetSeat.id) }}’S MANTI2A</p>
+                        <p class="md-set-modal-eyebrow">{{ t(':name’s Manti2a', { name: playerName(selectedPropertySetSeat.id) }) }}</p>
                         <h2 id="md-set-modal-title">
                             {{ colorLabel(selectedPropertySet.color) }}
                             <span v-if="selectedPropertySetGroup.house"> · SHISHA</span>
                             <span v-if="selectedPropertySetGroup.hotel"> · WIL3A</span>
                         </h2>
                     </div>
-                    <button class="md-set-modal-close" type="button" aria-label="Close Manti2a details" @click="closePropertySet">×</button>
+                    <button class="md-set-modal-close" type="button" :aria-label="t('Close Manti2a details')" @click="closePropertySet">×</button>
                 </header>
-                <div class="md-set-modal-cards" :aria-label="`${selectedPropertySetCardIds.length} cards in ${colorLabel(selectedPropertySet.color)} Manti2a`">
+                <div class="md-set-modal-cards" :aria-label="t(':count cards in :color Manti2a', { count: selectedPropertySetCardIds.length, color: colorLabel(selectedPropertySet.color) })">
                     <div v-for="cardId in selectedPropertySetCardIds" :key="cardId" class="md-set-modal-card">
                         <MasrawyCard
                             :entry="entryFor(cardId)!"
@@ -1661,7 +1740,7 @@ onUnmounted(() => {
                     </div>
                 </div>
                 <footer class="md-set-modal-footer">
-                    <button class="md-btn md-btn--muted" type="button" @click="closePropertySet">Close</button>
+                    <button class="md-btn md-btn--muted" type="button" @click="closePropertySet">{{ t('Close') }}</button>
                 </footer>
             </section>
         </div>
@@ -1669,10 +1748,10 @@ onUnmounted(() => {
         <div v-if="showMyTurnAttention" class="md-turn-attention-backdrop" @click.self="dismissMyTurnAttention" @keydown.esc="dismissMyTurnAttention">
             <section class="md-turn-attention" role="dialog" aria-modal="true" aria-labelledby="md-turn-attention-title">
                 <span class="md-turn-attention-icon" aria-hidden="true">⏱</span>
-                <p class="md-turn-modal-eyebrow">YOUR TURN</p>
-                <h2 id="md-turn-attention-title">{{ playerName(myId) }}, it’s your turn!</h2>
-                <p>{{ table.has_drawn_this_turn ? 'Your turn is underway. Continue your plays.' : 'Draw your cards, then make your plays.' }}</p>
-                <button class="md-btn md-btn--primary" type="button" @click="dismissMyTurnAttention">Let’s play</button>
+                <p class="md-turn-modal-eyebrow">{{ t('YOUR TURN') }}</p>
+                <h2 id="md-turn-attention-title">{{ t(':name, it’s your turn!', { name: playerName(myId) }) }}</h2>
+                <p>{{ t(table.has_drawn_this_turn ? 'Your turn is underway. Continue your plays.' : 'Draw your cards, then make your plays.') }}</p>
+                <button class="md-btn md-btn--primary" type="button" @click="dismissMyTurnAttention">{{ t('Let’s play') }}</button>
             </section>
         </div>
 
@@ -1680,14 +1759,14 @@ onUnmounted(() => {
             <section class="md-payment-received" role="dialog" aria-modal="true" aria-labelledby="md-payment-received-title">
                 <header class="md-payment-received-header">
                     <div>
-                        <p class="md-turn-modal-eyebrow">RENT RECEIVED</p>
-                        <h2 id="md-payment-received-title">You got paid!</h2>
+                        <p class="md-turn-modal-eyebrow">{{ t('RENT RECEIVED') }}</p>
+                        <h2 id="md-payment-received-title">{{ t('You got paid!') }}</h2>
                     </div>
-                    <button class="md-turn-modal-close" type="button" aria-label="Close rent receipt" @click="dismissPaymentReceipt">×</button>
+                    <button class="md-turn-modal-close" type="button" :aria-label="t('Close rent receipt')" @click="dismissPaymentReceipt">×</button>
                 </header>
                 <ul class="md-payment-receipt-list">
                     <li v-for="event in paymentReceivedEvents" :key="event.id">
-                        <strong>{{ playerName(event.player_id) }} paid you:</strong>
+                        <strong>{{ t(':name paid you:', { name: playerName(event.player_id) }) }}</strong>
                         <div class="md-payment-receipt-cards">
                             <span v-for="cardId in event.card_ids" :key="cardId">
                                 {{ label(cardId) }} · {{ entryFor(cardId)?.value ?? 0 }}M
@@ -1696,7 +1775,7 @@ onUnmounted(() => {
                     </li>
                 </ul>
                 <footer class="md-pay-modal-footer">
-                    <button class="md-btn md-btn--primary" type="button" @click="dismissPaymentReceipt">Got it</button>
+                    <button class="md-btn md-btn--primary" type="button" @click="dismissPaymentReceipt">{{ t('Got it') }}</button>
                 </footer>
             </section>
         </div>
@@ -1715,12 +1794,12 @@ onUnmounted(() => {
                 ></span>
             </div>
             <section class="md-winner-modal" role="dialog" aria-modal="true" aria-labelledby="md-winner-title">
-                <button class="md-winner-close" type="button" aria-label="Close winner announcement" @click="winnerModalDismissed = true">×</button>
+                <button class="md-winner-close" type="button" :aria-label="t('Close winner announcement')" @click="winnerModalDismissed = true">×</button>
                 <span class="md-winner-trophy" aria-hidden="true">🏆</span>
-                <p class="md-turn-modal-eyebrow">GAME OVER</p>
-                <h2 id="md-winner-title">{{ room.winner === String(myId) ? 'You won!' : `${playerName(room.winner ?? '')} wins!` }}</h2>
-                <p>{{ room.winner === String(myId) ? 'Congratulations! You completed the winning Manati2.' : `${playerName(room.winner ?? '')} completed the winning Manati2.` }}</p>
-                <button class="md-btn md-btn--primary" type="button" @click="winnerModalDismissed = true">Celebrate!</button>
+                <p class="md-turn-modal-eyebrow">{{ t('GAME OVER') }}</p>
+                <h2 id="md-winner-title">{{ room.winner === String(myId) ? t('You won!') : t(':name wins!', { name: playerName(room.winner ?? '') }) }}</h2>
+                <p>{{ room.winner === String(myId) ? t('Congratulations! You completed the winning Manati2.') : t(':name completed the winning Manati2.', { name: playerName(room.winner ?? '') }) }}</p>
+                <button class="md-btn md-btn--primary" type="button" @click="winnerModalDismissed = true">{{ t('Celebrate!') }}</button>
             </section>
         </div>
 
@@ -1730,7 +1809,7 @@ onUnmounted(() => {
             type="button"
             @click="openPayModal"
         >
-            Pay {{ you.owes }}M
+            {{ t('Pay :amount M', { amount: you.owes }) }}
         </button>
 
         <div v-if="isPayModalOpen && you.owes !== null" class="md-pay-modal-backdrop" @click.self="collapsePayModal" @keydown.esc="collapsePayModal">
@@ -1738,17 +1817,17 @@ onUnmounted(() => {
                 <header class="md-pay-modal-header">
                     <div>
                         <h2 id="md-pay-modal-title">{{ paymentReason }}</h2>
-                        <p>You owe <strong>{{ you.owes }}M</strong>. Selected: <strong>{{ payTotal }}M</strong>.</p>
+                        <p>{{ t('You owe :amount M. Selected: :selected M.', { amount: you.owes, selected: payTotal }) }}</p>
                     </div>
-                    <button class="md-btn md-btn--muted md-pay-modal-close" aria-label="Collapse payment window" @click="collapsePayModal">−</button>
+                    <button class="md-btn md-btn--muted md-pay-modal-close" :aria-label="t('Collapse payment window')" @click="collapsePayModal">−</button>
                 </header>
 
                 <p v-if="actionError" class="md-pay-modal-error" role="alert">{{ actionError }}</p>
                 <p v-else-if="cannotCoverOwed" class="md-pay-modal-error" role="status">
-                    You only have {{ totalPayable }}M available. Select all your payable cards to pay what you can.
+                    {{ t('You only have :amount M available. Select all your payable cards to pay what you can.', { amount: totalPayable }) }}
                 </p>
                 <p v-else-if="payTotal < you.owes" class="md-pay-modal-error" role="status">
-                    Select at least {{ you.owes - payTotal }}M more to cover what you owe.
+                    {{ t('Select at least :amount M more to cover what you owe.', { amount: you.owes - payTotal }) }}
                 </p>
 
                 <div v-if="payableOptions.length" class="md-pay-card-grid">
@@ -1772,14 +1851,14 @@ onUnmounted(() => {
                                 :wild-set-sizes="wildSetSizesFor(asset.id)"
                             />
                         </span>
-                        <span class="md-pay-card-info">{{ asset.inBank ? 'Bank' : asset.group ? colorLabel(asset.group) : 'Property' }} · {{ asset.value }}M</span>
+                        <span class="md-pay-card-info">{{ asset.inBank ? t('Bank') : asset.group ? colorLabel(asset.group) : t('Property') }} · {{ asset.value }}M</span>
                         <span v-if="paySelection.includes(asset.id)" class="md-pay-card-check" aria-hidden="true">✓</span>
                     </button>
                 </div>
-                <p v-else class="md-pay-empty">You have no cards available to pay with.</p>
+                <p v-else class="md-pay-empty">{{ t('You have no cards available to pay with.') }}</p>
 
                 <footer class="md-pay-modal-footer">
-                    <button class="md-btn md-btn--muted" @click="collapsePayModal">Collapse</button>
+                    <button class="md-btn md-btn--muted" @click="collapsePayModal">{{ t('Collapse') }}</button>
                     <button
                         v-if="paymentReconsideration && myJustSayNoCards.length > 0"
                         class="md-btn md-btn--muted"
@@ -1787,10 +1866,10 @@ onUnmounted(() => {
                         :disabled="submitting"
                         @click="respondNo(paymentReconsideration.targetId)"
                     >
-                        3AND OMO
+                        {{ t('3AND OMO') }}
                     </button>
                     <button class="md-btn md-btn--primary" :disabled="submitting || !canSubmitPayment" @click="pay">
-                        {{ cannotCoverOwed ? 'Pay all available' : `Pay ${payTotal}M` }}
+                        {{ cannotCoverOwed ? t('Pay all available') : t('Pay :amount M', { amount: payTotal }) }}
                     </button>
                 </footer>
             </section>
@@ -1799,17 +1878,17 @@ onUnmounted(() => {
         <div v-if="responsePrompt && pending && !isResponsePromptCollapsed" class="md-response-choice-backdrop">
             <section class="md-response-choice" role="dialog" aria-modal="true" aria-labelledby="md-response-choice-title">
                 <div class="md-response-choice-header">
-                    <p class="md-turn-modal-eyebrow">YOUR RESPONSE</p>
-                    <button class="md-response-choice-collapse" type="button" @click="collapseResponsePrompt">Review table</button>
+                    <p class="md-turn-modal-eyebrow">{{ t('YOUR RESPONSE') }}</p>
+                    <button class="md-response-choice-collapse" type="button" @click="collapseResponsePrompt">{{ t('Review table') }}</button>
                 </div>
                 <div v-if="pending.kind === 'birthday'" class="md-response-choice-birthday">
                     <img src="/assets/images/3id%20Milady%20Ya%20Kelab.png" alt="3id Milady Ya Kelab">
-                    <strong>3id Milady Ya Kelab</strong>
+                        <strong>{{ t('3id Milady Ya Kelab') }}</strong>
                 </div>
-                <h2 id="md-response-choice-title">{{ playerName(pending.source_id) }} played {{ label(pending.card_id) }}</h2>
+                <h2 id="md-response-choice-title">{{ t(':name played :card', { name: playerName(pending.source_id), card: label(pending.card_id) }) }}</h2>
                 <div v-if="pending.target_card_id || pending.give_card_id" class="md-response-property-cards">
                     <div v-if="pending.target_card_id && entryFor(pending.target_card_id)" class="md-response-property-card">
-                        <strong>Card being taken</strong>
+                        <strong>{{ t('Card being taken') }}</strong>
                         <MasrawyCard
                             :entry="entryFor(pending.target_card_id)!"
                             :active-color="propertyColorForCard(responsePrompt.targetId, pending.target_card_id)"
@@ -1820,7 +1899,7 @@ onUnmounted(() => {
                         />
                     </div>
                     <div v-if="pending.give_card_id && entryFor(pending.give_card_id)" class="md-response-property-card">
-                        <strong>Card you would give</strong>
+                        <strong>{{ t('Card you would give') }}</strong>
                         <MasrawyCard
                             :entry="entryFor(pending.give_card_id)!"
                             :active-color="propertyColorForCard(pending.source_id, pending.give_card_id)"
@@ -1831,7 +1910,7 @@ onUnmounted(() => {
                         />
                     </div>
                 </div>
-                <p>{{ responseIsPayment ? 'Do you want to cancel the action or pay the charge?' : 'Do you want to cancel this action or let it happen?' }}</p>
+                <p>{{ t(responseIsPayment ? 'Do you want to cancel the action or pay the charge?' : 'Do you want to cancel this action or let it happen?') }}</p>
                 <div class="md-response-choice-actions">
                     <button
                         v-if="myJustSayNoCards.length > 0"
@@ -1840,7 +1919,7 @@ onUnmounted(() => {
                         :disabled="submitting"
                         @click="respondNo(responsePrompt.targetId)"
                     >
-                        3AND OMO
+                        {{ t('3AND OMO') }}
                     </button>
                     <button
                         class="md-btn md-btn--muted"
@@ -1848,7 +1927,7 @@ onUnmounted(() => {
                         :disabled="submitting"
                         @click="decline(responsePrompt.targetId)"
                     >
-                        {{ responseIsPayment ? 'EDFA3' : 'Let it happen' }}
+                        {{ t(responseIsPayment ? 'EDFA3' : 'Let it happen') }}
                     </button>
                 </div>
                 <p v-if="actionError" class="md-pay-modal-error" role="alert">{{ actionError }}</p>
@@ -1861,24 +1940,24 @@ onUnmounted(() => {
             type="button"
             @click="isResponsePromptCollapsed = false"
         >
-            Respond to {{ label(pending.card_id) }}
+            {{ t('Respond to :card', { card: label(pending.card_id) }) }}
         </button>
 
         <div v-if="showJustSayNoNotice" class="md-jsn-notice-backdrop" @click.self="showJustSayNoNotice = false" @keydown.esc="showJustSayNoNotice = false">
             <section class="md-jsn-notice" role="dialog" aria-modal="true" aria-labelledby="md-jsn-notice-title">
-                <button class="md-turn-modal-close md-jsn-notice-close" type="button" aria-label="Close notification" @click="showJustSayNoNotice = false">×</button>
+                <button class="md-turn-modal-close md-jsn-notice-close" type="button" :aria-label="t('Close notification')" @click="showJustSayNoNotice = false">×</button>
                 <img src="/assets/images/Da%203and%20Omo%20Ya%20Adham.png" alt="Da 3and Omo Ya Adham" class="md-jsn-notice-image">
-                <h2 id="md-jsn-notice-title">Da 3and Omo Ya Adham</h2>
-                <button class="md-btn md-btn--primary" type="button" @click="showJustSayNoNotice = false">Continue</button>
+                <h2 id="md-jsn-notice-title">{{ t('Da 3and Omo Ya Adham') }}</h2>
+                <button class="md-btn md-btn--primary" type="button" @click="showJustSayNoNotice = false">{{ t('Continue') }}</button>
             </section>
         </div>
 
         <div v-if="showBirthdayNotice && !responsePrompt && myJustSayNoCards.length === 0" class="md-jsn-notice-backdrop" @click.self="showBirthdayNotice = false" @keydown.esc="showBirthdayNotice = false">
             <section class="md-jsn-notice" role="dialog" aria-modal="true" aria-labelledby="md-birthday-notice-title">
-                <button class="md-turn-modal-close md-jsn-notice-close" type="button" aria-label="Close notification" @click="showBirthdayNotice = false">×</button>
+                <button class="md-turn-modal-close md-jsn-notice-close" type="button" :aria-label="t('Close notification')" @click="showBirthdayNotice = false">×</button>
                 <img src="/assets/images/3id%20Milady%20Ya%20Kelab.png" alt="3id Milady Ya Kelab" class="md-jsn-notice-image">
-                <h2 id="md-birthday-notice-title">3id Milady Ya Kelab</h2>
-                <button class="md-btn md-btn--primary" type="button" :disabled="submitting" @click="acceptBirthdayCharge">Edfa3</button>
+                <h2 id="md-birthday-notice-title">{{ t('3id Milady Ya Kelab') }}</h2>
+                <button class="md-btn md-btn--primary" type="button" :disabled="submitting" @click="acceptBirthdayCharge">{{ t('Edfa3') }}</button>
             </section>
         </div>
     </div>
@@ -1946,6 +2025,8 @@ onUnmounted(() => {
 }
 
 .md-hand {
+    display: flex;
+    flex-direction: column;
     position: fixed;
     z-index: 900;
     left: 50%;
@@ -3370,6 +3451,61 @@ onUnmounted(() => {
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 0.5rem;
+}
+
+.md-hand-panel {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    gap: 0.5rem;
+}
+
+.md-hand-tabs {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 0.35rem;
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.md-hand-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 0.45rem 0.7rem;
+    background: transparent;
+    color: var(--rc-text-muted);
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.md-hand-tab span {
+    display: inline-grid;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--rc-surface-alt);
+    font-size: 0.7rem;
+}
+
+.md-hand-tab--active {
+    border-bottom-color: var(--rc-primary);
+    color: var(--rc-text-on-surface);
+}
+
+.md-hand-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.md-my-properties {
+    padding: 0.25rem 0;
 }
 
 .md-hand-header .md-section-title {

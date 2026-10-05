@@ -2,12 +2,14 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { router } from '@inertiajs/vue3'
 import type { Room, AuthUser, MafiaNightState, NightActionState, You } from '@/types/room'
+import { useI18n } from '@/i18n'
 
 const props = defineProps<{
     room: Room
     auth: { user: AuthUser }
     isHost: boolean
 }>()
+const { t } = useI18n()
 
 // This component only ever renders for Mafia rooms (Show.vue's
 // room.phase check), so room.you is always Mafia's own You shape here.
@@ -47,7 +49,7 @@ const advanceButtonLabel = computed(() => {
     const current = props.room.night_step ?? 'mafia'
     const next = nextStepAfter(current, props.room.configuration)
     if (!next) return 'Advance to Day'
-    return `Let ${next.charAt(0).toUpperCase()}${next.slice(1)} Act`
+    return t(`Let ${next.charAt(0).toUpperCase()}${next.slice(1)} Act`)
 })
 
 // Used by the banner and by the doctor/detective "sit tight" status
@@ -56,7 +58,7 @@ const advanceButtonLabel = computed(() => {
 // raw night_step value.
 const currentTurnLabel = computed(() => {
     const step = props.room.night_step ?? 'mafia'
-    return step.charAt(0).toUpperCase() + step.slice(1)
+    return t(step.charAt(0).toUpperCase() + step.slice(1))
 })
 
 
@@ -247,10 +249,10 @@ const mafiaTargetTally = computed(() => {
 
         <!-- Host oversight — always shown to the host, in addition to any player panel below -->
         <section v-if="isHost" class="np-panel">
-            <h2 class="np-panel-title">Host View — Full Night Report</h2>
+            <h2 class="np-panel-title">{{ t('Host View — Full Night Report') }}</h2>
 
             <div class="np-host-block">
-                <h3 class="np-host-role-title">Mafia</h3>
+                <h3 class="np-host-role-title">{{ t('Mafia') }}</h3>
 
                 <div v-if="mafiaTargetTally.length > 0" class="np-tally">
                     <span v-for="t in mafiaTargetTally" :key="t.id" class="np-tally-badge">
@@ -271,13 +273,13 @@ const mafiaTargetTally = computed(() => {
                     </span>
                 </div>
 
-                <p v-if="playersWithRole('mafia').length === 0" class="np-muted">No Mafia in this game.</p>
+                <p v-if="playersWithRole('mafia').length === 0" class="np-muted">{{ t('No Mafia in this game.') }}</p>
             </div>
 
             <div class="np-divider" />
 
             <div class="np-host-block">
-                <h3 class="np-host-role-title">Doctor</h3>
+                <h3 class="np-host-role-title">{{ t('Doctor') }}</h3>
 
                 <div v-for="p in playersWithRole('doctor')" :key="p.id" class="np-row">
                     <span class="np-row-name">{{ p.name }}</span>
@@ -292,20 +294,20 @@ const mafiaTargetTally = computed(() => {
                     </span>
                 </div>
 
-                <p v-if="playersWithRole('doctor').length === 0" class="np-muted">No Doctor in this game.</p>
+                <p v-if="playersWithRole('doctor').length === 0" class="np-muted">{{ t('No Doctor in this game.') }}</p>
             </div>
 
             <div class="np-divider" />
 
             <div class="np-host-block">
-                <h3 class="np-host-role-title">Detective</h3>
+                <h3 class="np-host-role-title">{{ t('Detective') }}</h3>
 
                 <div v-for="p in playersWithRole('detective')" :key="p.id" class="np-row">
                     <span class="np-row-name">{{ p.name }}</span>
                     <span class="np-row-status">
                         <template v-if="hostNightActions?.detective.results[p.id]">
                             Checked {{ playerName(hostNightActions.detective.results[p.id].target_id) }} —
-                            {{ hostNightActions.detective.results[p.id].is_mafia ? 'Mafia' : 'Not Mafia' }}
+                            {{ hostNightActions.detective.results[p.id].is_mafia ? t('Mafia') : t('Not Mafia') }}
                         </template>
                         <template v-else-if="hostNightActions?.detective.selections[p.id]">
                             Selected: {{ playerName(hostNightActions.detective.selections[p.id]) }} (pending)
@@ -314,7 +316,7 @@ const mafiaTargetTally = computed(() => {
                     </span>
                 </div>
 
-                <p v-if="playersWithRole('detective').length === 0" class="np-muted">No Detective in this game.</p>
+                <p v-if="playersWithRole('detective').length === 0" class="np-muted">{{ t('No Detective in this game.') }}</p>
             </div>
 
             <div class="np-divider" />
@@ -392,7 +394,7 @@ const mafiaTargetTally = computed(() => {
             </section>
 
             <section v-else-if="myRole === 'doctor' && amAlive" class="np-panel">
-                <h2 class="np-panel-title">Doctor — Choose Someone to Save</h2>
+                <h2 class="np-panel-title">{{ t('Doctor — Choose Someone to Save') }}</h2>
 
                 <p class="np-status-line">
                     <template v-if="mySoloConfirmed">
@@ -435,12 +437,12 @@ const mafiaTargetTally = computed(() => {
             </section>
 
             <section v-else-if="myRole === 'detective' && amAlive" class="np-panel">
-                <h2 class="np-panel-title">Detective — Investigate a Player</h2>
+                <h2 class="np-panel-title">{{ t('Detective — Investigate a Player') }}</h2>
 
                 <p class="np-status-line">
                     <template v-if="me?.detective_result">
                         {{ playerName(me!.detective_result!.target_id) }} is
-                        <strong>{{ me!.detective_result!.is_mafia ? 'Mafia' : 'not Mafia' }}</strong>.
+                        <strong>{{ me!.detective_result!.is_mafia ? t('Mafia') : t('not Mafia') }}</strong>.
                     </template>
                     <template v-else-if="!isMyTurn">
                         It's currently {{ currentTurnLabel }}'s turn. Sit tight.

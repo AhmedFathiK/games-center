@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3'
 import { ref } from 'vue'
+import { useI18n } from '@/i18n'
 
 const showModal = ref(false)
 const passwordInput = ref<HTMLInputElement | null>(null)
+const { t } = useI18n()
 
 const form = useForm({
     password: '',
@@ -31,37 +33,36 @@ function deleteUser() {
 
 <template>
     <div class="da-block">
-        <p class="da-warning-title">Warning</p>
-        <p class="da-warning-text">Please proceed with caution, this cannot be undone.</p>
+        <p class="da-warning-title">{{ t('Warning') }}</p>
+        <p class="da-warning-text">{{ t('Please proceed with caution, this cannot be undone.') }}</p>
 
-        <button type="button" class="da-trigger-btn" @click="openModal">Delete account</button>
+        <button type="button" class="da-trigger-btn" @click="openModal">{{ t('Delete account') }}</button>
 
         <div v-if="showModal" class="da-overlay" @click.self="closeModal">
             <div class="da-modal">
                 <form @submit.prevent="deleteUser" class="da-form">
-                    <h3 class="da-modal-title">Are you sure you want to delete your account?</h3>
+                    <h3 class="da-modal-title">{{ t('Are you sure you want to delete your account?') }}</h3>
                     <p class="da-modal-text">
-                        Once your account is deleted, all of its resources and data will also be
-                        permanently deleted. Please enter your password to confirm.
+                        {{ t('Once your account is deleted, all of its resources and data will also be permanently deleted. Please enter your password to confirm.') }}
                     </p>
 
                     <div class="da-field">
-                        <label for="delete-password" class="sr-only">Password</label>
+                        <label for="delete-password" class="sr-only">{{ t('Password') }}</label>
                         <input
                             id="delete-password"
                             ref="passwordInput"
                             v-model="form.password"
                             type="password"
-                            placeholder="Password"
+                            :placeholder="t('Password')"
                             class="da-input"
                         />
-                        <p v-if="form.errors.password" role="alert" class="da-error">{{ form.errors.password }}</p>
+                        <p v-if="form.errors.password" role="alert" class="da-error">{{ t(form.errors.password) }}</p>
                     </div>
 
                     <div class="da-actions">
-                        <button type="button" class="da-cancel-btn" @click="closeModal">Cancel</button>
+                        <button type="button" class="da-cancel-btn" @click="closeModal">{{ t('Cancel') }}</button>
                         <button type="submit" class="da-confirm-btn" :disabled="form.processing">
-                            Delete account
+                            {{ t('Delete account') }}
                         </button>
                     </div>
                 </form>

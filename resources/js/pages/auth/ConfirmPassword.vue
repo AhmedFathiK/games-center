@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3'
 import AuthLayout from '@/layouts/AuthLayout.vue'
+import { useI18n } from '@/i18n'
 
 const form = useForm({
     password: '',
 })
+const { t } = useI18n()
 
 const submit = () => {
     form.post(route('password.confirm'), {
@@ -24,7 +26,7 @@ const submit = () => {
 
         <form @submit.prevent="submit" class="au-form">
             <div class="au-field">
-                <label for="password" class="au-label">Password</label>
+                <label for="password" class="au-label">{{ t('Password') }}</label>
                 <input
                     id="password"
                     v-model="form.password"

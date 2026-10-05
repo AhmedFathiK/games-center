@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3'
+import { useI18n } from '@/i18n'
+
+const { t } = useI18n()
 
 const tabs = [
     { label: 'Profile', routeName: 'profile.edit' },
     { label: 'Password', routeName: 'password.edit' },
+    { label: 'Language', routeName: 'language.edit' },
 ] as const
 </script>
 
@@ -16,7 +20,7 @@ const tabs = [
             class="sn-tab"
             :class="{ 'sn-tab--active': route().current(tab.routeName) }"
         >
-            {{ tab.label }}
+            {{ t(tab.label) }}
         </Link>
     </nav>
 </template>

@@ -9,6 +9,9 @@ import GameOver from './Mafia/GameOver.vue'
 import Cancelled from './Mafia/Cancelled.vue'
 import MasrawyDeal from './MasrawyDeal/Table.vue'
 import type { Room, AuthUser } from '@/types/room'
+import { useI18n } from '@/i18n'
+
+const { t, gameName, locale } = useI18n()
 
 const props = defineProps<{
     room: Room
@@ -47,7 +50,15 @@ function indexLabel(i: number) {
 // space swap has to happen here — capitalization of each resulting word
 // is then handled by the existing `.rc-badge` CSS, same pattern already
 // used for game_state keys further down this file.
-const formattedStatus = computed(() => props.room.status.replace(/_/g, ' '))
+const formattedStatus = computed(() => t(props.room.status.replace(/_/g, ' ')))
+
+function configurationLabel(key: string) {
+    const label = key
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, character => character.toUpperCase())
+
+    return t(label)
+}
 
 // --- State / actions (unchanged from platform behavior) --------------
 const joiningRoom = ref(false)
@@ -459,12 +470,12 @@ onUnmounted(() => {
     <div class="rc-page" :class="`rc-theme-${theme.slug}`" :style="themeVars">
         <div class="rc-container">
             <Link :href="route('games.index')" class="rc-back-link rc-mono">
-                &larr; Back to Games
+                {{ locale() === 'ar' ? '→' : '←' }} {{ t('Back to Games') }}
             </Link>
 
             <!-- Room Header -->
             <div class="rc-header">
-                <h1 class="rc-title">{{ room.game.name }}</h1>
+                <h1 class="rc-title">{{ gameName(room.game.slug, room.game.name) }}</h1>
 
                 <span class="rc-badge" :class="`rc-badge--${room.status}`">
                     {{ formattedStatus }}
@@ -475,7 +486,7 @@ onUnmounted(() => {
                  up. Kept visually assertive on purpose: getting other
                  players in is the whole point of a waiting-room lobby. -->
             <section v-if="room.status === 'waiting'" class="rc-invite">
-                <p class="rc-invite-eyebrow">Invite Players</p>
+                <p class="rc-invite-eyebrow">{{ t('Invite Players') }}</p>
 
                 <div class="rc-invite-code-row">
                     <span class="rc-mono rc-invite-code">{{ room.code }}</span>
@@ -483,14 +494,14 @@ onUnmounted(() => {
 
                 <div class="rc-invite-actions">
                     <button type="button" class="rc-invite-btn" @click="copyRoomCode">
-                        {{ codeCopied ? 'Copied!' : 'Copy Code' }}
+                        {{ codeCopied ? t('Copied!') : t('Copy Code') }}
                     </button>
                     <button
                         type="button"
                         class="rc-invite-btn rc-invite-btn--secondary"
                         @click="copyRoomLink"
                     >
-                        {{ linkCopied ? 'Copied!' : 'Copy Link' }}
+                        {{ linkCopied ? t('Copied!') : t('Copy Link') }}
                     </button>
                 </div>
             </section>
@@ -505,18 +516,18 @@ onUnmounted(() => {
                     type="button"
                     class="rc-cancel-btn"
                     :disabled="cancelling"
-                    @click="openCancelModal('Cancel this room?', 'This cannot be undone. Type confirm below to proceed.')"
+                    @click="openCancelModal(t('Cancel this room?'), t('This cannot be undone. Type confirm below to proceed.'))"
                 >
                     Cancel Room
                 </button>
 
                 <div v-if="canStaleCancel" class="rc-stale-notice">
-                    <p>The host hasn't been active in a while.</p>
+                    <p>{{ t("The host hasn't been active in a while.") }}</p>
                     <button
                         type="button"
                         class="rc-cancel-btn"
                         :disabled="cancelling"
-                        @click="openCancelModal('Cancel this room?', 'The host appears to be gone. This cannot be undone. Type confirm below to proceed.')"
+                        @click="openCancelModal(t('Cancel this room?'), t('The host appears to be gone. This cannot be undone. Type confirm below to proceed.'))"
                     >
                         Cancel — host appears gone
                     </button>
@@ -529,11 +540,11 @@ onUnmounted(() => {
             <template v-if="room.status === 'waiting'">
                 <!-- Host -->
                 <section class="rc-panel">
-                    <h2 class="rc-panel-title">{{ theme.labels.hostSectionTitle }}</h2>
+                    <h2 class="rc-panel-title">{{ t(theme.labels.hostSectionTitle) }}</h2>
 
                     <div class="rc-row">
                         <span class="rc-row-name">{{ room.host.name }}</span>
-                        <span class="rc-row-tag">{{ isHost ? 'Host · You' : 'Host' }}</span>
+                        <span class="rc-row-tag">{{ isHost ? t('Host · You') : t('Host') }}</span>
                     </div>
 
                     <div v-if="isHost" class="rc-divider" />
@@ -545,11 +556,11 @@ onUnmounted(() => {
                             :disabled="startingGame || !canStart"
                             @click="startGame"
                         >
-                            <template v-if="startingGame">Starting…</template>
+                            <template v-if="startingGame">{{ t('Starting…') }}</template>
                             <template v-else-if="playersNeeded > 0">
-                                Need {{ playersNeeded }} more {{ playersNeeded === 1 ? 'player' : 'players' }}
+                                {{ t('Need') }} {{ playersNeeded }} {{ t(playersNeeded === 1 ? 'player' : 'players') }}
                             </template>
-                            <template v-else>Start Game</template>
+                            <template v-else>{{ t('Start Game') }}</template>
                         </button>
 
                         <p v-if="startError" role="alert" class="rc-error">{{ startError }}</p>
@@ -559,7 +570,7 @@ onUnmounted(() => {
                 <!-- Players -->
                 <section class="rc-panel">
                     <div class="rc-panel-header">
-                        <h2 class="rc-panel-title">{{ theme.labels.rosterSectionTitle }}</h2>
+                        <h2 class="rc-panel-title">{{ t(theme.labels.rosterSectionTitle) }}</h2>
                         <span class="rc-mono rc-count">
                             {{ room.players.length }} / {{ room.max_players }}
                         </span>
@@ -573,13 +584,13 @@ onUnmounted(() => {
                             <span class="rc-row-name">{{ player.name }}</span>
 
                             <button
-                                v-if="isHost"
+                                v-if="isHost && player.id !== room.host.id"
                                 type="button"
                                 class="rc-kick-btn"
                                 :disabled="kickingPlayerId === player.id"
                                 @click="kickPlayer(player.id)"
                             >
-                                {{ kickingPlayerId === player.id ? 'Removing…' : 'Kick' }}
+                                {{ kickingPlayerId === player.id ? t('Removing…') : t('Kick') }}
                             </button>
                         </div>
 
@@ -600,10 +611,10 @@ onUnmounted(() => {
                             :disabled="joiningRoom"
                             @click="joinRoom"
                         >
-                            {{ joiningRoom ? 'Joining…' : 'Join Room' }}
+                            {{ joiningRoom ? t('Joining…') : t('Join Room') }}
                         </button>
 
-                        <p v-else class="rc-muted">You are in this room.</p>
+                        <p v-else class="rc-muted">{{ t('You are in this room.') }}</p>
 
                         <button
                             v-if="isPlayer && !isHost"
@@ -612,7 +623,7 @@ onUnmounted(() => {
                             :disabled="leavingRoom"
                             @click="leaveRoom"
                         >
-                            {{ leavingRoom ? 'Leaving…' : 'Leave Room' }}
+                            {{ leavingRoom ? t('Leaving…') : t('Leave Room') }}
                         </button>
 
                         <p v-if="joinError" role="alert" class="rc-error">{{ joinError }}</p>
@@ -622,14 +633,14 @@ onUnmounted(() => {
 
                 <!-- Game Settings -->
                 <section class="rc-panel">
-                    <h2 class="rc-panel-title">{{ theme.labels.settingsSectionTitle }}</h2>
+                    <h2 class="rc-panel-title">{{ t(theme.labels.settingsSectionTitle) }}</h2>
 
                     <div class="rc-ledger">
                         <div v-for="(value, key) in room.configuration" :key="key" class="rc-ledger-row">
-                            <span class="rc-ledger-key">{{ String(key).replace(/_/g, ' ') }}</span>
+                            <span class="rc-ledger-key">{{ configurationLabel(String(key)) }}</span>
                             <span class="rc-ledger-leader" aria-hidden="true" />
                             <span class="rc-mono rc-ledger-value">
-                                {{ typeof value === 'boolean' ? (value ? 'Enabled' : 'Disabled') : value }}
+                                {{ typeof value === 'boolean' ? (value ? t('Enabled') : t('Disabled')) : value }}
                             </span>
                         </div>
                     </div>
@@ -642,9 +653,9 @@ onUnmounted(() => {
                         type="button"
                         class="rc-cancel-link"
                         :disabled="cancelling"
-                        @click="openCancelModal('Cancel this room?', 'This cannot be undone. Type confirm below to proceed.')"
+                        @click="openCancelModal(t('Cancel this room?'), t('This cannot be undone. Type confirm below to proceed.'))"
                     >
-                        Cancel this room
+                        {{ t('Cancel this room') }}
                     </button>
                     <p v-if="cancelError && !showCancelModal" role="alert" class="rc-error">{{ cancelError }}</p>
                 </div>
@@ -700,16 +711,16 @@ onUnmounted(() => {
         <!-- Kicked modal -->
         <div v-if="showKickedModal" class="rc-kicked-overlay">
             <div class="rc-kicked-modal">
-                <p class="rc-kicked-title">Removed from Room</p>
-                <p class="rc-kicked-text">The host has removed you from this room.</p>
+                <p class="rc-kicked-title">{{ t('Removed from Room') }}</p>
+                <p class="rc-kicked-text">{{ t('The host has removed you from this room.') }}</p>
             </div>
         </div>
 
         <!-- Cancelled-while-waiting modal (room no longer exists) -->
         <div v-if="showCancelledModal" class="rc-kicked-overlay">
             <div class="rc-kicked-modal">
-                <p class="rc-kicked-title">Room Cancelled</p>
-                <p class="rc-kicked-text">The host has cancelled this room.</p>
+                <p class="rc-kicked-title">{{ t('Room Cancelled') }}</p>
+                <p class="rc-kicked-text">{{ t('The host has cancelled this room.') }}</p>
             </div>
         </div>
 
@@ -720,7 +731,7 @@ onUnmounted(() => {
                 <p class="rc-kicked-text">{{ cancelModalBody }}</p>
 
                 <label class="rc-cancel-modal-label" for="cancel-confirm-input">
-                    Type <span class="rc-mono">confirm</span> to continue
+                    {{ t('Type') }} <span class="rc-mono">confirm</span> {{ t('to continue') }}
                 </label>
                 <input
                     id="cancel-confirm-input"
@@ -744,7 +755,7 @@ onUnmounted(() => {
                         :disabled="!cancelConfirmValid || cancelling"
                         @click="submitCancel"
                     >
-                        {{ cancelling ? 'Cancelling…' : 'Cancel Room' }}
+                        {{ cancelling ? t('Cancelling…') : t('Cancel Room') }}
                     </button>
                 </div>
             </div>

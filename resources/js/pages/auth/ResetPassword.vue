@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3'
 import AuthLayout from '@/layouts/AuthLayout.vue'
+import { useI18n } from '@/i18n'
 
 interface Props {
     token: string
@@ -15,6 +16,7 @@ const form = useForm({
     password: '',
     password_confirmation: '',
 })
+const { t } = useI18n()
 
 const submit = () => {
     form.post(route('password.store'), {
@@ -31,13 +33,13 @@ const submit = () => {
 
         <form @submit.prevent="submit" class="au-form">
             <div class="au-field">
-                <label for="email" class="au-label">Email</label>
+                <label for="email" class="au-label">{{ t('Email') }}</label>
                 <input id="email" v-model="form.email" type="email" autocomplete="email" readonly class="au-input au-input--readonly" />
                 <p v-if="form.errors.email" role="alert" class="au-error">{{ form.errors.email }}</p>
             </div>
 
             <div class="au-field">
-                <label for="password" class="au-label">Password</label>
+                <label for="password" class="au-label">{{ t('Password') }}</label>
                 <input
                     id="password"
                     v-model="form.password"
@@ -51,7 +53,7 @@ const submit = () => {
             </div>
 
             <div class="au-field">
-                <label for="password_confirmation" class="au-label">Confirm password</label>
+                <label for="password_confirmation" class="au-label">{{ t('Confirm password') }}</label>
                 <input
                     id="password_confirmation"
                     v-model="form.password_confirmation"

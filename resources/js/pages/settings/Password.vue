@@ -3,6 +3,7 @@ import { Head, useForm } from '@inertiajs/vue3'
 import { ref } from 'vue'
 import AppLayout from '@/layouts/AppLayout.vue'
 import SettingsNav from '@/components/SettingsNav.vue'
+import { useI18n } from '@/i18n'
 
 defineOptions({ layout: AppLayout })
 
@@ -15,6 +16,7 @@ const form = useForm({
     password: '',
     password_confirmation: '',
 })
+const { t } = useI18n()
 
 const updatePassword = () => {
     form.put(route('password.update'), {
@@ -41,23 +43,23 @@ const updatePassword = () => {
 
 <template>
     <div class="st-page">
-        <Head title="Password settings" />
+        <Head :title="t('Password settings')" />
 
         <div class="st-container">
             <header class="st-header">
-                <h1 class="st-title">Settings</h1>
-                <p class="st-subtitle">Manage your profile and account settings.</p>
+                <h1 class="st-title">{{ t('Settings') }}</h1>
+                <p class="st-subtitle">{{ t('Manage your profile and account settings.') }}</p>
             </header>
 
             <SettingsNav />
 
             <section class="st-section">
-                <h2 class="st-section-title">Update password</h2>
-                <p class="st-section-desc">Ensure your account is using a long, random password to stay secure</p>
+                <h2 class="st-section-title">{{ t('Update password') }}</h2>
+                <p class="st-section-desc">{{ t('Ensure your account is using a long, random password to stay secure') }}</p>
 
                 <form @submit.prevent="updatePassword" class="st-form">
                     <div class="st-field">
-                        <label for="current_password" class="st-label">Current password</label>
+                        <label for="current_password" class="st-label">{{ t('Current password') }}</label>
                         <input
                             id="current_password"
                             ref="currentPasswordInput"
@@ -65,13 +67,13 @@ const updatePassword = () => {
                             type="password"
                             autocomplete="current-password"
                             class="st-input"
-                            placeholder="Current password"
+                            :placeholder="t('Current password')"
                         />
-                        <p v-if="form.errors.current_password" role="alert" class="st-error">{{ form.errors.current_password }}</p>
+                        <p v-if="form.errors.current_password" role="alert" class="st-error">{{ t(form.errors.current_password) }}</p>
                     </div>
 
                     <div class="st-field">
-                        <label for="password" class="st-label">New password</label>
+                        <label for="password" class="st-label">{{ t('New password') }}</label>
                         <input
                             id="password"
                             ref="passwordInput"
@@ -79,27 +81,27 @@ const updatePassword = () => {
                             type="password"
                             autocomplete="new-password"
                             class="st-input"
-                            placeholder="New password"
+                            :placeholder="t('New password')"
                         />
-                        <p v-if="form.errors.password" role="alert" class="st-error">{{ form.errors.password }}</p>
+                        <p v-if="form.errors.password" role="alert" class="st-error">{{ t(form.errors.password) }}</p>
                     </div>
 
                     <div class="st-field">
-                        <label for="password_confirmation" class="st-label">Confirm password</label>
+                        <label for="password_confirmation" class="st-label">{{ t('Confirm password') }}</label>
                         <input
                             id="password_confirmation"
                             v-model="form.password_confirmation"
                             type="password"
                             autocomplete="new-password"
                             class="st-input"
-                            placeholder="Confirm password"
+                            :placeholder="t('Confirm password')"
                         />
-                        <p v-if="form.errors.password_confirmation" role="alert" class="st-error">{{ form.errors.password_confirmation }}</p>
+                        <p v-if="form.errors.password_confirmation" role="alert" class="st-error">{{ t(form.errors.password_confirmation) }}</p>
                     </div>
 
                     <div class="st-save-row">
-                        <button type="submit" class="st-save-btn" :disabled="form.processing">Save password</button>
-                        <span v-if="showSaved" class="st-saved-text">Saved.</span>
+                        <button type="submit" class="st-save-btn" :disabled="form.processing">{{ t('Save password') }}</button>
+                        <span v-if="showSaved" class="st-saved-text">{{ t('Saved.') }}</span>
                     </div>
                 </form>
             </section>

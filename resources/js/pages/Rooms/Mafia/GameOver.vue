@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Room, AuthUser } from '@/types/room'
+import { useI18n } from '@/i18n'
 
 const props = defineProps<{
     room: Room
     auth: { user: AuthUser }
     isHost: boolean
 }>()
+const { t } = useI18n()
 
 const winnerLabel = computed(() => {
-    if (props.room.winner === 'town') return 'Town Wins'
-    if (props.room.winner === 'mafia') return 'Mafia Wins'
-    return 'Game Over'
+    if (props.room.winner === 'town') return t('Town Wins')
+    if (props.room.winner === 'mafia') return t('Mafia Wins')
+    return t('Game Over')
 })
 
 const roleOrder = ['mafia', 'doctor', 'detective', 'civilian'] as const
@@ -43,7 +45,7 @@ const revealGroups = computed(() => {
     return roleOrder
         .map(role => ({
             role,
-            label: roleLabels[role],
+            label: t(roleLabels[role]),
             players: players.filter(p => p.role === role),
         }))
         .filter(group => group.players.length > 0)

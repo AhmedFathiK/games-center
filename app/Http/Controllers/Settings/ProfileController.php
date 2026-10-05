@@ -24,6 +24,12 @@ class ProfileController extends Controller
         ]);
     }
 
+    /** Show the user's language preference settings. */
+    public function editLanguage(): Response
+    {
+        return Inertia::render('settings/Language');
+    }
+
     /**
      * Update the user's profile information.
      */

@@ -1,22 +1,26 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
+import { useI18n } from '@/i18n'
 
-defineProps<{
+const props = defineProps<{
     title?: string
     description?: string
 }>()
+const { t } = useI18n()
 </script>
 
 <template>
     <div class="au-page">
         <div class="au-card">
+            <div class="au-language"><LanguageSwitcher /></div>
             <Link :href="route('home')" class="au-brand">
                 Games Center
             </Link>
 
             <div class="au-heading">
-                <h1 v-if="title" class="au-title">{{ title }}</h1>
-                <p v-if="description" class="au-description">{{ description }}</p>
+                <h1 v-if="props.title" class="au-title">{{ t(props.title) }}</h1>
+                <p v-if="props.description" class="au-description">{{ t(props.description) }}</p>
             </div>
 
             <slot />
@@ -66,6 +70,12 @@ defineProps<{
     text-decoration: none;
     letter-spacing: 0.01em;
     margin-bottom: 1.75rem;
+}
+
+.au-language {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.75rem;
 }
 
 .au-heading {

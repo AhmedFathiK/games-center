@@ -1,14 +1,23 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import { useInitials } from '@/composables/useInitials'
+import { useI18n } from '@/i18n'
+import type { SharedData } from '@/types'
 
-const page = usePage()
+const page = usePage<SharedData>()
 const { getInitials } = useInitials()
+const { t } = useI18n()
 const isUserMenuOpen = ref(false)
 const userMenuRef = ref<HTMLElement | null>(null)
 
 const userInitials = getInitials(page.props.auth.user.name)
+
+watch(() => page.props.locale, value => {
+    const locale = value === 'ar' ? 'ar' : 'en'
+    document.documentElement.lang = locale
+    document.documentElement.dir = locale === 'ar' ? 'rtl' : 'ltr'
+}, { immediate: true })
 
 // The dropdown previously only closed via the trigger button or a link
 // inside it — clicking anywhere else on the page, or pressing Escape,
@@ -51,14 +60,14 @@ onUnmounted(() => {
                         class="app-nav-link"
                         :class="{ 'app-nav-link--active': route().current('games.*') || route().current('home') }"
                     >
-                        Games
+                        {{ t('Games') }}
                     </Link>
                     <Link
                         :href="route('rooms.mine')"
                         class="app-nav-link"
                         :class="{ 'app-nav-link--active': route().current('rooms.mine') }"
                     >
-                        My Rooms
+                        {{ t('My Rooms') }}
                     </Link>
                 </nav>
 
@@ -77,7 +86,7 @@ onUnmounted(() => {
 
                     <div v-if="isUserMenuOpen" class="app-dropdown">
                         <Link :href="route('profile.edit')" class="app-dropdown-item" @click="isUserMenuOpen = false">
-                            Settings
+                            {{ t('Settings') }}
                         </Link>
                         <Link
                             :href="route('logout')"
@@ -86,7 +95,7 @@ onUnmounted(() => {
                             class="app-dropdown-item app-dropdown-item--danger"
                             @click="isUserMenuOpen = false"
                         >
-                            Log out
+                            {{ t('Log out') }}
                         </Link>
                     </div>
                 </div>

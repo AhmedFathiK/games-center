@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AuthLayout from '@/layouts/AuthLayout.vue'
+import { useI18n } from '@/i18n'
 
 defineProps<{
     canResetPassword?: boolean
     status?: string
 }>()
+const { t } = useI18n()
 
 const form = useForm({
     email: '',
@@ -23,14 +25,14 @@ function submit() {
 </script>
 
 <template>
-    <AuthLayout title="Log in" description="Welcome back! Please enter your details.">
-        <Head title="Log in" />
+    <AuthLayout :title="t('Log in')" :description="t('Welcome back! Please enter your details.')">
+        <Head :title="t('Log in')" />
 
         <p v-if="status" class="au-status">{{ status }}</p>
 
         <form @submit.prevent="submit" class="au-form">
             <div class="au-field">
-                <label for="email" class="au-label">Email address</label>
+            <label for="email" class="au-label">{{ t('Email address') }}</label>
                 <input
                     id="email"
                     v-model="form.email"
@@ -45,7 +47,7 @@ function submit() {
             </div>
 
             <div class="au-field">
-                <label for="password" class="au-label">Password</label>
+            <label for="password" class="au-label">{{ t('Password') }}</label>
                 <input
                     id="password"
                     v-model="form.password"
@@ -60,22 +62,22 @@ function submit() {
             <div class="au-row">
                 <label class="au-checkbox-label">
                     <input id="remember" v-model="form.remember" type="checkbox" class="au-checkbox" />
-                    <span>Remember me</span>
+                    <span>{{ t('Remember me') }}</span>
                 </label>
 
                 <Link v-if="canResetPassword" :href="route('password.request')" class="au-link">
-                    Forgot password?
+                    {{ t('Forgot password?') }}
                 </Link>
             </div>
 
             <button type="submit" class="au-submit-btn" :disabled="form.processing">
                 <span v-if="form.processing" class="au-spinner" />
-                {{ form.processing ? 'Logging in…' : 'Log in' }}
+                {{ form.processing ? t('Logging in…') : t('Log in') }}
             </button>
 
             <p class="au-footer-text">
-                Don't have an account?
-                <Link :href="route('register')" class="au-link">Sign up</Link>
+                {{ t("Don't have an account?") }}
+                <Link :href="route('register')" class="au-link">{{ t('Sign up') }}</Link>
             </p>
         </form>
     </AuthLayout>

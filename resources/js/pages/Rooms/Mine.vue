@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
+import { useI18n } from '@/i18n'
 
 defineOptions({ layout: AppLayout })
+const { t, gameName } = useI18n()
 
 interface RoomSummary {
     id: number
@@ -57,7 +59,7 @@ function formatDate(iso: string | null) {
 // its own, so the space swap happens here — same fix as Rooms/Show.vue's
 // `formattedStatus`, applied to both badges rendered on this page.
 function formatStatus(status: string) {
-    return status.replace(/_/g, ' ')
+    return t(status.replace(/_/g, ' '))
 }
 </script>
 
@@ -66,17 +68,17 @@ function formatStatus(status: string) {
         <div class="mr-container">
             <header class="mr-header">
                 <p class="mr-eyebrow">Games Center</p>
-                <h1 class="mr-title">My Rooms</h1>
-                <p class="mr-subtitle">Your current room and your room history.</p>
+                <h1 class="mr-title">{{ t('My Rooms') }}</h1>
+                <p class="mr-subtitle">{{ t('Your current room and your room history.') }}</p>
             </header>
 
             <!-- Active room -->
             <section class="mr-panel">
-                <h2 class="mr-panel-title">Active Room</h2>
+                <h2 class="mr-panel-title">{{ t('Active Room') }}</h2>
 
                 <div v-if="props.active_room" class="mr-active-card" @click="goToRoom(props.active_room.code)">
                     <div class="mr-active-info">
-                        <p class="mr-active-game">{{ props.active_room.game.name }}</p>
+                        <p class="mr-active-game">{{ gameName(props.active_room.game.slug, props.active_room.game.name) }}</p>
                         <p class="mr-mono mr-active-meta">
                             {{ props.active_room.code }} ·
                             {{ props.active_room.is_host ? 'Hosting' : 'Playing' }}
@@ -90,7 +92,7 @@ function formatStatus(status: string) {
 
                 <p v-else class="mr-empty">
                     You don't have an active room right now.
-                    <a :href="route('games.index')" class="mr-inline-link">Browse games</a>
+                    <a :href="route('games.index')" class="mr-inline-link">{{ t('Browse games') }}</a>
                     to create or join one.
                 </p>
             </section>
@@ -98,7 +100,7 @@ function formatStatus(status: string) {
             <!-- History -->
             <section class="mr-panel">
                 <div class="mr-panel-header">
-                    <h2 class="mr-panel-title">History</h2>
+                    <h2 class="mr-panel-title">{{ t('History') }}</h2>
                     <span class="mr-mono mr-count">{{ props.history.total }} total</span>
                 </div>
 
@@ -110,7 +112,7 @@ function formatStatus(status: string) {
                         @click="goToRoom(room.code)"
                     >
                         <div class="mr-history-info">
-                            <p class="mr-history-game">{{ room.game.name }}</p>
+                            <p class="mr-history-game">{{ gameName(room.game.slug, room.game.name) }}</p>
                             <p class="mr-mono mr-history-meta">
                                 {{ room.code }} · {{ room.is_host ? 'Hosted' : 'Played' }} ·
                                 {{ formatDate(room.updated_at) }}
@@ -123,7 +125,7 @@ function formatStatus(status: string) {
                     </div>
                 </div>
 
-                <p v-else class="mr-empty">No finished rooms yet.</p>
+                <p v-else class="mr-empty">{{ t('No finished rooms yet.') }}</p>
 
                 <div v-if="props.history.last_page > 1" class="mr-pagination">
                     <button

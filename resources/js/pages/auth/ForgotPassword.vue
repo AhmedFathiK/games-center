@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AuthLayout from '@/layouts/AuthLayout.vue'
+import { useI18n } from '@/i18n'
 
 defineProps<{
     status?: string
@@ -9,6 +10,7 @@ defineProps<{
 const form = useForm({
     email: '',
 })
+const { t } = useI18n()
 
 const submit = () => {
     form.post(route('password.email'))
@@ -23,7 +25,7 @@ const submit = () => {
 
         <form @submit.prevent="submit" class="au-form">
             <div class="au-field">
-                <label for="email" class="au-label">Email address</label>
+                <label for="email" class="au-label">{{ t('Email address') }}</label>
                 <input
                     id="email"
                     v-model="form.email"
@@ -43,7 +45,7 @@ const submit = () => {
 
             <p class="au-footer-text">
                 Or, return to
-                <Link :href="route('login')" class="au-link">log in</Link>
+                <Link :href="route('login')" class="au-link">{{ t('log in') }}</Link>
             </p>
         </form>
     </AuthLayout>

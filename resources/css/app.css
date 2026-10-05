@@ -91,3 +91,16 @@ html {
         @apply bg-background text-foreground;
     }
 }
+
+html[lang='ar'] body {
+    font-family: 'Noto Sans Arabic', Tahoma, Arial, sans-serif;
+}
+
+html[lang='ar'] body :not(code):not(pre) {
+    font-family: 'Noto Sans Arabic', Tahoma, Arial, sans-serif !important;
+}
+
+html[lang='ar'] body .gc-joinbar-input,
+html[lang='ar'] body .rc-invite-code {
+    font-family: 'JetBrains Mono', monospace !important;
+}
