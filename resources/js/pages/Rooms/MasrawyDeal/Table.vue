@@ -18,6 +18,8 @@ import type { FormDataConvertible } from '@inertiajs/core'
 import { VueDraggable } from 'vue-draggable-plus'
 import type { Room, AuthUser, MasrawyYou, MasrawyTableState, MasrawySeat, CardCatalogEntry, MasrawyActivity } from '@/types/room'
 import MasrawyCard from './Card.vue'
+import TableBoard from './TableBoard.vue'
+import LandscapeGate from './LandscapeGate.vue'
 import { useI18n } from '@/i18n'
 
 const props = defineProps<{
@@ -827,13 +829,48 @@ function kickPlayer(playerId: number) {
     hostKickError.value = null
 
     router.post(`/rooms/${props.room.id}/kick/${playerId}`, {}, {
+        onSuccess: () => {
+            closePlayerSheet()
+        },
         onError: errors => {
             hostKickError.value = Object.values(errors)[0] ?? 'Unable to remove that player.'
         },
         onFinish: () => {
             kickingPlayerId.value = null
+            confirmKickId.value = null
         },
     })
+}
+
+// --- Player sheet (tap a seat on the table) -----------------------------
+
+const selectedPlayerId = ref<number | null>(null)
+const confirmKickId = ref<number | null>(null)
+const sheetSeat = computed(() => (selectedPlayerId.value === null ? undefined : seatFor(selectedPlayerId.value)))
+const sheetCanKick = computed(
+    () =>
+        gameIsLive.value &&
+        props.isHost &&
+        sheetSeat.value !== undefined &&
+        sheetSeat.value.id !== myId.value &&
+        (table.value?.players.length ?? 0) > props.room.game.minimum_players,
+)
+// Finished/cancelled rooms send every hand, so seats can be tapped to see them.
+const revealHands = computed(() => !gameIsLive.value && (table.value?.players.some(seat => seat.hand !== null) ?? false))
+
+function openPlayerSheet(playerId: number) {
+    hostKickError.value = null
+    confirmKickId.value = null
+    selectedPlayerId.value = playerId
+}
+
+function closePlayerSheet() {
+    selectedPlayerId.value = null
+    confirmKickId.value = null
+}
+
+function openSetFromSheet(playerId: number, color: string) {
+    openPropertySet(playerId, color)
 }
 
 // --- Paying -------------------------------------------------------------
@@ -925,14 +962,26 @@ watch(
     { immediate: true },
 )
 
+// Phones held sideways have very little height: Show.vue's page header is
+// hidden (see the :global rules below) and the hand starts collapsed so the
+// table gets the screen.
+const SHORT_LANDSCAPE_QUERY = '(orientation: landscape) and (max-height: 560px) and (pointer: coarse)'
+
+onMounted(() => {
+    document.documentElement.classList.add('md-play-mode')
+    if (window.matchMedia(SHORT_LANDSCAPE_QUERY).matches) isHandCollapsed.value = true
+})
+
 onUnmounted(() => {
+    document.documentElement.classList.remove('md-play-mode')
     if (previousTurnTimer !== null) clearTimeout(previousTurnTimer)
     window.Echo.leave(`App.Models.User.${myId.value}`)
 })
 </script>
 
 <template>
-    <div class="md-root" :class="{ 'md-root--hand-collapsed': isHandCollapsed }">
+    <div class="md-root" :class="{ 'md-root--hand-collapsed': isHandCollapsed, 'md-root--ended': !gameIsLive }">
+        <LandscapeGate />
         <!-- table/you are only ever null before the game has started, which
              Show.vue's branch guard already keeps this component from
              rendering for — this is a defensive fallback, not an expected
@@ -940,17 +989,20 @@ onUnmounted(() => {
             <p v-if="!table || !you" class="md-hint">{{ t('Loading…') }}</p>
 
         <template v-else>
-            <p v-if="room.status === 'finished'" class="md-banner">
-                {{ room.winner === String(myId) ? t('You won!') : t(':name won.', { name: playerName(room.winner ?? '') }) }}
-            </p>
-            <p v-else-if="room.status === 'cancelled'" class="md-banner">
-                {{ t('Room cancelled. Hands are shown below for reference.') }}
-            </p>
+            <div v-if="room.status === 'finished'" class="md-banner md-banner--finished" role="status">
+                <span class="md-banner-crown" aria-hidden="true">♛</span>
+                <strong>{{ room.winner === String(myId) ? t('You won!') : t(':name won.', { name: playerName(room.winner ?? '') }) }}</strong>
+                <small v-if="revealHands">{{ t('Tap a player to see their final hand.') }}</small>
+            </div>
+            <div v-else-if="room.status === 'cancelled'" class="md-banner md-banner--cancelled" role="status">
+                <strong>{{ t('Room cancelled.') }}</strong>
+                <small v-if="revealHands">{{ t('Tap a player to see their hand.') }}</small>
+            </div>
 
             <p v-if="actionError && !isPayModalOpen" role="alert" class="md-error">{{ actionError }}</p>
 
             <!-- Turn / draw pile summary -->
-            <section class="md-summary">
+            <section v-if="gameIsLive" class="md-summary">
                 <div class="md-summary-row">
                     <span class="md-turn-status" :class="{ 'md-turn-status--mine': isMyTurn }" aria-live="polite">
                         <strong>{{ isMyTurn ? t('YOUR TURN') : t(':name’s turn', { name: playerName(table.current_player_id) }) }}</strong>
@@ -988,8 +1040,36 @@ onUnmounted(() => {
 
             </section>
 
+            <!-- Round 3D table: one sector per seat, me at the bottom -->
+            <TableBoard
+                :table="table"
+                :my-id="myId"
+                :is-my-turn="isMyTurn"
+                :plays-left="playsLeft"
+                :live="gameIsLive"
+                :winner-id="room.winner"
+                :reveal-hands="revealHands"
+                :player-name="playerName"
+                :color-label="colorLabel"
+                @open-set="openPropertySet"
+                @open-player="openPlayerSheet"
+            >
+                <template #discard>
+                    <div class="md-discard-stack" :aria-label="t('Top card of discard pile; :count cards in pile', { count: table.discard_pile.length })">
+                        <div
+                            v-for="(cardId, index) in discardStackCardIds"
+                            :key="cardId"
+                            class="md-discard-play-card"
+                            :style="{ zIndex: index + 1, '--discard-card-offset': `${index * 3}px` }"
+                        >
+                            <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                        </div>
+                    </div>
+                </template>
+            </TableBoard>
+
             <!-- My hand -->
-            <section class="md-hand" :class="{ 'md-hand--collapsed': isHandCollapsed }">
+            <section v-if="gameIsLive" class="md-hand" :class="{ 'md-hand--collapsed': isHandCollapsed }">
                 <template v-if="isHandCollapsed">
                     <button
                         class="md-hand-expand"
@@ -1119,8 +1199,8 @@ onUnmounted(() => {
                                 </div>
                             </VueDraggable>
 
-                            <p v-if="!canAct && !selectedEntry" class="md-hint">
-                                {{ pending ? t('Waiting on a pending action.') : t('Wait for your turn to play a card.') }}
+                            <p v-if="pending && !canAct && !selectedEntry" class="md-hint">
+                                {{ t('Waiting on a pending action.') }}
                             </p>
                         </template>
 
@@ -1487,110 +1567,6 @@ onUnmounted(() => {
                 </button>
             </section>
 
-            <!-- Players -->
-            <section class="md-players">
-                <h3 class="md-section-title">{{ t('Players') }}</h3>
-                <p v-if="hostKickError" role="alert" class="md-error">{{ hostKickError }}</p>
-                <details
-                    v-for="seat in table.players"
-                    :key="seat.id"
-                    class="md-seat"
-                    :class="{ 'md-seat--turn': seat.id === table.current_player_id }"
-                >
-                    <summary class="md-seat-summary">
-                        <span class="md-seat-name">
-                            {{ playerName(seat.id) }}<span v-if="seat.id === myId"> {{ t('(you)') }}</span>
-                            <span v-if="seat.id === table.current_player_id" class="md-seat-turn-tag">{{ t('— current turn') }}</span>
-                        </span>
-                        <span class="md-seat-meta">
-                            {{ t('Hand :count · Bank :bank M · :groups property groups', { count: seat.hand_count, bank: seatBankTotal(seat), groups: Object.keys(seat.properties).length }) }}
-                        </span>
-                    </summary>
-
-                    <div class="md-seat-content">
-                        <button
-                            v-if="gameIsLive && isHost && seat.id !== myId && table.players.length > room.game.minimum_players"
-                            class="md-btn md-btn--muted"
-                            type="button"
-                            :disabled="kickingPlayerId === seat.id"
-                            @click="kickPlayer(seat.id)"
-                        >
-                            {{ kickingPlayerId === seat.id ? t('Removing…') : t('Kick from game') }}
-                        </button>
-                        <p v-if="seat.hand" class="md-seat-hand">{{ t('Hand: :count card(s)', { count: seat.hand_count }) }}</p>
-
-                        <div v-if="seat.hand" class="md-card-row">
-                            <MasrawyCard v-for="cardId in seat.hand" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
-                        </div>
-
-                        <div v-if="seat.bank.length > 0" class="md-seat-bank-group">
-                            <p class="md-group-label">{{ t('Bank · :amount M', { amount: seatBankTotal(seat) }) }}</p>
-                            <div class="md-seat-bank-stack" :aria-label="t(':count money cards in bank; showing the newest :shown', { count: seat.bank.length, shown: Math.min(seat.bank.length, BANK_VISIBLE_CARD_LIMIT) })">
-                                <span v-if="hiddenBankCardCount(seat.bank) > 0" class="md-seat-bank-overflow" aria-hidden="true">
-                                    +{{ hiddenBankCardCount(seat.bank) }}
-                                </span>
-                                <span v-for="(cardId, index) in visibleBankCards(seat.bank)" :key="cardId" class="md-seat-bank-card" :style="{ zIndex: index + 1 }">
-                                    <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
-                                </span>
-                            </div>
-                        </div>
-                        <p v-else class="md-seat-bank">{{ t('Bank: empty') }}</p>
-
-                        <div v-if="seat.id !== myId && Object.keys(seat.properties).length > 0" class="md-seat-properties">
-                            <button
-                                v-for="(group, color) in seat.properties"
-                                :key="color"
-                                type="button"
-                                class="md-seat-set-preview"
-                                :aria-label="t('View :name’s :color Manti2a in detail', { name: playerName(seat.id), color: colorLabel(String(color)) })"
-                                @click="openPropertySet(seat.id, String(color))"
-                            >
-                                <span class="md-seat-set-heading">
-                                    <strong>{{ colorLabel(String(color)) }}</strong>
-                                    <small>{{ t(':count cards', { count: group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }) }}<span v-if="group.house"> · SHISHA</span><span v-if="group.hotel"> · WIL3A</span></small>
-                                </span>
-                                <span
-                                    class="md-seat-set-stack"
-                                    aria-hidden="true"
-                                    :style="{ '--set-card-count': group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }"
-                                >
-                                    <span
-                                        v-for="(cardId, index) in [...group.cards, ...(group.house ? [group.house] : []), ...(group.hotel ? [group.hotel] : [])]"
-                                        :key="cardId"
-                                        class="md-seat-set-card"
-                                        :style="{ zIndex: index + 1 }"
-                                    >
-                                        <MasrawyCard
-                                            :entry="entryFor(cardId)!"
-                                            :active-color="entryFor(cardId)?.type === 'wildcard' ? String(color) : undefined"
-                                            :rent-chart="rentChartFor(cardId)"
-                                            :set-size="setSizeFor(cardId)"
-                                            :wild-rent-charts="wildRentChartsFor(cardId)"
-                                            :wild-set-sizes="wildSetSizesFor(cardId)"
-                                        />
-                                    </span>
-                                </span>
-                                <span class="md-seat-set-hint">{{ t('Click to view cards') }}</span>
-                            </button>
-                        </div>
-                    </div>
-                </details>
-            </section>
-
-            <!-- Discard pile -->
-            <section v-if="table.discard_pile.length > 0" class="md-discard">
-                <h3 class="md-section-title">{{ t('Discard Pile') }}</h3>
-                <div class="md-discard-stack" :aria-label="t('Top card of discard pile; :count cards in pile', { count: table.discard_pile.length })">
-                    <div
-                        v-for="(cardId, index) in discardStackCardIds"
-                        :key="cardId"
-                        class="md-discard-play-card"
-                        :style="{ zIndex: index + 1, '--discard-card-offset': `${index * 3}px` }"
-                    >
-                        <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
-                    </div>
-                </div>
-            </section>
 
 
 
@@ -1705,6 +1681,112 @@ onUnmounted(() => {
                         <p v-else class="md-turn-modal-empty">{{ t('Their moves will appear here as they play.') }}</p>
                     </aside>
                 </div>
+            </section>
+        </div>
+
+        <!-- Player sheet: everything about one seat, opened by tapping its plate on the table -->
+        <div
+            v-if="sheetSeat && table"
+            class="md-ps-backdrop"
+            @click.self="closePlayerSheet"
+            @keydown.esc="closePlayerSheet"
+        >
+            <section class="md-ps" role="dialog" aria-modal="true" aria-labelledby="md-ps-title">
+                <header class="md-ps-header">
+                    <span class="md-ps-avatar" aria-hidden="true">{{ playerName(sheetSeat.id).charAt(0).toUpperCase() }}</span>
+                    <div class="md-ps-title-block">
+                        <h2 id="md-ps-title">
+                            {{ playerName(sheetSeat.id) }}<span v-if="sheetSeat.id === myId"> {{ t('(you)') }}</span>
+                        </h2>
+                        <p class="md-ps-tags">
+                            <span v-if="gameIsLive && sheetSeat.id === table.current_player_id" class="md-ps-tag md-ps-tag--turn">{{ t('— current turn') }}</span>
+                            <span v-if="room.winner !== null && String(sheetSeat.id) === room.winner" class="md-ps-tag md-ps-tag--win">♛ {{ t('Winner') }}</span>
+                        </p>
+                    </div>
+                    <button class="md-ps-close" type="button" :aria-label="t('Close')" @click="closePlayerSheet">×</button>
+                </header>
+
+                <div class="md-ps-stats">
+                    <span><strong>{{ seatBankTotal(sheetSeat) }}M</strong>{{ t('Bank') }}</span>
+                    <span><strong>{{ sheetSeat.hand_count }}</strong>{{ t('Hand cards') }}</span>
+                    <span><strong>{{ Object.keys(sheetSeat.properties).length }}</strong>{{ t('Manati2') }}</span>
+                </div>
+
+                <div class="md-ps-body">
+                    <section v-if="sheetSeat.hand" class="md-ps-section">
+                        <h3 class="md-group-label">{{ t('Hand: :count card(s)', { count: sheetSeat.hand_count }) }}</h3>
+                        <div class="md-card-row md-ps-cards">
+                            <MasrawyCard v-for="cardId in sheetSeat.hand" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                        </div>
+                    </section>
+
+                    <section class="md-ps-section">
+                        <h3 class="md-group-label">{{ t('Bank · :amount M', { amount: seatBankTotal(sheetSeat) }) }}</h3>
+                        <div v-if="sheetSeat.bank.length > 0" class="md-seat-bank-stack" :aria-label="t(':count money cards in bank; showing the newest :shown', { count: sheetSeat.bank.length, shown: Math.min(sheetSeat.bank.length, BANK_VISIBLE_CARD_LIMIT) })">
+                            <span v-if="hiddenBankCardCount(sheetSeat.bank) > 0" class="md-seat-bank-overflow" aria-hidden="true">
+                                +{{ hiddenBankCardCount(sheetSeat.bank) }}
+                            </span>
+                            <span v-for="(cardId, index) in visibleBankCards(sheetSeat.bank)" :key="cardId" class="md-seat-bank-card" :style="{ zIndex: index + 1 }">
+                                <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                            </span>
+                        </div>
+                        <p v-else class="md-hint">{{ t('Bank: empty') }}</p>
+                    </section>
+
+                    <section class="md-ps-section">
+                        <h3 class="md-group-label">{{ t('Properties') }}</h3>
+                        <div v-if="Object.keys(sheetSeat.properties).length > 0" class="md-seat-properties">
+                            <button
+                                v-for="(group, color) in sheetSeat.properties"
+                                :key="color"
+                                type="button"
+                                class="md-seat-set-preview"
+                                :aria-label="t('View :name’s :color Manti2a in detail', { name: playerName(sheetSeat.id), color: colorLabel(String(color)) })"
+                                @click="openSetFromSheet(sheetSeat.id, String(color))"
+                            >
+                                <span class="md-seat-set-heading">
+                                    <strong>{{ colorLabel(String(color)) }}</strong>
+                                    <small>{{ t(':count cards', { count: group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }) }}<span v-if="group.house"> · SHISHA</span><span v-if="group.hotel"> · WIL3A</span></small>
+                                </span>
+                                <span
+                                    class="md-seat-set-stack"
+                                    aria-hidden="true"
+                                    :style="{ '--set-card-count': group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }"
+                                >
+                                    <span
+                                        v-for="(cardId, index) in [...group.cards, ...(group.house ? [group.house] : []), ...(group.hotel ? [group.hotel] : [])]"
+                                        :key="cardId"
+                                        class="md-seat-set-card"
+                                        :style="{ zIndex: index + 1 }"
+                                    >
+                                        <MasrawyCard
+                                            :entry="entryFor(cardId)!"
+                                            :active-color="entryFor(cardId)?.type === 'wildcard' ? String(color) : undefined"
+                                            :rent-chart="rentChartFor(cardId)"
+                                            :set-size="setSizeFor(cardId)"
+                                            :wild-rent-charts="wildRentChartsFor(cardId)"
+                                            :wild-set-sizes="wildSetSizesFor(cardId)"
+                                        />
+                                    </span>
+                                </span>
+                                <span class="md-seat-set-hint">{{ t('Click to view cards') }}</span>
+                            </button>
+                        </div>
+                        <p v-else class="md-hint">{{ t('No properties on the table yet') }}</p>
+                    </section>
+                </div>
+
+                <footer v-if="sheetCanKick" class="md-ps-footer">
+                    <p v-if="hostKickError" role="alert" class="md-error">{{ hostKickError }}</p>
+                    <template v-if="confirmKickId === sheetSeat.id">
+                        <span class="md-ps-confirm">{{ t('Remove :name from the game?', { name: playerName(sheetSeat.id) }) }}</span>
+                        <button class="md-btn md-btn--danger" type="button" :disabled="kickingPlayerId === sheetSeat.id" @click="kickPlayer(sheetSeat.id)">
+                            {{ kickingPlayerId === sheetSeat.id ? t('Removing…') : t('Remove') }}
+                        </button>
+                        <button class="md-btn md-btn--muted" type="button" @click="confirmKickId = null">{{ t('Keep player') }}</button>
+                    </template>
+                    <button v-else class="md-btn md-btn--muted" type="button" @click="confirmKickId = sheetSeat.id">{{ t('Kick from game') }}</button>
+                </footer>
             </section>
         </div>
 
@@ -3402,49 +3484,6 @@ onUnmounted(() => {
     font-size: 0.85rem;
 }
 
-.md-seat {
-    border-top: 1px solid var(--rc-border);
-    padding: 0.75rem 0;
-    font-size: 0.85rem;
-}
-
-.md-seat:first-child {
-    border-top: none;
-    padding-top: 0;
-}
-
-.md-seat--turn {
-    font-weight: 600;
-}
-
-.md-seat-summary {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.25rem 0.75rem;
-    cursor: pointer;
-    list-style-position: inside;
-}
-
-.md-seat-summary::marker {
-    color: var(--rc-primary);
-}
-
-.md-seat-name {
-    font-weight: 600;
-}
-
-.md-seat-meta {
-    color: var(--rc-text-muted);
-    font-size: 0.78rem;
-    font-weight: 400;
-}
-
-.md-seat-content {
-    padding-top: 0.75rem;
-}
-
 .md-hand-header {
     display: flex;
     align-items: center;
@@ -3523,18 +3562,7 @@ onUnmounted(() => {
     margin: 0.5rem 0 0;
 }
 
-.md-seat-turn-tag {
-    color: var(--rc-primary);
-    font-weight: 400;
-    font-size: 0.75rem;
-}
-
 .md-seat-hand,
-.md-seat-bank {
-    color: var(--rc-text-muted);
-    margin-bottom: 0.4rem;
-}
-
 .md-card-row {
     display: flex;
     flex-wrap: wrap;
@@ -4015,6 +4043,443 @@ input[type='checkbox'] {
     .md-pay-card-grid {
         grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
         gap: 0.5rem;
+    }
+}
+/* ---- Finished / cancelled ribbon ---------------------------------------- */
+.md-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    align-items: center;
+    padding: 0.55rem 1rem;
+    border-radius: 14px;
+    font-family: var(--rc-font-display);
+    font-weight: 700;
+    text-align: center;
+}
+
+.md-banner strong {
+    font-size: 1.15rem;
+}
+
+.md-banner small {
+    font-family: var(--rc-font-body);
+    font-size: 0.75rem;
+    font-weight: 600;
+    opacity: 0.9;
+}
+
+.md-banner--finished {
+    color: #3b2200;
+    background: linear-gradient(90deg, #b45309, #fbbf24 50%, #b45309);
+    box-shadow: 0 6px 20px rgb(245 158 11 / 30%);
+}
+
+.md-banner-crown {
+    font-size: 1.5rem;
+    line-height: 1;
+}
+
+.md-banner--cancelled {
+    color: var(--rc-text-on-surface);
+    background: var(--rc-surface);
+    border: 1px dashed var(--rc-border);
+}
+
+/* ---- Player sheet ------------------------------------------------------- */
+.md-ps-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: rgb(10 15 20 / 72%);
+}
+
+.md-ps {
+    display: flex;
+    flex-direction: column;
+    width: min(600px, 100%);
+    max-height: 88dvh;
+    border: 1px solid var(--rc-border);
+    border-radius: 18px 18px 0 0;
+    color: var(--rc-text-on-surface);
+    background: var(--rc-surface);
+    box-shadow: 0 -10px 40px rgb(0 0 0 / 45%);
+}
+
+.md-ps-header {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.9rem 1rem 0.6rem;
+}
+
+.md-ps-avatar {
+    flex: 0 0 auto;
+    display: grid;
+    width: 2.8rem;
+    height: 2.8rem;
+    place-items: center;
+    border: 2px solid rgb(255 255 255 / 60%);
+    border-radius: 50%;
+    font: 800 1.2rem var(--rc-font-display);
+    color: #0f172a;
+    background: var(--rc-primary);
+}
+
+.md-ps-title-block {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.md-ps-title-block h2 {
+    overflow: hidden;
+    margin: 0;
+    font-family: var(--rc-font-display);
+    font-size: 1.15rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.md-ps-tags {
+    display: flex;
+    gap: 0.4rem;
+    margin: 0.15rem 0 0;
+    font-size: 0.72rem;
+}
+
+.md-ps-tag--turn {
+    color: var(--rc-primary);
+    font-weight: 700;
+}
+
+.md-ps-tag--win {
+    color: #fde047;
+    font-weight: 700;
+}
+
+.md-ps-close {
+    flex: 0 0 auto;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 1px solid var(--rc-border);
+    border-radius: 50%;
+    font-size: 1.4rem;
+    line-height: 1;
+    color: var(--rc-text-on-surface);
+    background: var(--rc-surface-alt);
+    cursor: pointer;
+}
+
+.md-ps-stats {
+    display: grid;
+    flex: 0 0 auto;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    padding: 0 1rem 0.75rem;
+}
+
+.md-ps-stats span {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.4rem;
+    border-radius: 10px;
+    font-size: 0.68rem;
+    color: var(--rc-text-muted);
+    background: var(--rc-surface-alt);
+}
+
+.md-ps-stats strong {
+    font-family: var(--rc-font-display);
+    font-size: 1.2rem;
+    color: var(--rc-text-on-surface);
+}
+
+.md-ps-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0 1rem 0.75rem;
+    overflow: auto;
+}
+
+.md-ps-section {
+    margin-bottom: 0.9rem;
+}
+
+.md-ps-cards {
+    margin-bottom: 0;
+}
+
+.md-ps-footer {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.7rem 1rem calc(0.7rem + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--rc-border);
+}
+
+.md-ps-footer .md-error {
+    flex: 0 0 100%;
+}
+
+.md-ps-confirm {
+    flex: 1 1 100%;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.md-btn--danger {
+    border-color: #b91c1c;
+    color: #fff;
+    background: #b91c1c;
+}
+
+@media (min-width: 700px) {
+    .md-ps-backdrop {
+        align-items: center;
+        padding: 1rem;
+    }
+
+    .md-ps {
+        border-radius: 18px;
+    }
+}
+
+/* Height the table must leave for everything else (see TableBoard's --tb-w):
+   page header + summary + the table's top margin + the hand dock, less the
+   dock's overlap with the empty rim at the table's bottom. */
+.md-root {
+    --md-reserve: 24.8rem;
+}
+
+.md-root--hand-collapsed {
+    --md-reserve: 12rem;
+}
+
+/* In play the page title/status badge are noise: keep just a slim back link. */
+:global(html.md-play-mode .rc-header) {
+    display: none;
+}
+
+:global(html.md-play-mode .rc-back-link) {
+    margin-bottom: 0.25rem;
+    font-size: 0.8rem;
+}
+
+:global(html.md-play-mode .rc-page) {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+}
+
+.md-hand {
+    padding: 0.6rem 0.9rem;
+}
+
+/* Slimmer hand dock: tabs and actions share one row (the tab already shows
+   the count), which gives the table about 45px more height. */
+.md-hand-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+        'tabs actions'
+        'content content';
+    gap: 0.35rem 0.5rem;
+    align-items: end;
+}
+
+.md-hand-header {
+    display: contents;
+}
+
+.md-hand-header .md-section-title {
+    display: none;
+}
+
+.md-hand-actions {
+    grid-area: actions;
+    margin-left: 0;
+    align-self: center;
+}
+
+.md-hand-tabs {
+    grid-area: tabs;
+}
+
+.md-hand-content {
+    grid-area: content;
+}
+
+/* One-line summary: the table shows the piles and your plays left itself. */
+.md-summary {
+    padding: 0.5rem 0.9rem;
+}
+
+.md-summary .md-summary-row {
+    align-items: center;
+    margin-bottom: 0;
+}
+
+.md-summary .md-turn-status {
+    flex-direction: row;
+    gap: 0.6rem;
+    align-items: baseline;
+    padding: 0.25rem 0.75rem;
+}
+
+.md-summary .md-summary-row > span:nth-child(n + 3),
+.md-summary .md-activity-title {
+    display: none;
+}
+
+.md-summary .md-activity ol {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.md-summary .md-activity li:nth-child(n + 2) {
+    display: none;
+}
+
+.md-summary .md-activity {
+    margin: 0.4rem 0 0;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.8rem;
+}
+
+/* Finished/cancelled: no hand dock or turn summary, just ribbon + table. */
+.md-root--ended,
+.md-root--ended.md-root--hand-collapsed {
+    --md-reserve: 11rem;
+    padding-bottom: 1rem;
+}
+
+/* ---- Phones held sideways ------------------------------------------------
+   Very little height: the page header goes, the table fills the screen, the
+   hand starts collapsed (see onMounted) and the card-play panel becomes a
+   side drawer instead of a bottom sheet. Placed last so it wins over the
+   narrow-width rules above on small landscape screens. */
+@media (orientation: landscape) and (max-height: 560px) {
+    :global(html.md-play-mode .rc-back-link),
+    :global(html.md-play-mode .rc-header) {
+        display: none;
+    }
+
+    :global(html.md-play-mode .rc-page) {
+        min-height: calc(100dvh - 0.8rem);
+        padding: 0.4rem;
+    }
+
+    .md-root,
+    .md-root:not(.md-root--hand-collapsed),
+    .md-root--hand-collapsed {
+        gap: 0.4rem;
+        margin-top: 0;
+        padding-bottom: 0;
+    }
+
+    .md-summary,
+    .md-pending {
+        padding: 0.3rem 0.6rem;
+        font-size: 0.78rem;
+    }
+
+    .md-summary .md-activity,
+    .md-summary .md-turn-status span {
+        display: none;
+    }
+
+    .md-summary-row {
+        gap: 0.8rem;
+        align-items: center;
+    }
+
+    /* Winner ribbon sits right above the table: leave room for the crown. */
+    .md-root--ended {
+        --tb-top: 3.6rem;
+    }
+
+    .md-banner {
+        flex-direction: row;
+        gap: 0.6rem;
+        justify-content: center;
+        padding: 0.25rem 0.8rem;
+    }
+
+    .md-banner strong {
+        font-size: 0.95rem;
+    }
+
+    .md-hand {
+        max-height: 64dvh;
+    }
+
+    .md-root .md-play-panel,
+    .md-root--hand-collapsed .md-play-panel {
+        top: 0.4rem;
+        right: 0.4rem;
+        bottom: 0.4rem;
+        left: auto;
+        width: min(340px, 46vw);
+        max-height: none;
+        transform: none;
+    }
+
+    .md-ps-backdrop {
+        align-items: center;
+        padding: 0.4rem;
+    }
+
+    /* Two columns: who they are on the left, cards (scrolling) on the right. */
+    .md-ps {
+        display: grid;
+        grid-template-columns: 210px minmax(0, 1fr);
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        width: min(760px, 96vw);
+        height: min(96dvh, 360px);
+        max-height: 96dvh;
+        border-radius: 14px;
+    }
+
+    .md-ps-header {
+        grid-area: 1 / 1;
+    }
+
+    .md-ps-stats {
+        grid-area: 2 / 1;
+        grid-template-columns: 1fr;
+        gap: 0.25rem;
+    }
+
+    .md-ps-stats span {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.25rem 0.6rem;
+    }
+
+    .md-ps-body {
+        grid-area: 1 / 2 / 5 / 3;
+        padding-top: 0.8rem;
+    }
+
+    .md-ps-footer {
+        grid-area: 4 / 1;
+        border-top: 0;
+    }
+
+    .md-set-modal,
+    .md-turn-modal,
+    .md-pay-modal,
+    .md-response-choice {
+        max-height: 96dvh;
     }
 }
 </style>
