@@ -111,42 +111,49 @@ const playerCount = computed(() => props.table.players.length)
 const tier = computed(() => TIERS.findIndex(entry => playerCount.value <= entry.max))
 const tierSpec = computed(() => TIERS[tier.value < 0 ? TIERS.length - 1 : tier.value])
 
-type Slot = { x: number; y: number }
+type Side = 'top' | 'left' | 'right' | 'bottom'
+type Slot = { side: Side; x: number; y: number; podX: number; podY: number }
+
+// The table surface is kept clear for the players' cards: every plate stands
+// OUTSIDE the rim (left, right, top, and the viewer below), and each player's
+// property sets lie on the felt in a "pod" next to their plate.
+// x/y are percentages of the plane; plates anchor at their bottom edge, so
+// y = 0 puts a plate right above the top rim and negative/over-100 values
+// push it further out. The plane is 74u wide inside a 100u stage, leaving a
+// 13u gutter each side for the side plates.
+const SIDE_PLATE = 12
+const GUTTER_PCT = ((SIDE_PLATE / 2 + 0.8) * 100) / 74
+const SIDE_Y: Record<number, number[]> = { 1: [66], 2: [88, 52], 3: [94, 66, 38] }
+const TOP_X: Record<number, number[]> = { 1: [50], 2: [34, 66], 3: [24, 50, 76] }
+// How the other players split between left / top / right, by player count - 1.
+const SPLIT: Record<number, [number, number, number]> = {
+    1: [0, 1, 0],
+    2: [0, 2, 0],
+    3: [1, 1, 1],
+    4: [1, 2, 1],
+    5: [1, 3, 1],
+    6: [2, 2, 2],
+    7: [2, 3, 2],
+    8: [3, 2, 3],
+    9: [3, 3, 3],
+}
 
 // Slots for the *other* players, clockwise from the viewer's left hand (the
-// viewer sits bottom-centre). x/y are percentages of the plane; side slots are
-// pushed in by half a plate so nothing pokes past the rim.
+// viewer sits below the table, centred).
 const otherSlots = computed<Slot[]>(() => {
-    const edge = tierSpec.value.width / 2 + 2
-    const left = edge
-    const right = 100 - edge
-    const TOP = 30
-    const BOTTOM = 94
-    const count = playerCount.value - 1
+    const [left, top, right] = SPLIT[Math.min(9, Math.max(1, playerCount.value - 1))] ?? [0, 1, 0]
+    const slots: Slot[] = []
 
-    switch (count) {
-        case 0:
-            return []
-        case 1:
-            return [{ x: 50, y: TOP }]
-        case 2:
-            return [{ x: 29, y: TOP }, { x: 71, y: TOP }]
-        case 3:
-            return [{ x: left, y: 58 }, { x: 50, y: TOP }, { x: right, y: 58 }]
-        case 4:
-            return [{ x: left, y: 58 }, { x: 36, y: TOP }, { x: 64, y: TOP }, { x: right, y: 58 }]
-        case 5:
-            return [{ x: left, y: 58 }, { x: 27, y: TOP }, { x: 50, y: TOP }, { x: 73, y: TOP }, { x: right, y: 58 }]
-        case 6:
-            return [{ x: left, y: BOTTOM }, { x: left, y: 56 }, { x: 33, y: TOP }, { x: 67, y: TOP }, { x: right, y: 56 }, { x: right, y: BOTTOM }]
-        case 7:
-            return [{ x: left, y: BOTTOM }, { x: left, y: 56 }, { x: 28, y: TOP }, { x: 50, y: TOP }, { x: 72, y: TOP }, { x: right, y: 56 }, { x: right, y: BOTTOM }]
-        case 8:
-            return [{ x: left, y: BOTTOM }, { x: left, y: 66 }, { x: left, y: 38 }, { x: 36, y: TOP }, { x: 64, y: TOP }, { x: right, y: 38 }, { x: right, y: 66 }, { x: right, y: BOTTOM }]
-        default:
-            return [{ x: left, y: BOTTOM }, { x: left, y: 66 }, { x: left, y: 38 }, { x: 31, y: TOP }, { x: 50, y: TOP }, { x: 69, y: TOP }, { x: right, y: 38 }, { x: right, y: 66 }, { x: right, y: BOTTOM }]
-    }
+    // Left side runs bottom → top, then the top row left → right, then the
+    // right side top → bottom (clockwise from the viewer).
+    ;[...(SIDE_Y[left] ?? [])].forEach(y => slots.push({ side: 'left', x: -GUTTER_PCT, y, podX: 15, podY: y }))
+    ;(TOP_X[top] ?? []).forEach(x => slots.push({ side: 'top', x, y: 0, podX: x, podY: 27 }))
+    ;[...(SIDE_Y[right] ?? [])].reverse().forEach(y => slots.push({ side: 'right', x: 100 + GUTTER_PCT, y, podX: 85, podY: y }))
+
+    return slots
 })
+
+const ME_SLOT: Slot = { side: 'bottom', x: 50, y: 116, podX: 50, podY: 90 }
 
 const seats = computed(() => {
     const players = props.table.players
@@ -155,14 +162,13 @@ const seats = computed(() => {
 
     return players.map((seat, index) => {
         const offset = (index - myIndex + count) % count
-        const slot = offset === 0 ? { x: 50, y: 94 } : (otherSlots.value[offset - 1] ?? { x: 50, y: 30 })
+        const slot = offset === 0 ? ME_SLOT : (otherSlots.value[offset - 1] ?? { side: 'top' as Side, x: 50, y: 0, podX: 50, podY: 27 })
 
         return {
             seat,
             offset,
             hue: SEAT_HUES[index % SEAT_HUES.length],
-            x: slot.x,
-            y: slot.y,
+            ...slot,
             isMe: seat.id === props.myId,
             isTurn: props.live && seat.id === props.table.current_player_id,
             isWinner: props.winnerId != null && String(seat.id) === props.winnerId,
@@ -182,6 +188,7 @@ const seats = computed(() => {
 const stageStyle = computed(() => ({
     '--u': `${unit.value}px`,
     '--pw': tierSpec.value.width,
+    '--sw': SIDE_PLATE,
     '--fs': tierSpec.value.font,
     // Discard art is laid out at 114px wide; scale it to 6 board units.
     '--ds': (6 * unit.value) / 114,
@@ -214,14 +221,6 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
             <div class="tb-rim"></div>
             <div class="tb-felt"></div>
 
-            <span
-                v-for="entry in seats"
-                :key="`mat-${entry.seat.id}`"
-                class="tb-mat"
-                :class="{ 'tb-mat--turn': entry.isTurn }"
-                :style="{ left: `${entry.x}%`, top: `${entry.y}%`, '--seat-hue': entry.hue }"
-            ></span>
-
             <div class="tb-center">
                 <div class="tb-pile" :aria-label="t('Draw pile:') + ' ' + table.draw_pile_count">
                     <span class="tb-card-back tb-card-back--3"></span>
@@ -241,9 +240,32 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 
             <div
                 v-for="entry in seats"
+                :key="`pod-${entry.seat.id}`"
+                class="tb-pod"
+                :class="`tb-pod--${entry.side}`"
+                :style="{ left: `${entry.podX}%`, top: `${entry.podY}%`, '--seat-hue': entry.hue }"
+            >
+                <button
+                    v-for="set in entry.sets"
+                    :key="set.color"
+                    type="button"
+                    class="tb-set"
+                    :class="{ 'tb-set--complete': set.complete }"
+                    :style="{ '--set-color': COLOR_HEX[set.color] ?? '#64748b', '--set-text': DARK_TEXT_COLORS.has(set.color) ? '#111827' : '#ffffff' }"
+                    :aria-label="t('View :name’s :color Manti2a in detail', { name: playerName(entry.seat.id), color: colorLabel(set.color) })"
+                    :title="colorLabel(set.color)"
+                    @click="openSet(entry.seat.id, set.color)"
+                >
+                    <span class="tb-set-count">{{ set.count }}/{{ set.size }}</span>
+                    <span v-if="set.house || set.hotel" class="tb-set-mark" aria-hidden="true">{{ set.hotel ? '▲▲' : '▲' }}</span>
+                </button>
+            </div>
+
+            <div
+                v-for="entry in seats"
                 :key="entry.seat.id"
                 class="tb-seat"
-                :class="{ 'tb-seat--me': entry.isMe, 'tb-seat--turn': entry.isTurn, 'tb-seat--winner': entry.isWinner }"
+                :class="[`tb-seat--${entry.side}`, { 'tb-seat--me': entry.isMe, 'tb-seat--turn': entry.isTurn, 'tb-seat--winner': entry.isWinner }]"
                 :style="{ left: `${entry.x}%`, top: `${entry.y}%`, '--seat-hue': entry.hue }"
             >
                 <!-- The badges live beside the button, not in it: a <button> clips what pokes out of its box. -->
@@ -268,23 +290,6 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
                         <span v-if="revealHands" class="tb-more" :title="t('View hand')" aria-hidden="true">⌄</span>
                     </button>
                 </div>
-
-                <div v-if="entry.sets.length" class="tb-sets">
-                    <button
-                        v-for="set in entry.sets"
-                        :key="set.color"
-                        type="button"
-                        class="tb-set"
-                        :class="{ 'tb-set--complete': set.complete }"
-                        :style="{ '--set-color': COLOR_HEX[set.color] ?? '#64748b', '--set-text': DARK_TEXT_COLORS.has(set.color) ? '#111827' : '#ffffff' }"
-                        :aria-label="t('View :name’s :color Manti2a in detail', { name: playerName(entry.seat.id), color: colorLabel(set.color) })"
-                        :title="colorLabel(set.color)"
-                        @click="openSet(entry.seat.id, set.color)"
-                    >
-                        <span class="tb-set-count">{{ set.count }}/{{ set.size }}</span>
-                        <span v-if="set.house || set.hotel" class="tb-set-mark" aria-hidden="true">{{ set.hotel ? '▲▲' : '▲' }}</span>
-                    </button>
-                </div>
             </div>
         </div>
     </section>
@@ -295,7 +300,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
     --tilt: 45deg;
     /* Height of the stage as a fraction of its width: the 2:1 plane squashed by
        cos(tilt), plus headroom for the top row of standing plates. */
-    --tb-k: calc(0.5 * cos(var(--tilt)) + 0.1);
+    --tb-k: calc(0.74 / 1.8 * cos(var(--tilt)) + 0.17);
     /* Fit the viewport: Table.vue sets --md-reserve to the height taken by
        everything else on screen (summary, hand dock…). */
     --tb-w: min(calc(100vw - 1rem), 1100px, max(18rem, calc((100dvh - var(--md-reserve, 22rem)) / var(--tb-k))));
@@ -315,10 +320,12 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 
 .tb-plane {
     position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    aspect-ratio: 2 / 1;
+    /* 74u wide inside the 100u stage: the gutters hold the side plates; the
+       footroom below holds the viewer's plate. */
+    left: 13%;
+    right: 13%;
+    bottom: 6%;
+    aspect-ratio: 1.8 / 1;
     transform-style: preserve-3d;
     transform: rotateX(var(--tilt));
     transform-origin: 50% 100%;
@@ -364,24 +371,10 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
     box-shadow: inset 0 0 calc(var(--u) * 4) rgb(0 0 0 / 55%);
 }
 
-/* Per-seat coloured mat lying flat on the felt under each standing plate. */
-.tb-mat {
-    position: absolute;
-    width: calc(var(--u) * (var(--pw) + 4));
-    height: 24%;
-    transform: translate(-50%, -78%);
-    border-radius: 40%/50%;
-    background: radial-gradient(ellipse, hsl(var(--seat-hue) 60% 45% / 55%), hsl(var(--seat-hue) 60% 30% / 0%) 72%);
-    pointer-events: none;
-}
-
-.tb-mat--turn {
-    background: radial-gradient(ellipse, hsl(var(--seat-hue) 85% 60% / 85%), hsl(var(--seat-hue) 60% 40% / 0%) 74%);
-}
-
 /* Everything that stands on the table is counter-rotated about its base so
    it stays upright and readable while the surface is tilted. */
 .tb-center,
+.tb-pod,
 .tb-seat {
     position: absolute;
     transform-style: flat;
@@ -390,7 +383,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 
 .tb-center {
     left: 50%;
-    top: 62%;
+    top: 67%;
     display: flex;
     gap: calc(var(--u) * 2.2);
     align-items: flex-end;
@@ -498,6 +491,8 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 }
 
 .tb-name {
+    display: block;
+    max-width: 100%;
     overflow: hidden;
     font-size: 1em;
     white-space: nowrap;
@@ -530,12 +525,63 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
     background: var(--rc-primary, #f59e0b);
 }
 
-.tb-sets {
+/* Property sets lie on the felt beside their owner's plate. */
+.tb-pod {
+    width: max-content;
+    max-width: calc(var(--u) * 21);
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 0.2em;
-    max-width: 100%;
+    box-sizing: border-box;
+    padding: 0.25em;
+    border-radius: 0.6em;
+    background: hsl(var(--seat-hue) 45% 18% / 55%);
+    border: 1px solid hsl(var(--seat-hue) 60% 55% / 70%);
+    transform: translate(-50%, -100%) rotateX(calc(var(--tilt) * -1));
+    z-index: 1;
+}
+
+.tb-pod--top {
+    max-width: calc(var(--u) * 23);
+}
+
+.tb-pod:empty {
+    display: none;
+}
+
+/* Side plates are narrow columns in the gutter: name over stats. */
+.tb-seat--left,
+.tb-seat--right {
+    width: calc(var(--u) * var(--sw, 12));
+}
+
+.tb-seat--left .tb-plate,
+.tb-seat--right .tb-plate {
+    flex-direction: column;
+    gap: 0.1em;
+    padding: 0.3em 0.4em;
+    border-radius: 1em;
+    text-align: center;
+}
+
+.tb-seat--left .tb-avatar,
+.tb-seat--right .tb-avatar,
+.tb-seat--left .tb-more,
+.tb-seat--right .tb-more {
+    display: none;
+}
+
+.tb-seat--left .tb-id,
+.tb-seat--right .tb-id {
+    width: 100%;
+    flex: 0 0 auto;
+    align-items: center;
+}
+
+.tb-seat--left .tb-stats,
+.tb-seat--right .tb-stats {
+    justify-content: center;
 }
 
 .tb-set {
