@@ -4401,9 +4401,65 @@ input[type='checkbox'] {
         align-items: center;
     }
 
-    /* Winner ribbon sits right above the table: leave room for the crown. */
-    .md-root--ended {
-        --tb-top: 3.6rem;
+    /* The table gets the whole height: turn summary, pending banner and the
+       ended ribbon float over its corners instead of taking a row. */
+    .md-root,
+    .md-root--hand-collapsed {
+        --md-reserve: 2.6rem;
+    }
+
+    .md-root--ended,
+    .md-root--ended.md-root--hand-collapsed {
+        --md-reserve: 4.4rem;
+        --tb-top: 2.6rem;
+    }
+
+    .md-summary {
+        position: fixed;
+        top: 0.3rem;
+        left: 0.4rem;
+        z-index: 880;
+        max-width: 38vw;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        font-size: 0.74rem;
+    }
+
+    .md-summary .md-summary-row > span:not(.md-turn-status),
+    .md-summary .md-turn-status {
+        display: none;
+    }
+
+    .md-summary .md-turn-status {
+        display: inline-flex;
+        padding: 0;
+        color: #f8fafc;
+        background: none;
+        border: 0;
+    }
+
+    .md-summary .md-turn-status--mine,
+    .md-summary .md-turn-status--mine strong {
+        color: var(--rc-primary, #f59e0b);
+    }
+
+    .md-pending {
+        position: fixed;
+        top: 0.3rem;
+        left: 50%;
+        z-index: 885;
+        width: min(60vw, 30rem);
+        max-height: 40dvh;
+        overflow: auto;
+        transform: translateX(-50%);
+    }
+
+    .md-banner {
+        position: fixed;
+        top: 0.3rem;
+        left: 50%;
+        z-index: 880;
+        transform: translateX(-50%);
     }
 
     .md-banner {

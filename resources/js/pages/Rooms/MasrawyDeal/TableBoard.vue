@@ -1,19 +1,21 @@
 <script setup lang="ts">
 /**
- * Masrawy Deal's round 3D table. Pure presentation: it receives the table
- * state and draws one sector per seat on a tilted (CSS perspective) plane,
- * with the viewer always seated at the bottom whatever their seat order.
- * Nothing here decides game rules — tapping a set chip just asks Table.vue
- * to open its existing property-set modal.
+ * Masrawy Deal's rounded-rectangle 3D table. Pure presentation: it receives the
+ * table state and stands one seat plate per player on a tilted (CSS perspective)
+ * plane, with the viewer always at the bottom whatever their seat order.
+ * Nothing here decides game rules — tapping a set chip just asks Table.vue to
+ * open its existing property-set modal.
  *
- * Seat geometry depends only on the player count (sector = 360° / players),
- * so the same component serves 2 players today and more later; past
- * COMPACT_FROM players the seat plates shrink to dots-and-counts.
+ * Everything is sized from one unit, --u (1% of the board's width, measured with
+ * a ResizeObserver), so plates, chips and piles shrink with the board instead of
+ * keeping fixed pixel sizes. Seats sit in named slots around the rectangle's
+ * edge (bottom = viewer, then clockwise); the slot list depends only on the
+ * player count, so the same component serves 2 to 10 players.
  *
  * The discard pile's card art comes in through the `discard` slot so card
  * rendering (rent charts, set sizes…) stays in Table.vue.
  */
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { MasrawySeat, MasrawyTableState } from '@/types/room'
 import { useI18n } from '@/i18n'
 
@@ -57,11 +59,38 @@ const COLOR_HEX: Record<string, string> = {
 const DARK_TEXT_COLORS = new Set(['yellow', 'utility', 'light_blue'])
 
 const SEAT_HUES = [200, 28, 52, 150, 280, 340, 175, 12, 235, 95]
-const COMPACT_FROM = 7
-const DENSE_FROM = 5
-// Seat anchors sit on an ellipse inside the plane (percent of its box).
-const RADIUS_X = 38
-const RADIUS_Y = 36
+
+// Plate width per size tier, in board units (1u = 1% of board width), and the
+// font size unit that goes with it.
+const TIERS = [
+    { max: 4, width: 21, font: 2.4 },
+    { max: 6, width: 17, font: 2.0 },
+    { max: 8, width: 14, font: 1.75 },
+    { max: 10, width: 12, font: 1.55 },
+]
+
+const stageEl = ref<HTMLElement | null>(null)
+// Board width / 100, in px. 5 is a sane first paint before we measure.
+const unit = ref(5)
+let observer: ResizeObserver | null = null
+
+onMounted(() => {
+    const el = stageEl.value
+    if (!el) return
+
+    const measure = () => {
+        const width = el.getBoundingClientRect().width
+        if (width > 0) unit.value = Math.round((width / 100) * 100) / 100
+    }
+
+    measure()
+    if (typeof ResizeObserver !== 'undefined') {
+        observer = new ResizeObserver(measure)
+        observer.observe(el)
+    }
+})
+
+onBeforeUnmount(() => observer?.disconnect())
 
 function bankTotal(seat: MasrawySeat): number {
     return seat.bank.reduce((total, cardId) => total + (props.table.catalog[cardId]?.value ?? 0), 0)
@@ -79,9 +108,45 @@ function isCompleteSet(seat: MasrawySeat, color: string): boolean {
 }
 
 const playerCount = computed(() => props.table.players.length)
-const compact = computed(() => playerCount.value >= COMPACT_FROM)
-// From 5 players up phones get the small plates too (desktop keeps full size).
-const dense = computed(() => playerCount.value >= DENSE_FROM)
+const tier = computed(() => TIERS.findIndex(entry => playerCount.value <= entry.max))
+const tierSpec = computed(() => TIERS[tier.value < 0 ? TIERS.length - 1 : tier.value])
+
+type Slot = { x: number; y: number }
+
+// Slots for the *other* players, clockwise from the viewer's left hand (the
+// viewer sits bottom-centre). x/y are percentages of the plane; side slots are
+// pushed in by half a plate so nothing pokes past the rim.
+const otherSlots = computed<Slot[]>(() => {
+    const edge = tierSpec.value.width / 2 + 2
+    const left = edge
+    const right = 100 - edge
+    const TOP = 30
+    const BOTTOM = 94
+    const count = playerCount.value - 1
+
+    switch (count) {
+        case 0:
+            return []
+        case 1:
+            return [{ x: 50, y: TOP }]
+        case 2:
+            return [{ x: 29, y: TOP }, { x: 71, y: TOP }]
+        case 3:
+            return [{ x: left, y: 58 }, { x: 50, y: TOP }, { x: right, y: 58 }]
+        case 4:
+            return [{ x: left, y: 58 }, { x: 36, y: TOP }, { x: 64, y: TOP }, { x: right, y: 58 }]
+        case 5:
+            return [{ x: left, y: 58 }, { x: 27, y: TOP }, { x: 50, y: TOP }, { x: 73, y: TOP }, { x: right, y: 58 }]
+        case 6:
+            return [{ x: left, y: BOTTOM }, { x: left, y: 56 }, { x: 33, y: TOP }, { x: 67, y: TOP }, { x: right, y: 56 }, { x: right, y: BOTTOM }]
+        case 7:
+            return [{ x: left, y: BOTTOM }, { x: left, y: 56 }, { x: 28, y: TOP }, { x: 50, y: TOP }, { x: 72, y: TOP }, { x: right, y: 56 }, { x: right, y: BOTTOM }]
+        case 8:
+            return [{ x: left, y: BOTTOM }, { x: left, y: 66 }, { x: left, y: 38 }, { x: 36, y: TOP }, { x: 64, y: TOP }, { x: right, y: 38 }, { x: right, y: 66 }, { x: right, y: BOTTOM }]
+        default:
+            return [{ x: left, y: BOTTOM }, { x: left, y: 66 }, { x: left, y: 38 }, { x: 31, y: TOP }, { x: 50, y: TOP }, { x: 69, y: TOP }, { x: right, y: 38 }, { x: right, y: 66 }, { x: right, y: BOTTOM }]
+    }
+})
 
 const seats = computed(() => {
     const players = props.table.players
@@ -90,15 +155,14 @@ const seats = computed(() => {
 
     return players.map((seat, index) => {
         const offset = (index - myIndex + count) % count
-        // 90° = bottom of the screen; turn order runs clockwise from there.
-        const radians = ((90 + (offset * 360) / count) * Math.PI) / 180
+        const slot = offset === 0 ? { x: 50, y: 94 } : (otherSlots.value[offset - 1] ?? { x: 50, y: 30 })
 
         return {
             seat,
             offset,
             hue: SEAT_HUES[index % SEAT_HUES.length],
-            x: 50 + RADIUS_X * Math.cos(radians),
-            y: 50 + RADIUS_Y * Math.sin(radians),
+            x: slot.x,
+            y: slot.y,
             isMe: seat.id === props.myId,
             isTurn: props.live && seat.id === props.table.current_player_id,
             isWinner: props.winnerId != null && String(seat.id) === props.winnerId,
@@ -115,25 +179,13 @@ const seats = computed(() => {
     })
 })
 
-// One coloured wedge per seat, listed in seat-offset order so wedge k is the
-// k-th seat clockwise from the viewer. The viewer's wedge is centred on the
-// bottom (conic 180°), hence the half-wedge start offset.
-const ringBackground = computed(() => {
-    const count = playerCount.value
-    if (count === 0) return 'none'
-
-    const width = 360 / count
-    const byOffset = [...seats.value].sort((a, b) => a.offset - b.offset)
-    const stops = byOffset.map((entry, k) => {
-        const light = entry.isTurn ? 50 : 33
-        const from = k * width
-        const to = (k + 1) * width
-
-        return `hsl(${entry.hue} 55% ${light}%) ${from + 0.6}deg ${to - 0.6}deg, #0b1220 ${to - 0.6}deg ${to + 0.6}deg`
-    })
-
-    return `conic-gradient(from ${180 - width / 2}deg, ${stops.join(', ')})`
-})
+const stageStyle = computed(() => ({
+    '--u': `${unit.value}px`,
+    '--pw': tierSpec.value.width,
+    '--fs': tierSpec.value.font,
+    // Discard art is laid out at 114px wide; scale it to 6 board units.
+    '--ds': (6 * unit.value) / 114,
+}))
 
 function openPlayer(playerId: number) {
     emit('open-player', playerId)
@@ -151,19 +203,30 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
     })
 }
 </script>
-
 <template>
-    <section class="tb-stage" :class="{ 'tb-stage--compact': compact, 'tb-stage--dense': dense }" :style="{ '--tb-players': playerCount }">
+    <section
+        ref="stageEl"
+        class="tb-stage"
+        :class="[`tb-stage--tier${tier < 0 ? 3 : tier}`]"
+        :style="stageStyle"
+    >
         <div class="tb-plane">
             <div class="tb-rim"></div>
-            <div class="tb-ring" :style="{ background: ringBackground }"></div>
-            <div class="tb-hub"></div>
+            <div class="tb-felt"></div>
+
+            <span
+                v-for="entry in seats"
+                :key="`mat-${entry.seat.id}`"
+                class="tb-mat"
+                :class="{ 'tb-mat--turn': entry.isTurn }"
+                :style="{ left: `${entry.x}%`, top: `${entry.y}%`, '--seat-hue': entry.hue }"
+            ></span>
 
             <div class="tb-center">
                 <div class="tb-pile" :aria-label="t('Draw pile:') + ' ' + table.draw_pile_count">
-                    <span class="tb-pile-back tb-pile-back--3"></span>
-                    <span class="tb-pile-back tb-pile-back--2"></span>
-                    <span class="tb-pile-back tb-pile-back--1"></span>
+                    <span class="tb-card-back tb-card-back--3"></span>
+                    <span class="tb-card-back tb-card-back--2"></span>
+                    <span class="tb-card-back tb-card-back--1"></span>
                     <strong class="tb-pile-count">{{ table.draw_pile_count }}</strong>
                     <small>{{ t('Draw') }}</small>
                 </div>
@@ -185,27 +248,26 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
             >
                 <!-- The badges live beside the button, not in it: a <button> clips what pokes out of its box. -->
                 <div class="tb-plate-wrap">
-                <span v-if="entry.isWinner" class="tb-crown" aria-hidden="true">♛</span>
-                <span v-if="entry.isMe && live && isMyTurn" class="tb-plays">{{ t(':count plays left', { count: playsLeft }) }}</span>
-                <button
-                    type="button"
-                    class="tb-plate"
-                    :aria-label="`${playerName(entry.seat.id)} — ${seatLabel(entry)}`"
-                    :title="t('Tap for details')"
-                    @click="openPlayer(entry.seat.id)"
-                >
-                    <span class="tb-avatar" aria-hidden="true">{{ playerName(entry.seat.id).charAt(0).toUpperCase() }}</span>
-                    <span class="tb-id">
-                        <strong class="tb-name">{{ playerName(entry.seat.id) }}</strong>
-                        <span class="tb-stats">
-                            <span class="tb-bank" :title="t('Bank')">{{ entry.bank }}M</span>
-                            <span class="tb-hand" :title="t('Hand cards')">▤ {{ entry.seat.hand_count }}</span>
+                    <span v-if="entry.isWinner" class="tb-crown" aria-hidden="true">👑</span>
+                    <span v-if="entry.isMe && live && isMyTurn" class="tb-plays">{{ t(':count plays left', { count: playsLeft }) }}</span>
+                    <button
+                        type="button"
+                        class="tb-plate"
+                        :aria-label="`${playerName(entry.seat.id)} — ${seatLabel(entry)}`"
+                        :title="t('Tap for details')"
+                        @click="openPlayer(entry.seat.id)"
+                    >
+                        <span class="tb-avatar" aria-hidden="true">{{ playerName(entry.seat.id).charAt(0).toUpperCase() }}</span>
+                        <span class="tb-id">
+                            <strong class="tb-name">{{ playerName(entry.seat.id) }}</strong>
+                            <span class="tb-stats">
+                                <span class="tb-bank" :title="t('Bank')">{{ entry.bank }}M</span>
+                                <span class="tb-hand" :title="t('Hand cards')">▤ {{ entry.seat.hand_count }}</span>
+                            </span>
                         </span>
-                    </span>
-                    <span class="tb-more" aria-hidden="true">⌄</span>
-                </button>
+                        <span v-if="revealHands" class="tb-more" :title="t('View hand')" aria-hidden="true">⌄</span>
+                    </button>
                 </div>
-                <small v-if="revealHands" class="tb-reveal">{{ t('View hand') }}</small>
 
                 <div v-if="entry.sets.length" class="tb-sets">
                     <button
@@ -230,27 +292,25 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 
 <style scoped>
 .tb-stage {
-    --tilt: 54deg;
-    --tb-plate-w: 150px;
+    --tilt: 45deg;
+    /* Height of the stage as a fraction of its width: the 2:1 plane squashed by
+       cos(tilt), plus headroom for the top row of standing plates. */
+    --tb-k: calc(0.5 * cos(var(--tilt)) + 0.1);
     /* Fit the viewport: Table.vue sets --md-reserve to the height taken by
        everything else on screen (summary, hand dock…). */
-    --tb-w: min(calc(100vw - 2rem), 1120px, max(26rem, calc((100dvh - var(--md-reserve, 34rem)) * 100 / 47)));
+    --tb-w: min(calc(100vw - 1rem), 1100px, max(18rem, calc((100dvh - var(--md-reserve, 22rem)) / var(--tb-k))));
+    --u: 5px;
+    --f: max(9px, calc(var(--u) * var(--fs, 2.4)));
     position: relative;
-    /* Room for the top seat's plate, which stands above the table's rim. */
-    margin-top: var(--tb-top, 1rem);
     /* Show.vue keeps its content in a 42rem column; the table breaks out of
        it (margins are relative to that column) so it can use the screen. */
     width: var(--tb-w);
+    height: calc(var(--tb-w) * var(--tb-k));
+    margin-block: var(--tb-top, 0.25rem) 0;
     margin-inline: calc(50% - var(--tb-w) / 2);
-    /* The plane is 16:11 and gets foreshortened by cos(tilt); reserve that
-       height plus headroom for the standing seat plates. */
-    aspect-ratio: 100 / 47;
-    perspective: 1400px;
+    perspective: calc(var(--tb-w) * 2.2);
     perspective-origin: 50% 20%;
-}
-
-.tb-stage--compact {
-    --tb-plate-w: 104px;
+    font-size: var(--f);
 }
 
 .tb-plane {
@@ -258,25 +318,24 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
     left: 0;
     right: 0;
     bottom: 0;
-    aspect-ratio: 16 / 11;
+    aspect-ratio: 2 / 1;
     transform-style: preserve-3d;
     transform: rotateX(var(--tilt));
     transform-origin: 50% 100%;
 }
 
 .tb-rim,
-.tb-ring,
-.tb-hub {
+.tb-felt {
     position: absolute;
-    border-radius: 50%;
+    border-radius: 9%/18%;
 }
 
-/* Outer rim with a stacked-layer edge so the table reads as a thick disc. */
+/* Outer rim with a stacked-layer edge so the table reads as a thick slab. */
 .tb-rim {
-    inset: 3% 2%;
-    background: radial-gradient(ellipse at 50% 40%, #3b4458, #1b2230);
+    inset: 0;
+    background: linear-gradient(180deg, #3b4458, #1b2230);
     transform-style: preserve-3d;
-    box-shadow: 0 0 0 3px rgb(255 255 255 / 8%);
+    box-shadow: 0 0 0 calc(var(--u) * 0.3) rgb(255 255 255 / 8%);
 }
 
 .tb-rim::before,
@@ -284,29 +343,40 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
     content: '';
     position: absolute;
     inset: 0;
-    border-radius: 50%;
+    border-radius: inherit;
 }
 
 .tb-rim::before {
     background: #141a26;
-    transform: translateZ(-14px);
+    transform: translateZ(calc(var(--u) * -1.2));
 }
 
 .tb-rim::after {
     background: #0b1019;
-    transform: translateZ(-28px);
-    box-shadow: 0 40px 70px rgb(0 0 0 / 55%);
+    transform: translateZ(calc(var(--u) * -2.4));
+    box-shadow: 0 calc(var(--u) * 4) calc(var(--u) * 7) rgb(0 0 0 / 55%);
 }
 
-.tb-ring {
-    inset: 8% 7%;
-    box-shadow: inset 0 0 40px rgb(0 0 0 / 45%);
+.tb-felt {
+    inset: 3.2% 1.8%;
+    border-radius: 8%/16%;
+    background: radial-gradient(ellipse at 50% 45%, #1f6b4a, #0f3d2b 75%);
+    box-shadow: inset 0 0 calc(var(--u) * 4) rgb(0 0 0 / 55%);
 }
 
-.tb-hub {
-    inset: 31% 30%;
-    background: radial-gradient(ellipse at 50% 40%, #7a5a3a, #3f2d1e);
-    box-shadow: 0 0 0 4px rgb(0 0 0 / 35%), inset 0 0 24px rgb(0 0 0 / 45%);
+/* Per-seat coloured mat lying flat on the felt under each standing plate. */
+.tb-mat {
+    position: absolute;
+    width: calc(var(--u) * (var(--pw) + 4));
+    height: 24%;
+    transform: translate(-50%, -78%);
+    border-radius: 40%/50%;
+    background: radial-gradient(ellipse, hsl(var(--seat-hue) 60% 45% / 55%), hsl(var(--seat-hue) 60% 30% / 0%) 72%);
+    pointer-events: none;
+}
+
+.tb-mat--turn {
+    background: radial-gradient(ellipse, hsl(var(--seat-hue) 85% 60% / 85%), hsl(var(--seat-hue) 60% 40% / 0%) 74%);
 }
 
 /* Everything that stands on the table is counter-rotated about its base so
@@ -315,26 +385,25 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 .tb-seat {
     position: absolute;
     transform-style: flat;
+    transform-origin: 50% 100%;
 }
 
 .tb-center {
     left: 50%;
-    top: 50%;
+    top: 62%;
     display: flex;
-    gap: 1.1rem;
+    gap: calc(var(--u) * 2.2);
     align-items: flex-end;
-    transform: translate(-50%, -62%) rotateX(calc(var(--tilt) * -1));
-    transform-origin: 50% 100%;
+    transform: translate(-50%, -100%) rotateX(calc(var(--tilt) * -1));
 }
 
 .tb-seat {
-    width: var(--tb-plate-w);
+    width: calc(var(--u) * var(--pw));
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: calc(var(--u) * 0.5);
     align-items: center;
     transform: translate(-50%, -100%) rotateX(calc(var(--tilt) * -1));
-    transform-origin: 50% 100%;
     z-index: 1;
 }
 
@@ -350,30 +419,30 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 .tb-plate {
     position: relative;
     box-sizing: border-box;
-    font: inherit;
-    text-align: start;
-    cursor: pointer;
     width: 100%;
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.3rem 0.65rem 0.3rem 0.4rem;
+    gap: 0.35em;
+    padding: 0.3em 0.6em 0.3em 0.3em;
     border-radius: 999px;
+    font: inherit;
+    text-align: start;
     color: #f8fafc;
     background: linear-gradient(180deg, hsl(var(--seat-hue) 60% 42%), hsl(var(--seat-hue) 62% 26%));
-    border: 2px solid rgb(255 255 255 / 55%);
-    box-shadow: 0 6px 14px rgb(0 0 0 / 45%);
+    border: max(1.5px, 0.18em) solid rgb(255 255 255 / 55%);
+    box-shadow: 0 calc(var(--u) * 0.6) calc(var(--u) * 1.4) rgb(0 0 0 / 45%);
+    cursor: pointer;
 }
 
 .tb-seat--turn .tb-plate {
     border-color: var(--rc-primary, #f59e0b);
-    box-shadow: 0 0 0 3px rgb(245 158 11 / 45%), 0 6px 18px rgb(0 0 0 / 55%);
+    box-shadow: 0 0 0 calc(var(--u) * 0.4) rgb(245 158 11 / 45%), 0 calc(var(--u) * 0.6) calc(var(--u) * 1.8) rgb(0 0 0 / 55%);
     animation: tb-turn-pulse 1.8s ease-in-out infinite;
 }
 
 @keyframes tb-turn-pulse {
     50% {
-        box-shadow: 0 0 0 6px rgb(245 158 11 / 15%), 0 6px 18px rgb(0 0 0 / 55%);
+        box-shadow: 0 0 0 calc(var(--u) * 0.9) rgb(245 158 11 / 15%), 0 calc(var(--u) * 0.6) calc(var(--u) * 1.8) rgb(0 0 0 / 55%);
     }
 }
 
@@ -383,21 +452,12 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
     outline-offset: 2px;
 }
 
-.tb-more {
-    flex: 0 0 auto;
-    margin-inline-start: auto;
-    padding-inline-start: 0.2rem;
-    font-size: 0.9rem;
-    line-height: 1;
-    opacity: 0.75;
-}
-
 .tb-crown {
     position: absolute;
-    top: -1.6rem;
+    top: -1.5em;
     left: 50%;
     transform: translateX(-50%);
-    font-size: 1.9rem;
+    font-size: 1.6em;
     line-height: 1;
     color: #fde047;
     text-shadow: 0 2px 4px rgb(0 0 0 / 70%);
@@ -405,34 +465,33 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 
 .tb-seat--winner .tb-plate {
     border-color: #fde047;
-    box-shadow: 0 0 0 3px rgb(253 224 71 / 45%), 0 6px 18px rgb(0 0 0 / 55%);
+    box-shadow: 0 0 0 calc(var(--u) * 0.4) rgb(253 224 71 / 45%), 0 calc(var(--u) * 0.6) calc(var(--u) * 1.8) rgb(0 0 0 / 55%);
 }
 
-.tb-reveal {
-    order: 3;
-    padding: 0.05rem 0.5rem;
-    border-radius: 999px;
-    font-size: 0.62rem;
-    font-weight: 700;
-    color: #e2e8f0;
-    background: rgb(15 23 42 / 70%);
+.tb-more {
+    flex: 0 0 auto;
+    margin-inline-start: auto;
+    font-size: 1.1em;
+    line-height: 1;
+    opacity: 0.8;
 }
 
 .tb-avatar {
     flex: 0 0 auto;
-    width: 2rem;
-    height: 2rem;
+    width: 2.1em;
+    height: 2.1em;
     display: grid;
     place-items: center;
     border-radius: 50%;
     font-family: var(--rc-font-display, serif);
     font-weight: 800;
     background: rgb(0 0 0 / 30%);
-    border: 2px solid rgb(255 255 255 / 70%);
+    border: max(1px, 0.12em) solid rgb(255 255 255 / 70%);
 }
 
 .tb-id {
     min-width: 0;
+    flex: 1 1 auto;
     display: flex;
     flex-direction: column;
     line-height: 1.15;
@@ -440,7 +499,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 
 .tb-name {
     overflow: hidden;
-    font-size: 0.85rem;
+    font-size: 1em;
     white-space: nowrap;
     text-overflow: ellipsis;
 }
@@ -448,8 +507,8 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 .tb-stats {
     display: flex;
     white-space: nowrap;
-    gap: 0.45rem;
-    font-size: 0.72rem;
+    gap: 0.45em;
+    font-size: 0.85em;
     opacity: 0.92;
 }
 
@@ -460,11 +519,11 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 .tb-plays {
     position: absolute;
     left: 50%;
-    bottom: calc(100% + 0.25rem);
+    bottom: calc(100% + 0.25em);
     transform: translateX(-50%);
-    padding: 0.1rem 0.55rem;
+    padding: 0.1em 0.6em;
     border-radius: 999px;
-    font-size: 0.7rem;
+    font-size: 0.85em;
     font-weight: 700;
     white-space: nowrap;
     color: #0f172a;
@@ -475,18 +534,19 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 0.2rem;
+    gap: 0.2em;
+    max-width: 100%;
 }
 
 .tb-set {
     display: inline-flex;
     align-items: center;
-    gap: 0.2rem;
-    min-width: 2.1rem;
-    padding: 0.15rem 0.4rem;
-    border: 2px solid rgb(255 255 255 / 70%);
-    border-radius: 6px;
-    font: 800 0.7rem var(--rc-font-body, sans-serif);
+    gap: 0.2em;
+    min-width: 2.3em;
+    padding: 0.12em 0.4em;
+    border: max(1px, 0.14em) solid rgb(255 255 255 / 70%);
+    border-radius: 0.35em;
+    font: 800 0.8em var(--rc-font-body, sans-serif);
     color: var(--set-text, #fff);
     background: var(--set-color);
     box-shadow: 0 2px 5px rgb(0 0 0 / 45%);
@@ -505,179 +565,102 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 }
 
 .tb-set-mark {
-    font-size: 0.55rem;
+    font-size: 0.7em;
 }
 
-.tb-stage--compact .tb-name {
-    font-size: 0.72rem;
-}
-
-.tb-stage--compact .tb-avatar {
-    width: 1.6rem;
-    height: 1.6rem;
-    font-size: 0.75rem;
-}
-
-.tb-stage--compact .tb-hand {
+/* Dense tables: drop the decorative bits first, keep name + bank + sets. */
+.tb-stage--tier2 .tb-avatar,
+.tb-stage--tier3 .tb-avatar,
+.tb-stage--tier3 .tb-more {
     display: none;
+}
+
+.tb-stage--tier3 .tb-hand {
+    display: none;
+}
+
+.tb-stage--tier3 .tb-set {
+    min-width: 0;
+    padding: 0.05em 0.25em;
+    font-size: 0.72em;
 }
 
 .tb-pile {
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
     align-items: center;
     color: #f8fafc;
-    font-size: 0.65rem;
+    font-size: max(8px, calc(var(--u) * 1.5));
     text-shadow: 0 1px 3px rgb(0 0 0 / 80%);
 }
 
-.tb-pile-back {
+/* Both piles are 6u × 9u cards. */
+.tb-pile:not(.tb-pile--discard) {
+    width: calc(var(--u) * 7);
+    padding-top: calc(var(--u) * 9.9);
+}
+
+.tb-card-back {
     position: absolute;
     top: 0;
     left: 0;
-    width: 48px;
-    height: 70px;
-    border-radius: 6px;
-    border: 2px solid #fef3c7;
+    width: calc(var(--u) * 6);
+    height: calc(var(--u) * 9);
+    box-sizing: border-box;
+    border-radius: calc(var(--u) * 0.9);
+    border: max(1.5px, calc(var(--u) * 0.3)) solid #fef3c7;
     background: repeating-linear-gradient(45deg, #b45309 0 6px, #92400e 6px 12px);
     box-shadow: 0 2px 4px rgb(0 0 0 / 40%);
 }
 
-.tb-pile-back--2 {
-    transform: translate(3px, 3px);
+.tb-card-back--2 {
+    transform: translate(calc(var(--u) * 0.4), calc(var(--u) * 0.4));
 }
 
-.tb-pile-back--3 {
-    transform: translate(6px, 6px);
-}
-
-.tb-pile:not(.tb-pile--discard) {
-    width: 54px;
-    padding-top: 78px;
+.tb-card-back--3 {
+    transform: translate(calc(var(--u) * 0.8), calc(var(--u) * 0.8));
 }
 
 .tb-pile-count {
     position: absolute;
-    top: 22px;
+    top: calc(var(--u) * 2.8);
     left: 0;
-    width: 48px;
+    width: calc(var(--u) * 6);
     text-align: center;
-    font: 900 1.2rem var(--rc-font-display, serif);
+    font: 900 max(11px, calc(var(--u) * 2.6)) var(--rc-font-display, serif);
 }
 
 .tb-pile--discard {
-    min-width: 58px;
+    min-width: calc(var(--u) * 6);
 }
 
 .tb-discard {
-    width: 58px;
-    height: 87px;
+    position: relative;
+    width: calc(var(--u) * 6);
+    height: calc(var(--u) * 9);
+    margin-bottom: calc(var(--u) * 0.9);
 }
 
-/* The slot renders Table.vue's full-size discard stack (114 × 171); scale it
-   down to fit the hub. */
+/* The slot renders Table.vue's full-size discard stack (114 × 171); --ds
+   scales it down to the board's card size. */
 .tb-discard :deep(.md-discard-stack) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 114px;
     margin: 0;
-    transform: scale(0.5);
+    transform: scale(var(--ds, 0.5));
     transform-origin: top left;
 }
 
 .tb-pile-empty {
-    width: 48px;
-    height: 70px;
+    box-sizing: border-box;
+    width: calc(var(--u) * 6);
+    height: calc(var(--u) * 9);
+    margin-bottom: calc(var(--u) * 0.9);
     border: 2px dashed rgb(255 255 255 / 45%);
-    border-radius: 6px;
-}
-
-@media (max-width: 640px) {
-    .tb-stage {
-        --tilt: 40deg;
-        --tb-plate-w: 112px;
-        aspect-ratio: 100 / 78;
-    }
-
-    .tb-stage--compact,
-    .tb-stage--dense {
-        --tb-plate-w: 84px;
-    }
-
-    .tb-stage--dense {
-        aspect-ratio: 100 / 92;
-    }
-
-    .tb-stage--dense .tb-hand,
-    .tb-stage--dense .tb-avatar {
-        display: none;
-    }
-
-    .tb-plane {
-        aspect-ratio: 1 / 1;
-    }
-
-    .tb-hub {
-        inset: 27% 31% 39%;
-    }
-
-    .tb-name {
-        font-size: 0.72rem;
-    }
-
-    .tb-stats {
-        font-size: 0.64rem;
-    }
-
-    .tb-center {
-        gap: 0.6rem;
-        top: 44%;
-        transform: translate(-50%, -62%) rotateX(calc(var(--tilt) * -1)) scale(0.8);
-    }
-}
-
-/* Phones held sideways: the board is sized from the available height so the
-   whole table fits without scrolling. Comes after the narrow-width rules so
-   it wins on small landscape screens too. */
-@media (orientation: landscape) and (max-height: 560px) {
-    .tb-stage {
-        --tilt: 46deg;
-        --tb-plate-w: 132px;
-        --tb-w: min(calc(100vw - 1rem), 1120px, calc((100dvh - 6rem - var(--tb-top, 2.4rem)) * 100 / 47));
-        margin-top: var(--tb-top, 2.4rem);
-        aspect-ratio: 100 / 47;
-    }
-
-    .tb-stage--compact,
-    .tb-stage--dense {
-        --tb-plate-w: 92px;
-    }
-
-    .tb-plane {
-        aspect-ratio: 16 / 11;
-    }
-
-    .tb-hub {
-        inset: 31% 30%;
-    }
-
-    .tb-center {
-        top: 45%;
-        gap: 0.9rem;
-        transform: translate(-50%, -62%) rotateX(calc(var(--tilt) * -1));
-    }
-
-    .tb-stage--dense .tb-hand {
-        display: none;
-    }
-
-    .tb-stage--dense .tb-avatar,
-    .tb-stage--dense .tb-more {
-        display: none;
-    }
-
-    .tb-reveal {
-        display: none;
-    }
+    border-radius: calc(var(--u) * 0.9);
 }
 
 @media (prefers-reduced-motion: reduce) {
