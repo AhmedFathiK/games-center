@@ -53,11 +53,13 @@ const SEAT_HUES = [200, 28, 52, 150, 280, 340, 175, 12, 235, 95]
 
 // Card geometry in board units (1u = 1% of the board width). 'sm' cards are
 // 108 × 165 px, so a column's scale is CARD_W·u / 108.
-const CARD_W = 3.6
+const CARD_W = 4
 const SM_CARD_PX = 108
 const SM_RATIO = 165 / 108
 const CARD_OVERLAP = 0.27 // fraction of a card's height each next card is offset by
-const COLUMNS_PER_ROW = 4
+// Room one pod has for its columns, in u. A pod is one row that never wraps
+// upward into the neighbours: past four sets the columns overlap sideways.
+const POD_INNER = 15.6
 
 const stageEl = ref<HTMLElement | null>(null)
 // Board width / 100, in px. 5 is a sane first paint before we measure.
@@ -139,6 +141,13 @@ const seats = computed(() => {
     const subset = SUBSETS[Math.min(9, Math.max(1, count - 1))] ?? SUBSETS[9]
 
     return players.map((seat, index) => {
+        const sets = Object.entries(seat.properties).map(([color, group]) => ({
+            color,
+            cards: group.cards,
+            complete: isCompleteSet(seat, color),
+            house: Boolean(group.house),
+            hotel: Boolean(group.hotel),
+        }))
         const offset = (index - myIndex + count) % count
         const slot = offset === 0 ? ME_SLOT : SLOTS[subset[offset - 1] ?? 4]
 
@@ -151,13 +160,9 @@ const seats = computed(() => {
             isTurn: props.live && seat.id === props.table.current_player_id,
             isWinner: props.winnerId != null && String(seat.id) === props.winnerId,
             bank: bankTotal(seat),
-            sets: Object.entries(seat.properties).map(([color, group]) => ({
-                color,
-                cards: group.cards,
-                complete: isCompleteSet(seat, color),
-                house: Boolean(group.house),
-                hotel: Boolean(group.hotel),
-            })),
+            sets,
+            // Extra space between columns, in u (negative = overlap).
+            gap: sets.length > 1 ? Math.min(0.3, (POD_INNER - CARD_W) / (sets.length - 1) - CARD_W) : 0,
         }
     })
 })
@@ -168,7 +173,6 @@ const stageStyle = computed(() => ({
     '--ch': CARD_W * SM_RATIO,
     '--co': CARD_W * SM_RATIO * CARD_OVERLAP,
     '--cs': (CARD_W * unit.value) / SM_CARD_PX,
-    '--cols': COLUMNS_PER_ROW,
     // Discard art is laid out at 114px wide; scale it to the pile's 6.6u.
     '--ds': (6.6 * unit.value) / 114,
 }))
@@ -237,7 +241,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
                 :key="`pod-${entry.seat.id}`"
                 class="tb-pod"
                 :class="`tb-pod--${entry.side}`"
-                :style="{ left: `${entry.podX}%`, top: `${entry.podY}%`, '--seat-hue': entry.hue }"
+                :style="{ left: `${entry.podX}%`, top: `${entry.podY}%`, '--seat-hue': entry.hue, '--gap': entry.gap }"
             >
                 <button
                     v-for="set in entry.sets"
@@ -303,8 +307,10 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 .tb-stage {
     --tilt: 40deg;
     /* Height of the stage as a fraction of its width: the 2.84:1 plane (89u wide)
-       squashed by cos(tilt), plus 8.5u headroom and 6.5u footroom for the plates. */
-    --tb-k: calc(0.89 / 2.84 * cos(var(--tilt)) + 0.15);
+       squashed by cos(tilt), plus headroom and footroom for the plates. */
+    --tb-head: 0.07;
+    --tb-foot: 0.065;
+    --tb-k: calc(0.89 / 2.84 * cos(var(--tilt)) + var(--tb-head) + var(--tb-foot));
     /* Fit the viewport: Table.vue sets --md-reserve to the height taken by
        everything else on screen (summary, hand dock…). */
     --tb-w: min(calc(100vw - 1rem), 1100px, max(18rem, calc((100dvh - var(--md-reserve, 22rem)) / var(--tb-k))));
@@ -328,7 +334,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
        holds the bottom row of plates. */
     left: 11%;
     right: 0;
-    bottom: 6.5%;
+    bottom: calc(var(--tb-w) * var(--tb-foot));
     aspect-ratio: 2.84 / 1;
     transform-style: preserve-3d;
     transform: rotateX(var(--tilt));
@@ -388,13 +394,11 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 .tb-pod {
     box-sizing: border-box;
     width: max-content;
-    max-width: calc(var(--u) * (var(--cols) * (var(--cw) + 0.4) + 0.4));
     min-height: 0;
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: flex-end;
     justify-content: center;
-    gap: calc(var(--u) * 0.4);
     padding: calc(var(--u) * 0.4);
     border-radius: calc(var(--u) * 0.8);
     background: hsl(var(--seat-hue) 45% 18% / 45%);
@@ -404,6 +408,11 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 
 .tb-pod:empty {
     display: none;
+}
+
+/* Columns overlap sideways once a player has more than four sets. */
+.tb-col + .tb-col {
+    margin-inline-start: calc(var(--u) * var(--gap, 0.3));
 }
 
 .tb-col {
@@ -587,7 +596,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 /* ---- Corner piles ------------------------------------------------------- */
 .tb-corner {
     position: absolute;
-    top: 8.5%;
+    top: calc(var(--tb-w) * 0.055);
     left: 0;
     z-index: 4;
     width: calc(var(--u) * 10);
