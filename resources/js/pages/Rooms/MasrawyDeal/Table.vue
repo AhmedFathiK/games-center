@@ -4386,16 +4386,19 @@ input[type='checkbox'] {
         max-height: 96dvh;
     }
 }
-/* ==== Hand fan, play drawer and hand tools ================================
-   The hand is a fan along the bottom edge: only the top of each card peeks up,
-   the tapped card lifts out, and its play options open in a drawer on the right
-   (never behind the hand). Placed last so it wins over the older dock rules. */
+/* ==== Hand row, play drawer and hand tools ================================
+   The hand is one flat row of upright cards along the bottom edge, between the
+   Sort and End Turn buttons (never under them). When there are more cards than
+   fit, the cards overlap sideways a little; a tapped card lifts straight up and
+   its play options open in a drawer on the right (never behind the hand).
+   Placed last so it wins over the older dock rules. */
 .md-root.md-root {
     --fan-scale: 0.82;
-    --peek: 0.5;
-    --fan-w: min(640px, 94vw);
+    --peek: 0.8; /* fraction of a card's height that shows above the bottom edge */
+    --tools-l: 7.6rem;
+    --tools-r: 8.4rem;
     --drawer-w: min(380px, 42vw);
-    --md-reserve: 15rem;
+    --md-reserve: 12rem;
     padding-bottom: calc(165px * var(--fan-scale) * var(--peek) + 0.5rem);
 }
 
@@ -4405,51 +4408,58 @@ input[type='checkbox'] {
 }
 
 .md-fan {
+    --cw: calc(108px * var(--fan-scale));
+    --ch: calc(165px * var(--fan-scale));
     position: fixed;
     z-index: 870;
     bottom: 0;
-    left: 50%;
-    width: var(--fan-w);
-    height: calc(165px * var(--fan-scale) * var(--peek));
-    transform: translateX(-50%);
+    left: var(--tools-l);
+    right: var(--tools-r);
+    height: calc(var(--ch) * var(--peek));
+    /* Left-to-right whatever the page direction, so the first card is always
+       the leftmost and its corner badge stays in view when cards overlap. */
+    direction: ltr;
     pointer-events: none;
-    transition: left 160ms ease;
+    transition: right 160ms ease;
 }
 
 .md-fan--selected {
-    left: calc((100vw - var(--drawer-w)) / 2);
+    right: calc(var(--drawer-w) + 0.6rem);
 }
 
 .md-fan-row {
     position: relative;
+    display: flex;
+    justify-content: center;
     height: 100%;
 }
 
+/* Each card's slot may shrink below the card's width, which makes the cards
+   overlap only when the hand is too wide; the last one always shows in full. */
 .md-fan-card {
-    --cw: calc(108px * var(--fan-scale));
-    --ch: calc(165px * var(--fan-scale));
-    --d: calc(var(--i) - (var(--n) - 1) / 2);
-    --step: min(8deg, calc(64deg / var(--n)));
-    position: absolute;
-    top: 0;
-    left: 50%;
-    width: var(--cw);
+    position: relative;
+    flex: 0 1 var(--cw);
+    min-width: calc(var(--cw) * 0.28);
     height: var(--ch);
-    margin-left: calc(var(--cw) / -2);
     pointer-events: auto;
-    transform-origin: 50% calc(var(--ch) * 2.4);
-    transform: rotate(calc(var(--d) * var(--step)));
     transition: transform 160ms ease;
     z-index: calc(var(--i) + 1);
 }
 
+.md-fan-card:last-child {
+    flex-basis: var(--cw);
+    flex-shrink: 0;
+}
+
 .md-fan-card .md-card-btn {
     display: block;
-    width: 100%;
-    height: 100%;
+    width: var(--cw);
+    height: var(--ch);
     padding: 0;
-    border-radius: 6px;
+    border: 0;
+    border-radius: 8px;
     background: none;
+    outline: none;
 }
 
 .md-fan-card :deep(.mc-card) {
@@ -4464,26 +4474,27 @@ input[type='checkbox'] {
 
 @media (hover: hover) {
     .md-fan-card:hover {
-        transform: rotate(calc(var(--d) * var(--step))) translateY(calc(var(--ch) * -0.16));
+        transform: translateY(calc(var(--ch) * -0.1));
     }
 }
 
+/* The lifted card rises straight up, fully visible, with its highlight drawn
+   on the card itself so the outline always hugs it. */
 .md-fan-card--selected,
 .md-fan-card--selected:hover {
-    transform-origin: 50% 100%;
-    transform: translateY(calc(var(--ch) * -0.82)) scale(1.1);
+    transform: translateY(calc(var(--ch) * -0.55));
     z-index: 60;
 }
 
-.md-fan-card .md-card-btn--selected {
-    outline-offset: 1px;
+.md-fan-card--selected :deep(.mc-card) {
+    box-shadow: 0 0 0 3px #f59e0b, 0 8px 18px rgba(0, 0, 0, 0.55);
+    border-radius: 12px;
 }
 
-/* Reordering turns the fan into a flat, scrolling row you can drag within. */
+/* Reordering: the same row, scrollable, with every card in full. */
 .md-fan--flat {
     pointer-events: auto;
-    width: calc(100vw - 1rem);
-    height: calc(165px * var(--fan-scale) + 0.6rem);
+    height: calc(var(--ch) + 0.6rem);
     padding: 0.3rem 0.5rem;
     overflow-x: auto;
     border-radius: 12px 12px 0 0;
@@ -4491,17 +4502,17 @@ input[type='checkbox'] {
 }
 
 .md-fan--flat .md-fan-row {
-    display: flex;
+    justify-content: flex-start;
     gap: 0.4rem;
     height: auto;
+    width: max-content;
+    min-width: 100%;
 }
 
-.md-fan--flat .md-fan-card {
-    position: relative;
-    left: auto;
-    flex: 0 0 auto;
-    margin-left: 0;
-    transform: none;
+.md-fan--flat .md-fan-card,
+.md-fan--flat .md-fan-card:last-child {
+    flex: 0 0 var(--cw);
+    min-width: var(--cw);
 }
 
 .md-fan-hint {
@@ -4640,11 +4651,12 @@ input[type='checkbox'] {
 
 @media (orientation: landscape) and (max-height: 560px) {
     .md-root.md-root {
-        --fan-scale: 0.62;
-        --peek: 0.46;
-        --fan-w: min(520px, 62vw);
+        --fan-scale: 0.6;
+        --peek: 0.8;
+        --tools-l: 6.6rem;
+        --tools-r: 7.4rem;
         --drawer-w: min(300px, 40vw);
-        --md-reserve: 3.4rem;
+        --md-reserve: 5.2rem;
         padding-bottom: 0;
     }
 
@@ -4670,4 +4682,16 @@ input[type='checkbox'] {
     }
 }
 
+@media (orientation: landscape) and (max-height: 400px) {
+    .md-root.md-root {
+        --fan-scale: 0.54;
+        --md-reserve: 4.6rem;
+    }
+}
+
+/* No white strip under the page where a phone's browser UI leaves a gap. */
+:global(html.md-play-mode),
+:global(html.md-play-mode body) {
+    background: #0d1424;
+}
 </style>
