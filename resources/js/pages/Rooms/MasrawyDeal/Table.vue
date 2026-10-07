@@ -41,8 +41,6 @@ const flippedCardIds = ref<string[]>([])
 const flippedCardsLoaded = ref(false)
 const flippedCardsStorageKey = `masrawy-deal-flipped-cards:${props.room.id}:${props.auth.user.id}`
 const isReorderingHand = ref(false)
-const isHandCollapsed = ref(false)
-const activeHandTab = ref<'hand' | 'properties'>('hand')
 const showJustSayNoNotice = ref(false)
 const showBirthdayNotice = ref(false)
 const isResponsePromptCollapsed = ref(false)
@@ -610,6 +608,7 @@ function rotateSelectedWildcard() {
 
 function selectCard(id: string) {
     selectedCardId.value = selectedCardId.value === id ? null : id
+    pickSkipped.value = false
     actionError.value = null
     confirmBankCardId.value = null
     // Reset any in-progress sub-form when switching cards.
@@ -940,6 +939,37 @@ function pay() {
 
 // --- Hand limit discard ---------------------------------------------------
 
+// --- Hand fan -------------------------------------------------------------
+// Each card knows its index and the hand size; the fan's rotation, spacing and
+// arc are all computed in CSS from those two numbers.
+function fanStyle(index: number): Record<string, number> {
+    return { '--i': index, '--n': Math.max(1, handOrder.value.length) }
+}
+
+// --- Choosing a target on the table ----------------------------------------
+// Cards that charge or take from one opponent let you tap that player on the
+// table instead of opening a select list; the list stays as a fallback.
+const TARGET_PLAYER_ACTIONS = ['debt_collector', 'sly_deal', 'forced_deal', 'deal_breaker']
+
+// While a targeting card waits for its target the drawer shrinks to a hint so
+// the table underneath stays tappable; "More options" opens it fully.
+const pickSkipped = ref(false)
+const pickablePlayerIds = computed<number[] | null>(() => {
+    const entry = selectedEntry.value
+    if (!entry || !canPlayCard.value) return null
+    const needsTarget = (entry.action !== undefined && TARGET_PLAYER_ACTIONS.includes(entry.action)) || selectedIsWildRent.value
+    return needsTarget ? opponents.value.map(o => o.id) : null
+})
+
+const drawerCompact = computed(() => pickablePlayerIds.value !== null && targetId.value === null && !pickSkipped.value)
+
+function pickTarget(playerId: number) {
+    if (targetId.value !== playerId) {
+        targetId.value = playerId
+        resetTargetSelections()
+    }
+}
+
 const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
 const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_turn === true && overHandLimit.value)
 const autoEndTurnReady = computed(() =>
@@ -963,13 +993,9 @@ watch(
 )
 
 // Phones held sideways have very little height: Show.vue's page header is
-// hidden (see the :global rules below) and the hand starts collapsed so the
-// table gets the screen.
-const SHORT_LANDSCAPE_QUERY = '(orientation: landscape) and (max-height: 560px) and (pointer: coarse)'
-
+// hidden (see the :global rules below) so the table gets the screen.
 onMounted(() => {
     document.documentElement.classList.add('md-play-mode')
-    if (window.matchMedia(SHORT_LANDSCAPE_QUERY).matches) isHandCollapsed.value = true
 })
 
 onUnmounted(() => {
@@ -980,7 +1006,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <div class="md-root" :class="{ 'md-root--hand-collapsed': isHandCollapsed, 'md-root--ended': !gameIsLive }">
+    <div class="md-root" :class="{ 'md-root--ended': !gameIsLive }">
         <LandscapeGate />
         <!-- table/you are only ever null before the game has started, which
              Show.vue's branch guard already keeps this component from
@@ -1051,8 +1077,13 @@ onUnmounted(() => {
                 :reveal-hands="revealHands"
                 :player-name="playerName"
                 :color-label="colorLabel"
+                :can-draw="isMyTurn && !table.has_drawn_this_turn && pending === null && !submitting"
+                :pick-targets="pickablePlayerIds"
+                :picked-id="targetId"
                 @open-set="openPropertySet"
                 @open-player="openPlayerSheet"
+                @draw="draw"
+                @pick-target="pickTarget"
             >
                 <template #discard>
                     <div class="md-discard-stack" :aria-label="t('Top card of discard pile; :count cards in pile', { count: table.discard_pile.length })">
@@ -1068,188 +1099,80 @@ onUnmounted(() => {
                 </template>
             </TableBoard>
 
-            <!-- My hand -->
-            <section v-if="gameIsLive" class="md-hand" :class="{ 'md-hand--collapsed': isHandCollapsed }">
-                <template v-if="isHandCollapsed">
-                    <button
-                        class="md-hand-expand"
-                        type="button"
-                        :aria-label="t('Show hand cards (:count)', { count: you.hand.length })"
-                        :title="t('Show hand cards (:count)', { count: you.hand.length })"
-                        @click="isHandCollapsed = false"
+            <!-- My hand: a fan along the bottom edge. Tap a card to lift it. -->
+            <section
+                v-if="gameIsLive"
+                class="md-fan"
+                :class="{ 'md-fan--flat': isReorderingHand, 'md-fan--selected': !!selectedEntry }"
+                :aria-label="t('Your cards')"
+            >
+                <p v-if="isMyTurn && overHandLimit" class="md-fan-hint">{{ t('Discard down to 7 cards before ending your turn.') }}</p>
+                <p v-else-if="isReorderingHand" class="md-fan-hint">{{ t('Press and hold a card, then drag it to reorder. Your order is saved on this device.') }}</p>
+                <p v-else-if="pending && !canAct && !selectedEntry" class="md-fan-hint">{{ t('Waiting on a pending action.') }}</p>
+
+                <VueDraggable
+                    v-model="handOrder"
+                    class="md-fan-row"
+                    :disabled="!isReorderingHand"
+                    :animation="180"
+                    :delay="160"
+                    :delay-on-touch-only="true"
+                    :touch-start-threshold="5"
+                    :fallback-tolerance="5"
+                    :force-fallback="true"
+                    :fallback-on-body="true"
+                    :scroll="true"
+                    :scroll-sensitivity="60"
+                    :scroll-speed="10"
+                    direction="horizontal"
+                    ghost-class="md-hand-card--ghost"
+                    chosen-class="md-hand-card--chosen"
+                    drag-class="md-hand-card--dragging"
+                >
+                    <div
+                        v-for="(cardId, index) in handOrder"
+                        :key="cardId"
+                        class="md-fan-card"
+                        :class="{ 'md-fan-card--selected': selectedCardId === cardId }"
+                        :style="fanStyle(index)"
                     >
-                        <span aria-hidden="true">▤</span>
-                        <span>{{ you.hand.length }}</span>
-                    </button>
-                    <button
-                        v-if="isMyTurn && !table.has_drawn_this_turn && pending === null"
-                        class="md-btn md-btn--primary md-hand-collapsed-draw"
-                        type="button"
-                        :disabled="submitting"
-                        @click="draw"
-                    >{{ t('Draw') }}</button>
-                </template>
-                <div v-else class="md-hand-panel">
-                    <div class="md-hand-header">
-                        <h3 class="md-section-title">{{ activeHandTab === 'hand' ? t('Your Hand (:count/7)', { count: you.hand.length }) : t('My properties') }}</h3>
-                        <div class="md-hand-actions">
-                            <button
-                                v-if="activeHandTab === 'hand' && you.hand.length > 1"
-                                class="md-btn md-btn--muted"
-                                :aria-pressed="isReorderingHand"
-                                @click="toggleHandReordering"
-                            >
-                                {{ t(isReorderingHand ? 'Done sorting' : 'Sort hand') }}
-                            </button>
-                            <button
-                                v-if="activeHandTab === 'hand' && isMyTurn && !table.has_drawn_this_turn && pending === null"
-                                class="md-btn md-btn--primary"
-                                type="button"
-                                :disabled="submitting"
-                                @click="draw"
-                            >{{ t('Draw') }}</button>
-                            <button
-                                v-if="activeHandTab === 'hand' && isMyTurn && table.has_drawn_this_turn && pending === null && !overHandLimit && playsLeft > 0"
-                                class="md-btn"
-                                :disabled="submitting"
-                                @click="endTurn"
-                            >
-                                {{ t('End Turn') }}
-                            </button>
-                            <button
-                                class="md-btn md-btn--muted md-hand-collapse"
-                                type="button"
-                                :aria-label="t('Collapse hand cards')"
-                                :title="t('Collapse hand cards')"
-                                @click="isHandCollapsed = true"
-                            >
-                                ↓
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="md-hand-tabs" role="tablist" :aria-label="t('Your cards')">
                         <button
-                            id="md-hand-tab"
-                            class="md-hand-tab"
-                            :class="{ 'md-hand-tab--active': activeHandTab === 'hand' }"
-                            type="button"
-                            role="tab"
-                            :aria-selected="activeHandTab === 'hand'"
-                            aria-controls="md-hand-panel"
-                            @click="activeHandTab = 'hand'"
+                            class="md-card-btn"
+                            :class="{ 'md-card-btn--selected': selectedCardId === cardId }"
+                            :aria-label="`${t(isReorderingHand ? 'Reorder' : 'Select')} ${label(cardId)}`"
+                            :aria-pressed="selectedCardId === cardId"
+                            :disabled="!gameIsLive || isReorderingHand"
+                            @click="selectCard(cardId)"
                         >
-                            {{ t('Hand cards') }} <span>{{ you.hand.length }}</span>
-                        </button>
-                        <button
-                            id="md-properties-tab"
-                            class="md-hand-tab"
-                            :class="{ 'md-hand-tab--active': activeHandTab === 'properties' }"
-                            type="button"
-                            role="tab"
-                            :aria-selected="activeHandTab === 'properties'"
-                            aria-controls="md-hand-panel"
-                            @click="activeHandTab = 'properties'; isReorderingHand = false"
-                        >
-                            {{ t('My properties') }} <span>{{ Object.keys(mySeat?.properties ?? {}).length }}</span>
+                            <MasrawyCard :entry="entryFor(cardId)!" :active-color="activeColorForCard(cardId)" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
                         </button>
                     </div>
-
-                    <div id="md-hand-panel" class="md-hand-content" role="tabpanel" :aria-labelledby="activeHandTab === 'hand' ? 'md-hand-tab' : 'md-properties-tab'">
-                        <template v-if="activeHandTab === 'hand'">
-                            <p v-if="isReorderingHand" class="md-hint md-hand-sort-hint">
-                                {{ t('Press and hold a card, then drag it to reorder. Your order is saved on this device.') }}
-                            </p>
-
-                            <p v-if="isMyTurn && overHandLimit" class="md-hint">
-                                {{ t('Discard down to 7 cards before ending your turn.') }}
-                            </p>
-
-                            <VueDraggable
-                                v-model="handOrder"
-                                class="md-card-row md-card-row--hand"
-                                :class="{ 'md-card-row--hand-sorting': isReorderingHand }"
-                                :disabled="!isReorderingHand"
-                                :animation="180"
-                                :delay="160"
-                                :delay-on-touch-only="true"
-                                :touch-start-threshold="5"
-                                :fallback-tolerance="5"
-                                :force-fallback="true"
-                                :fallback-on-body="true"
-                                :scroll="true"
-                                :scroll-sensitivity="60"
-                                :scroll-speed="10"
-                                direction="horizontal"
-                                ghost-class="md-hand-card--ghost"
-                                chosen-class="md-hand-card--chosen"
-                                drag-class="md-hand-card--dragging"
-                            >
-                                <div v-for="cardId in handOrder" :key="cardId" class="md-hand-card">
-                                    <button
-                                        class="md-card-btn"
-                                        :class="{ 'md-card-btn--selected': selectedCardId === cardId }"
-                                        :aria-label="`${t(isReorderingHand ? 'Reorder' : 'Select')} ${label(cardId)}`"
-                                        :aria-pressed="selectedCardId === cardId"
-                                        :disabled="!gameIsLive || isReorderingHand"
-                                        @click="selectCard(cardId)"
-                                    >
-                                        <MasrawyCard :entry="entryFor(cardId)!" :active-color="activeColorForCard(cardId)" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
-                                    </button>
-                                </div>
-                            </VueDraggable>
-
-                            <p v-if="pending && !canAct && !selectedEntry" class="md-hint">
-                                {{ t('Waiting on a pending action.') }}
-                            </p>
-                        </template>
-
-                        <template v-else>
-                            <div v-if="mySeat && Object.keys(mySeat.properties).length > 0" class="md-seat-properties md-my-properties">
-                                <button
-                                    v-for="(group, color) in mySeat.properties"
-                                    :key="color"
-                                    type="button"
-                                    class="md-seat-set-preview"
-                                    :aria-label="t('View :name’s :color Manti2a in detail', { name: playerName(myId), color: colorLabel(String(color)) })"
-                                    @click="openPropertySet(myId, String(color))"
-                                >
-                                    <span class="md-seat-set-heading">
-                                        <strong>{{ colorLabel(String(color)) }}</strong>
-                                        <small>{{ t(':count cards', { count: group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }) }}<span v-if="group.house"> · SHISHA</span><span v-if="group.hotel"> · WIL3A</span></small>
-                                    </span>
-                                    <span
-                                        class="md-seat-set-stack"
-                                        aria-hidden="true"
-                                        :style="{ '--set-card-count': group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }"
-                                    >
-                                        <span
-                                            v-for="(cardId, index) in [...group.cards, ...(group.house ? [group.house] : []), ...(group.hotel ? [group.hotel] : [])]"
-                                            :key="cardId"
-                                            class="md-seat-set-card"
-                                            :style="{ zIndex: index + 1 }"
-                                        >
-                                            <MasrawyCard
-                                                :entry="entryFor(cardId)!"
-                                                :active-color="entryFor(cardId)?.type === 'wildcard' ? String(color) : undefined"
-                                                :rent-chart="rentChartFor(cardId)"
-                                                :set-size="setSizeFor(cardId)"
-                                                :wild-rent-charts="wildRentChartsFor(cardId)"
-                                                :wild-set-sizes="wildSetSizesFor(cardId)"
-                                            />
-                                        </span>
-                                    </span>
-                                    <span class="md-seat-set-hint">{{ t('Click to view cards') }}</span>
-                                </button>
-                            </div>
-                            <p v-else class="md-hint">{{ t('No properties on the table yet') }}</p>
-                        </template>
-                    </div>
-                </div>
-
+                </VueDraggable>
             </section>
 
-            <section v-if="selectedEntry" class="md-play-panel">
+            <!-- Hand tools: sort, and end turn once you've drawn. -->
+            <div v-if="gameIsLive" class="md-fan-tools" :class="{ 'md-fan-tools--selected': !!selectedEntry }">
+                <button
+                    v-if="you.hand.length > 1"
+                    class="md-btn md-btn--muted md-fan-sort"
+                    type="button"
+                    :aria-pressed="isReorderingHand"
+                    @click="toggleHandReordering"
+                >
+                    {{ t(isReorderingHand ? 'Done sorting' : 'Sort hand') }}
+                </button>
+                <button
+                    v-if="isMyTurn && table.has_drawn_this_turn && pending === null && !overHandLimit && playsLeft > 0"
+                    class="md-btn md-fan-endturn"
+                    type="button"
+                    :disabled="submitting"
+                    @click="endTurn"
+                >
+                    {{ t('End Turn') }}
+                </button>
+            </div>
+
+            <section v-if="selectedEntry" class="md-play-panel" :class="{ 'md-play-panel--compact': drawerCompact }">
                     <header class="md-play-panel-header">
                         <h3>{{ label(selectedEntry.id) }}</h3>
                         <button class="md-play-panel-close" type="button" :aria-label="t('Close card options')" @click="clearSelection">×</button>
@@ -1279,8 +1202,17 @@ onUnmounted(() => {
                             {{ t('Rotate 180°') }}
                         </button>
                         <p v-if="isMyTurn && pending === null && !table.has_drawn_this_turn" class="md-hint">
-                            {{ t('Draw before playing a card.') }}
+                            {{ t('Draw before playing a card. Tap the draw pile in the corner.') }}
                         </p>
+                        <p v-else-if="pickablePlayerIds !== null && targetId === null" class="md-hint md-target-hint">
+                            {{ t('Tap a player on the table to choose the target.') }}
+                        </p>
+                        <button
+                            v-if="drawerCompact && !(isMyTurn && pending === null && !table.has_drawn_this_turn)"
+                            class="md-btn md-btn--muted md-more-options"
+                            type="button"
+                            @click="pickSkipped = true"
+                        >{{ t('More options') }}</button>
                         <p v-else-if="!canAct" class="md-hint">
                             {{ t(pending ? 'You can adjust this card while waiting for the response.' : 'You can prepare this card now. Play options unlock on your turn.') }}
                         </p>
@@ -4255,7 +4187,7 @@ input[type='checkbox'] {
    page header + summary + the table's top margin + the hand dock, less the
    dock's overlap with the empty rim at the table's bottom. */
 .md-root {
-    --md-reserve: 24.8rem;
+    --md-reserve: 26.4rem;
 }
 
 .md-root--hand-collapsed {
@@ -4538,4 +4470,288 @@ input[type='checkbox'] {
         max-height: 96dvh;
     }
 }
+/* ==== Hand fan, play drawer and hand tools ================================
+   The hand is a fan along the bottom edge: only the top of each card peeks up,
+   the tapped card lifts out, and its play options open in a drawer on the right
+   (never behind the hand). Placed last so it wins over the older dock rules. */
+.md-root.md-root {
+    --fan-scale: 0.82;
+    --peek: 0.5;
+    --fan-w: min(640px, 94vw);
+    --drawer-w: min(380px, 42vw);
+    --md-reserve: 15rem;
+    padding-bottom: calc(165px * var(--fan-scale) * var(--peek) + 0.5rem);
+}
+
+.md-root.md-root.md-root--ended {
+    --md-reserve: 11rem;
+    padding-bottom: 1rem;
+}
+
+.md-fan {
+    position: fixed;
+    z-index: 870;
+    bottom: 0;
+    left: 50%;
+    width: var(--fan-w);
+    height: calc(165px * var(--fan-scale) * var(--peek));
+    transform: translateX(-50%);
+    pointer-events: none;
+    transition: left 160ms ease;
+}
+
+.md-fan--selected {
+    left: calc((100vw - var(--drawer-w)) / 2);
+}
+
+.md-fan-row {
+    position: relative;
+    height: 100%;
+}
+
+.md-fan-card {
+    --cw: calc(108px * var(--fan-scale));
+    --ch: calc(165px * var(--fan-scale));
+    --d: calc(var(--i) - (var(--n) - 1) / 2);
+    --step: min(8deg, calc(64deg / var(--n)));
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: var(--cw);
+    height: var(--ch);
+    margin-left: calc(var(--cw) / -2);
+    pointer-events: auto;
+    transform-origin: 50% calc(var(--ch) * 2.4);
+    transform: rotate(calc(var(--d) * var(--step)));
+    transition: transform 160ms ease;
+    z-index: calc(var(--i) + 1);
+}
+
+.md-fan-card .md-card-btn {
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border-radius: 6px;
+    background: none;
+}
+
+.md-fan-card :deep(.mc-card) {
+    transform: scale(var(--fan-scale));
+    transform-origin: top left;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.md-fan-card :deep(.mc-card--flipped) {
+    transform: translate(calc(100% * var(--fan-scale)), calc(100% * var(--fan-scale))) rotate(180deg) scale(var(--fan-scale));
+}
+
+@media (hover: hover) {
+    .md-fan-card:hover {
+        transform: rotate(calc(var(--d) * var(--step))) translateY(calc(var(--ch) * -0.16));
+    }
+}
+
+.md-fan-card--selected,
+.md-fan-card--selected:hover {
+    transform-origin: 50% 100%;
+    transform: translateY(calc(var(--ch) * -0.82)) scale(1.1);
+    z-index: 60;
+}
+
+.md-fan-card .md-card-btn--selected {
+    outline-offset: 1px;
+}
+
+/* Reordering turns the fan into a flat, scrolling row you can drag within. */
+.md-fan--flat {
+    pointer-events: auto;
+    width: calc(100vw - 1rem);
+    height: calc(165px * var(--fan-scale) + 0.6rem);
+    padding: 0.3rem 0.5rem;
+    overflow-x: auto;
+    border-radius: 12px 12px 0 0;
+    background: rgba(2, 6, 23, 0.82);
+}
+
+.md-fan--flat .md-fan-row {
+    display: flex;
+    gap: 0.4rem;
+    height: auto;
+}
+
+.md-fan--flat .md-fan-card {
+    position: relative;
+    left: auto;
+    flex: 0 0 auto;
+    margin-left: 0;
+    transform: none;
+}
+
+.md-fan-hint {
+    position: absolute;
+    bottom: calc(100% + 0.25rem);
+    left: 50%;
+    margin: 0;
+    padding: 0.2rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    color: #f8fafc;
+    background: rgba(2, 6, 23, 0.8);
+    transform: translateX(-50%);
+    pointer-events: none;
+}
+
+.md-fan-sort,
+.md-fan-endturn {
+    position: fixed;
+    z-index: 880;
+    bottom: calc(0.6rem + env(safe-area-inset-bottom));
+}
+
+.md-fan-sort {
+    left: 0.6rem;
+    min-height: 40px;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.8rem;
+}
+
+.md-fan-endturn {
+    right: 0.6rem;
+    min-height: 44px;
+    padding: 0.5rem 1.2rem;
+    border-radius: 999px;
+    font-weight: 800;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.md-fan-tools--selected .md-fan-endturn {
+    display: none;
+}
+
+.md-root.md-root .md-turn-modal-reopen,
+.md-root.md-root .md-pay-reopen {
+    right: 0.6rem;
+    bottom: calc(0.6rem + env(safe-area-inset-bottom));
+}
+
+/* The card's options: a drawer on the right at every size. */
+.md-root.md-root .md-play-panel {
+    top: 0.5rem;
+    right: 0.5rem;
+    bottom: 0.5rem;
+    left: auto;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 0.6rem;
+    width: var(--drawer-w);
+    max-height: none;
+    overflow: auto;
+    transform: none;
+    z-index: 890;
+}
+
+.md-root.md-root .md-play-panel > :first-child {
+    justify-self: auto;
+}
+
+.md-root.md-root .md-play-panel-header {
+    flex: 0 0 auto;
+}
+
+.md-play-panel .md-play-controls {
+    flex: 0 0 auto;
+    min-width: 0;
+}
+
+.md-root.md-root .md-play-panel.md-play-panel--compact {
+    top: 0.3rem;
+    right: auto;
+    bottom: auto;
+    left: 50%;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    width: auto;
+    max-width: 66vw;
+    padding: 0.25rem 0.5rem;
+    overflow: visible;
+    border-radius: 999px;
+    transform: translateX(-50%);
+}
+
+.md-play-panel--compact .md-play-panel-header h3 {
+    display: none;
+}
+
+.md-play-panel--compact .md-play-panel-close {
+    width: 2rem;
+    height: 2rem;
+    font-size: 1.1rem;
+}
+
+.md-play-panel--compact .md-play-controls {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.md-play-panel--compact .md-target-hint,
+.md-play-panel--compact .md-more-options {
+    margin: 0;
+    padding: 0.25rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.md-play-panel--compact :deep(.mc-card--detail),
+.md-play-panel--compact .md-play-controls > :not(.md-target-hint):not(.md-more-options) {
+    display: none;
+}
+
+.md-target-hint {
+    padding: 0.35rem 0.6rem;
+    border-radius: 8px;
+    font-weight: 700;
+    color: #0f172a;
+    background: #fde047;
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+    .md-root.md-root {
+        --fan-scale: 0.62;
+        --peek: 0.46;
+        --fan-w: min(520px, 62vw);
+        --drawer-w: min(300px, 40vw);
+        --md-reserve: 3.4rem;
+        padding-bottom: 0;
+    }
+
+    .md-root.md-root.md-root--ended {
+        --md-reserve: 4.4rem;
+        padding-bottom: 0;
+    }
+
+    /* Sits below the fullscreen button; the lifted card is already in the fan,
+       so the drawer keeps just the options. */
+    .md-root.md-root .md-play-panel {
+        top: 3rem;
+    }
+
+    .md-play-panel :deep(.mc-card--detail) {
+        display: none;
+    }
+
+    .md-fan-sort {
+        min-height: 34px;
+        padding: 0.2rem 0.6rem;
+        font-size: 0.72rem;
+    }
+}
+
 </style>
