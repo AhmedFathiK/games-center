@@ -4309,6 +4309,30 @@ input[type='checkbox'] {
         padding: 0.4rem;
     }
 
+    /* The host's cancel controls would otherwise take a ~5rem row above the
+       table; float them beside the fullscreen button instead. */
+    :global(html.md-play-mode .rc-cancel-bar) {
+        position: fixed;
+        top: 0.3rem;
+        right: 3.8rem;
+        z-index: 870;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        gap: 0.4rem;
+        align-items: center;
+        font-size: 0.7rem;
+    }
+
+    :global(html.md-play-mode .rc-cancel-bar .rc-cancel-btn) {
+        padding: 0.25rem 0.6rem;
+        font-size: 0.7rem;
+    }
+
+    :global(html.md-play-mode .rc-stale-notice p) {
+        display: none;
+    }
+
     .md-root,
     .md-root:not(.md-root--hand-collapsed),
     .md-root--hand-collapsed {

@@ -100,17 +100,19 @@ function isCompleteSet(seat: MasrawySeat, color: string): boolean {
 }
 
 type Side = 'top' | 'bottom'
-type Slot = { side: Side; x: number; y: number; podX: number; podY: number }
+// y / podY are CSS lengths from the plane's top: the rows hug the plane's two
+// edges, so a taller table just gains felt between them.
+type Slot = { side: Side; x: number; y: string; podX: number; podY: string }
 
 // A long table: two rows of five seats, the viewer at the bottom centre. Plates
 // stand outside the rim (above the top row, below the bottom row); each
 // player's sets lie on the felt beside their plate. Coordinates are percentages
 // of the plane (89u wide, ~24u tall on screen); pods anchor at their bottom edge.
 const COLS = [11.5, 30.7, 50, 69.3, 88.5]
-const TOP_POD_Y = 46
-const BOTTOM_POD_Y = 99
-const ABOVE = 0
-const BELOW = 124
+const TOP_POD_Y = 'calc(var(--u) * 14.4)'
+const BOTTOM_POD_Y = 'calc(100% - var(--u) * 0.3)'
+const ABOVE = '0px'
+const BELOW = 'calc(100% + var(--u) * 7.5)'
 
 const top = (i: number): Slot => ({ side: 'top', x: COLS[i], y: ABOVE, podX: COLS[i], podY: TOP_POD_Y })
 const bottom = (i: number): Slot => ({ side: 'bottom', x: COLS[i], y: BELOW, podX: COLS[i], podY: BOTTOM_POD_Y })
@@ -241,7 +243,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
                 :key="`pod-${entry.seat.id}`"
                 class="tb-pod"
                 :class="`tb-pod--${entry.side}`"
-                :style="{ left: `${entry.podX}%`, top: `${entry.podY}%`, '--seat-hue': entry.hue, '--gap': entry.gap }"
+                :style="{ left: `${entry.podX}%`, top: entry.podY, '--seat-hue': entry.hue, '--gap': entry.gap }"
             >
                 <button
                     v-for="set in entry.sets"
@@ -275,7 +277,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
                 :key="entry.seat.id"
                 class="tb-seat"
                 :class="[`tb-seat--${entry.side}`, { 'tb-seat--me': entry.isMe, 'tb-seat--turn': entry.isTurn, 'tb-seat--winner': entry.isWinner, 'tb-seat--pick': isPickable(entry.seat.id), 'tb-seat--picked': pickedId === entry.seat.id }]"
-                :style="{ left: `${entry.x}%`, top: `${entry.y}%`, '--seat-hue': entry.hue }"
+                :style="{ left: `${entry.x}%`, top: entry.y, '--seat-hue': entry.hue }"
             >
                 <!-- The badges live beside the button, not in it: a <button> clips what pokes out of its box. -->
                 <div class="tb-plate-wrap">
@@ -320,7 +322,13 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
     /* Show.vue keeps its content in a 42rem column; the table breaks out of
        it (margins are relative to that column) so it can use the screen. */
     width: var(--tb-w);
-    height: calc(var(--tb-w) * var(--tb-k));
+    /* Spare height (a wide screen) goes to the table, not to empty margin: the
+       felt gets taller up to a 0.7 ratio while cards keep their size. */
+    --tb-h: max(
+        calc(var(--tb-w) * var(--tb-k)),
+        min(calc(100dvh - var(--md-reserve, 22rem) - var(--tb-top, 0.25rem)), calc(var(--tb-w) * 0.7))
+    );
+    height: var(--tb-h);
     margin-block: var(--tb-top, 0.25rem) 0;
     margin-inline: calc(50% - var(--tb-w) / 2);
     perspective: calc(var(--tb-w) * 2.2);
@@ -335,7 +343,8 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
     left: 11%;
     right: 0;
     bottom: calc(var(--tb-w) * var(--tb-foot));
-    aspect-ratio: 2.84 / 1;
+    /* Screen height = stage height minus plate rooms; undo the tilt's squash. */
+    height: calc((var(--tb-h) - var(--tb-w) * (var(--tb-head) + var(--tb-foot))) / cos(var(--tilt)));
     transform-style: preserve-3d;
     transform: rotateX(var(--tilt));
     transform-origin: 50% 100%;
