@@ -100,6 +100,7 @@ type Anchor = { kind: 'hand' | 'plate' | 'pod' | 'discard' | 'draw'; id?: number
 type Flight = {
     key: number
     cardId: string | null // null = a card back
+    activeColor?: string // which half a two-colour card shows (flipped or not)
     from: { x: number; y: number }
     to: { x: number; y: number }
     delay: number
@@ -220,6 +221,23 @@ function legsFor(event: MasrawyActivity): Leg[] {
     }
 }
 
+// The colour a two-colour card (wildcard, rent) is showing, so a card that was
+// rotated is drawn rotated in flight too: the colour chosen in the event for
+// the card that was played, otherwise the set it now sits in on the table.
+function colorFor(event: MasrawyActivity, cardId: string | null): string | undefined {
+    if (!cardId) return undefined
+    const type = props.table.catalog[cardId]?.type
+    if (type !== 'wildcard' && type !== 'rent') return undefined
+    if (cardId === event.card_id && event.color) return event.color
+
+    for (const seat of props.table.players) {
+        for (const [color, group] of Object.entries(seat.properties)) {
+            if (group.cards.includes(cardId)) return color
+        }
+    }
+    return event.color ?? undefined
+}
+
 // Card width at rest on the table (px); flights end at about that size.
 const restScale = () => (CARD_W * unit.value) / SM_CARD_PX
 
@@ -233,7 +251,7 @@ async function playEvent(event: MasrawyActivity) {
         const to = pointOf(leg.to)
         if (!from || !to) return
         const s1 = Math.max(0.2, restScale())
-        made.push({ key: ++flightKey, cardId: leg.cardId, from, to, delay: index * STAGGER_MS, s0: s1 * 1.4, s1 })
+        made.push({ key: ++flightKey, cardId: leg.cardId, activeColor: colorFor(event, leg.cardId), from, to, delay: index * STAGGER_MS, s0: s1 * 1.4, s1 })
     })
 
     if (props.describe) caption.value = `${props.playerName(event.player_id)} ${props.describe(event)}`
@@ -518,7 +536,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
             <div v-if="caption" class="tb-caption" role="status" aria-live="polite">{{ caption }}</div>
             <div class="tb-flights" aria-hidden="true">
                 <div v-for="flight in flights" :key="flight.key" class="tb-fly" :style="flightStyle(flight)">
-                    <MasrawyCard v-if="flight.cardId && table.catalog[flight.cardId]" :entry="table.catalog[flight.cardId]" />
+                    <MasrawyCard v-if="flight.cardId && table.catalog[flight.cardId]" :entry="table.catalog[flight.cardId]" :active-color="flight.activeColor" />
                     <span v-else class="tb-fly-back"></span>
                 </div>
             </div>
