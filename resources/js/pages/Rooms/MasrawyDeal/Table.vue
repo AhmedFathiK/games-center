@@ -1079,6 +1079,7 @@ onUnmounted(() => {
                 :color-label="colorLabel"
                 :can-draw="isMyTurn && !table.has_drawn_this_turn && pending === null && !submitting"
                 :pick-targets="pickablePlayerIds"
+                :describe="activityDescription"
                 :picked-id="targetId"
                 @open-set="openPropertySet"
                 @open-player="openPlayerSheet"
@@ -1505,116 +1506,7 @@ onUnmounted(() => {
 
         </template>
 
-        <button
-            v-if="gameIsLive && !isMyTurn && pending === null && turnViewSeat && !showTurnModal"
-            class="md-turn-modal-reopen"
-            @click="dismissedTurnPlayerId = null"
-        >
-            {{ t('Watch :name’s turn', { name: playerName(turnViewSeat.id) }) }}
-        </button>
-
-        <div v-if="showTurnModal && turnViewSeat" class="md-turn-modal-backdrop" @click.self="dismissTurnModal" @keydown.esc="dismissTurnModal">
-            <section class="md-turn-modal" role="dialog" aria-modal="true" aria-labelledby="md-turn-modal-title">
-                <header class="md-turn-modal-header">
-                    <div>
-                        <p class="md-turn-modal-eyebrow">{{ t('LIVE TURN') }}</p>
-                        <h2 id="md-turn-modal-title">{{ t(':name is playing', { name: playerName(turnViewSeat.id) }) }}</h2>
-                        <p class="md-turn-modal-hand-count">{{ t(':count cards in hand · hand stays private', { count: turnViewSeat.hand_count }) }}</p>
-                    </div>
-                    <button class="md-turn-modal-close" type="button" :aria-label="t('Close turn view')" @click="dismissTurnModal">×</button>
-                </header>
-
-                <div class="md-turn-modal-body">
-                    <div class="md-turn-modal-tableau">
-                        <section class="md-turn-modal-section">
-                            <h3>
-                                {{ t('Bank') }} <span>{{ seatBankTotal(turnViewSeat) }}M</span>
-                            </h3>
-                            <div v-if="turnViewSeat.bank.length" class="md-turn-card-stack md-turn-card-stack--bank">
-                                <div v-if="hiddenBankCardCount(turnViewSeat.bank) > 0" class="md-turn-card md-turn-card--overflow" aria-hidden="true">
-                                    +{{ hiddenBankCardCount(turnViewSeat.bank) }}
-                                </div>
-                                <div
-                                    v-for="(cardId, index) in visibleBankCards(turnViewSeat.bank)"
-                                    :key="cardId"
-                                    class="md-turn-card"
-                                    :class="{ 'md-turn-card--moved': currentTurnMoveCardIds.has(cardId) }"
-                                    :style="{ zIndex: index + 1 }"
-                                >
-                                    <MasrawyCard
-                                        :entry="entryFor(cardId)!"
-                                        :rent-chart="rentChartFor(cardId)"
-                                        :set-size="setSizeFor(cardId)"
-                                        :wild-rent-charts="wildRentChartsFor(cardId)"
-                                        :wild-set-sizes="wildSetSizesFor(cardId)"
-                                    />
-                                </div>
-                            </div>
-                            <p v-else class="md-turn-modal-empty">{{ t('No bank cards yet') }}</p>
-                        </section>
-
-                        <section class="md-turn-modal-section">
-                            <h3>
-                                {{ t('Properties') }} <span>{{ Object.keys(turnViewSeat.properties).length }} {{ t('Manati2') }}</span>
-                            </h3>
-                            <div v-if="Object.keys(turnViewSeat.properties).length" class="md-turn-property-groups">
-                                <div v-for="(group, color) in turnViewSeat.properties" :key="color" class="md-turn-property-group">
-                                    <h4>
-                                        {{ colorLabel(String(color)) }}<span v-if="group.house"> · SHISHA</span
-                                        ><span v-if="group.hotel"> · WIL3A</span>
-                                    </h4>
-                                    <div
-                                        class="md-turn-card-stack"
-                                        :style="{ '--set-card-count': group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }"
-                                    >
-                                        <div
-                                            v-for="(cardId, index) in [
-                                                ...group.cards,
-                                                ...(group.house ? [group.house] : []),
-                                                ...(group.hotel ? [group.hotel] : []),
-                                            ]"
-                                            :key="cardId"
-                                            class="md-turn-card"
-                                            :class="{ 'md-turn-card--moved': currentTurnMoveCardIds.has(cardId) }"
-                                            :style="{ zIndex: index + 1 }"
-                                        >
-                                            <MasrawyCard
-                                                :entry="entryFor(cardId)!"
-                                                :active-color="entryFor(cardId)?.type === 'wildcard' ? String(color) : undefined"
-                                                :rent-chart="rentChartFor(cardId)"
-                                                :set-size="setSizeFor(cardId)"
-                                                :wild-rent-charts="wildRentChartsFor(cardId)"
-                                                :wild-set-sizes="wildSetSizesFor(cardId)"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <p v-else class="md-turn-modal-empty">{{ t('No properties on the table yet') }}</p>
-                        </section>
-                    </div>
-
-                    <aside class="md-turn-modal-log" :aria-label="t('Current player’s moves')">
-                        <h3>
-                            {{ t('Moves this turn') }} <span>{{ turnViewMoveCount }}</span>
-                        </h3>
-                        <ol v-if="turnViewActivity.length">
-                            <li v-for="(event, index) in turnViewActivity" :key="event.id" class="md-turn-activity" :class="{ 'md-turn-activity--latest': index === turnViewActivity.length - 1 }">
-                                <span class="md-turn-activity-dot" aria-hidden="true"></span>
-                                <div>
-                                    <strong>{{ activityDescription(event) }}</strong>
-                                    <small>{{ t('Move :number', { number: index + 1 }) }}</small>
-                                    <div v-if="activityCardLabels(event).length" class="md-turn-activity-cards">
-                                        <span v-for="cardLabel in activityCardLabels(event)" :key="cardLabel">{{ cardLabel }}</span>
-                                    </div>
-                                </div>
-                            </li>
-                        </ol>
-                        <p v-else class="md-turn-modal-empty">{{ t('Their moves will appear here as they play.') }}</p>
-                    </aside>
-                </div>
-            </section>
-        </div>
+        <!-- The old LIVE TURN dialog is gone: every play now flies across the table (TableBoard's move layer). -->
 
         <!-- Player sheet: everything about one seat, opened by tapping its plate on the table -->
         <div

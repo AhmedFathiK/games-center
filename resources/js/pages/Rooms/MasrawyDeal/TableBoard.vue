@@ -16,8 +16,8 @@
  * corner, off the table; the discard pile's card art comes in through the
  * `discard` slot so card rendering stays in Table.vue.
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { MasrawySeat, MasrawyTableState } from '@/types/room'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { MasrawyActivity, MasrawySeat, MasrawyTableState } from '@/types/room'
 import { useI18n } from '@/i18n'
 import MasrawyCard from './Card.vue'
 
@@ -37,6 +37,8 @@ const props = defineProps<{
     pickTargets?: number[] | null
     pickedId?: number | null
     playerName: (id: number | string) => string
+    // One-line description of a move ("played X into Y"), shown as its caption.
+    describe?: (event: MasrawyActivity) => string
     colorLabel: (color: string) => string
 }>()
 
@@ -82,7 +84,209 @@ onMounted(() => {
     }
 })
 
-onBeforeUnmount(() => observer?.disconnect())
+onBeforeUnmount(() => {
+    observer?.disconnect()
+    disposed = true
+})
+
+// ---- Move layer: cards fly across the table ------------------------------
+// Every new entry in table.recent_activity (the same feed for all players)
+// is turned into one or more card flights between anchors on the board, and
+// played one event after another. Pure presentation: the table state is
+// already final when this runs, the flights just show where cards went.
+type Anchor = { kind: 'hand' | 'plate' | 'pod' | 'discard' | 'draw'; id?: number }
+type Flight = {
+    key: number
+    cardId: string | null // null = a card back
+    from: { x: number; y: number }
+    to: { x: number; y: number }
+    delay: number
+    s0: number
+    s1: number
+}
+
+const FLIGHT_MS = 780
+const STAGGER_MS = 170
+const flights = ref<Flight[]>([])
+const caption = ref<string | null>(null)
+const flashPlayerId = ref<number | null>(null)
+const queue: MasrawyActivity[] = []
+let pumping = false
+let disposed = false
+let flightKey = 0
+let seenActivityId = Math.max(0, ...props.table.recent_activity.map(event => event.id))
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
+
+function center(rect: DOMRect) {
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+}
+
+function pointOf(anchor: Anchor): { x: number; y: number } | null {
+    const root = stageEl.value
+    if (!root) return null
+
+    if (anchor.kind === 'draw') {
+        const el = root.querySelector('.tb-pile--draw .tb-card-back--1')
+        return el ? center(el.getBoundingClientRect()) : null
+    }
+    if (anchor.kind === 'discard') {
+        const el = root.querySelector('.tb-pile--discard .tb-discard, .tb-pile--discard .tb-pile-empty')
+        return el ? center(el.getBoundingClientRect()) : null
+    }
+
+    const plate = root.querySelector(`[data-seat="${anchor.id}"] .tb-plate`)
+    const plateRect = plate?.getBoundingClientRect()
+
+    if (anchor.kind === 'pod') {
+        const pod = root.querySelector(`[data-pod="${anchor.id}"]`)?.getBoundingClientRect()
+        if (pod && pod.width > 0) return center(pod)
+        return plateRect ? center(plateRect) : null
+    }
+    if (!plateRect) return null
+    if (anchor.kind === 'plate') return center(plateRect)
+
+    // 'hand': the viewer's own cards are the fan; everyone else's are just
+    // off the table edge, behind their plate.
+    if (anchor.id === props.myId) {
+        const fan = document.querySelector('.md-fan')?.getBoundingClientRect()
+        if (fan) return { x: fan.left + fan.width / 2, y: fan.top + Math.min(fan.height * 0.4, 60) }
+    }
+    const here = center(plateRect)
+    const stage = root.getBoundingClientRect()
+    const outward = here.y < stage.top + stage.height / 2 ? -1 : 1
+    return { x: here.x, y: here.y + outward * plateRect.height * 1.4 }
+}
+
+type Leg = { cardId: string | null; from: Anchor; to: Anchor }
+
+// What an event looks like on the table. Cards that are in play are shown
+// face up; the draw is shown as backs because other hands stay private.
+function legsFor(event: MasrawyActivity): Leg[] {
+    const me = event.player_id
+    const target = event.target_id
+    const card = event.card_id
+    const hand: Anchor = { kind: 'hand', id: me }
+    const discard: Anchor = { kind: 'discard' }
+
+    switch (event.type) {
+        case 'draw':
+            return [0, 1].map(() => ({ cardId: null, from: { kind: 'draw' }, to: { kind: 'hand', id: me } }))
+        case 'play_money':
+        case 'bank_card':
+            return card ? [{ cardId: card, from: hand, to: { kind: 'plate', id: me } }] : []
+        case 'play_property':
+        case 'play_shisha':
+        case 'play_wil3a':
+        case 'move_wildcard':
+            return card ? [{ cardId: card, from: hand, to: { kind: 'pod', id: me } }] : []
+        case 'discard':
+            return card ? [{ cardId: card, from: hand, to: discard }] : []
+        case 'play_pass_go':
+            return [
+                ...(card ? [{ cardId: card, from: hand, to: discard }] : []),
+                ...[0, 1].map(() => ({ cardId: null, from: { kind: 'draw' } as Anchor, to: hand })),
+            ]
+        case 'play_sly_deal':
+            return [
+                ...(card ? [{ cardId: card, from: hand, to: discard }] : []),
+                ...(event.target_card_id && target !== null ? [{ cardId: event.target_card_id, from: { kind: 'pod', id: target } as Anchor, to: { kind: 'pod', id: me } as Anchor }] : []),
+            ]
+        case 'play_forced_deal':
+            return [
+                ...(card ? [{ cardId: card, from: hand, to: discard }] : []),
+                ...(event.target_card_id && target !== null ? [{ cardId: event.target_card_id, from: { kind: 'pod', id: target } as Anchor, to: { kind: 'pod', id: me } as Anchor }] : []),
+                ...(event.give_card_id && target !== null ? [{ cardId: event.give_card_id, from: { kind: 'pod', id: me } as Anchor, to: { kind: 'pod', id: target } as Anchor }] : []),
+            ]
+        case 'play_deal_breaker':
+            return [
+                ...(card ? [{ cardId: card, from: hand, to: discard }] : []),
+                ...(target !== null ? [{ cardId: null, from: { kind: 'pod', id: target } as Anchor, to: { kind: 'pod', id: me } as Anchor }] : []),
+            ]
+        case 'pay':
+            return target !== null
+                ? event.card_ids.map(id => ({ cardId: id, from: { kind: 'plate', id: me } as Anchor, to: { kind: 'plate', id: target } as Anchor }))
+                : []
+        case 'play_debt_collector':
+        case 'play_birthday':
+        case 'play_rent':
+        case 'respond_no':
+            return card ? [{ cardId: card, from: hand, to: discard }] : []
+        default:
+            return []
+    }
+}
+
+// Card width at rest on the table (px); flights end at about that size.
+const restScale = () => (CARD_W * unit.value) / SM_CARD_PX
+
+async function playEvent(event: MasrawyActivity) {
+    await nextTick()
+    const legs = legsFor(event)
+    const made: Flight[] = []
+
+    legs.forEach((leg, index) => {
+        const from = pointOf(leg.from)
+        const to = pointOf(leg.to)
+        if (!from || !to) return
+        const s1 = Math.max(0.2, restScale())
+        made.push({ key: ++flightKey, cardId: leg.cardId, from, to, delay: index * STAGGER_MS, s0: s1 * 1.4, s1 })
+    })
+
+    if (props.describe) caption.value = `${props.playerName(event.player_id)} ${props.describe(event)}`
+    flashPlayerId.value = event.player_id
+
+    const total = made.length ? FLIGHT_MS + (made.length - 1) * STAGGER_MS : 0
+    if (made.length) flights.value = [...flights.value, ...made]
+    await sleep(Math.max(total, 600) + 250)
+
+    const gone = new Set(made.map(flight => flight.key))
+    flights.value = flights.value.filter(flight => !gone.has(flight.key))
+    if (queue.length === 0) {
+        caption.value = null
+        flashPlayerId.value = null
+    }
+}
+
+async function pump() {
+    if (pumping) return
+    pumping = true
+    while (queue.length && !disposed) {
+        const event = queue.shift()
+        if (event) await playEvent(event)
+    }
+    pumping = false
+}
+
+watch(
+    () => props.table.recent_activity.map(event => event.id).join(','),
+    () => {
+        const fresh = props.table.recent_activity.filter(event => event.id > seenActivityId)
+        if (!fresh.length) return
+        seenActivityId = Math.max(seenActivityId, ...fresh.map(event => event.id))
+        if (reducedMotion() || (typeof document !== 'undefined' && document.hidden)) return
+
+        queue.push(...fresh)
+        // Fell behind (a long background tab, a flurry of plays): show only the latest few.
+        if (queue.length > 5) queue.splice(0, queue.length - 5)
+        void pump()
+    },
+)
+
+function flightStyle(flight: Flight): Record<string, string | number> {
+    return {
+        '--fx': `${flight.from.x}px`,
+        '--fy': `${flight.from.y}px`,
+        '--tx': `${flight.to.x}px`,
+        '--ty': `${flight.to.y}px`,
+        '--s0': flight.s0,
+        '--s1': flight.s1,
+        '--peak': Math.max(flight.s1 * 2.1, 0.5),
+        animationDelay: `${flight.delay}ms`,
+        animationDuration: `${FLIGHT_MS}ms`,
+    }
+}
 
 function bankTotal(seat: MasrawySeat): number {
     return seat.bank.reduce((total, cardId) => total + (props.table.catalog[cardId]?.value ?? 0), 0)
@@ -242,6 +446,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
                 v-for="entry in seats"
                 :key="`pod-${entry.seat.id}`"
                 class="tb-pod"
+                :data-pod="entry.seat.id"
                 :class="`tb-pod--${entry.side}`"
                 :style="{ left: `${entry.podX}%`, top: entry.podY, '--seat-hue': entry.hue, '--gap': entry.gap }"
             >
@@ -276,7 +481,8 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
                 v-for="entry in seats"
                 :key="entry.seat.id"
                 class="tb-seat"
-                :class="[`tb-seat--${entry.side}`, { 'tb-seat--me': entry.isMe, 'tb-seat--turn': entry.isTurn, 'tb-seat--winner': entry.isWinner, 'tb-seat--pick': isPickable(entry.seat.id), 'tb-seat--picked': pickedId === entry.seat.id }]"
+                :data-seat="entry.seat.id"
+                :class="[`tb-seat--${entry.side}`, { 'tb-seat--flash': flashPlayerId === entry.seat.id, 'tb-seat--me': entry.isMe, 'tb-seat--turn': entry.isTurn, 'tb-seat--winner': entry.isWinner, 'tb-seat--pick': isPickable(entry.seat.id), 'tb-seat--picked': pickedId === entry.seat.id }]"
                 :style="{ left: `${entry.x}%`, top: entry.y, '--seat-hue': entry.hue }"
             >
                 <!-- The badges live beside the button, not in it: a <button> clips what pokes out of its box. -->
@@ -302,6 +508,17 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
                 </div>
             </div>
         </div>
+
+        <!-- Move captions + flying cards. Teleported: the stage's perspective would turn position:fixed into position:absolute. -->
+        <Teleport to="body">
+            <div v-if="caption" class="tb-caption" role="status" aria-live="polite">{{ caption }}</div>
+            <div class="tb-flights" aria-hidden="true">
+                <div v-for="flight in flights" :key="flight.key" class="tb-fly" :style="flightStyle(flight)">
+                    <MasrawyCard v-if="flight.cardId && table.catalog[flight.cardId]" :entry="table.catalog[flight.cardId]" />
+                    <span v-else class="tb-fly-back"></span>
+                </div>
+            </div>
+        </Teleport>
     </section>
 </template>
 
@@ -733,7 +950,99 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
     border-radius: calc(var(--u) * 0.9);
 }
 
+/* ---- Move layer -------------------------------------------------------- */
+.tb-caption {
+    position: fixed;
+    left: 50%;
+    top: 0.3rem;
+    z-index: 1990;
+    max-width: min(46vw, 34rem);
+    transform: translateX(-50%);
+    padding: 0.25rem 0.8rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+    color: #f8fafc;
+    background: rgb(15 23 42 / 82%);
+    border: 1px solid rgb(255 255 255 / 25%);
+    pointer-events: none;
+    animation: tb-caption-in 0.25s ease-out;
+}
+
+@keyframes tb-caption-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, 6px);
+    }
+}
+
+.tb-seat--flash .tb-plate {
+    box-shadow: 0 0 0 calc(var(--u) * 0.5) rgb(255 255 255 / 55%), 0 calc(var(--u) * 0.6) calc(var(--u) * 1.8) rgb(0 0 0 / 55%);
+}
+
+.tb-fly {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 2000;
+    width: 108px;
+    height: 165px;
+    margin: -82px 0 0 -54px;
+    pointer-events: none;
+    opacity: 0;
+    animation: tb-fly 780ms cubic-bezier(0.4, 0, 0.2, 1) both;
+    filter: drop-shadow(0 6px 10px rgb(0 0 0 / 45%));
+}
+
+.tb-fly :deep(.mc-card) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transition: none;
+}
+
+.tb-fly-back {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    border-radius: 12px;
+    border: 4px solid #fef3c7;
+    background: repeating-linear-gradient(45deg, #b45309 0 8px, #92400e 8px 16px);
+}
+
+/* Lift off, rise to a peak mid-flight so the card is easy to follow, then
+   settle at the size it has on the table. */
+@keyframes tb-fly {
+    0% {
+        opacity: 0;
+        transform: translate(var(--fx), var(--fy)) scale(var(--s0));
+    }
+    12% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 1;
+        transform: translate(calc((var(--fx) + var(--tx)) / 2), calc((var(--fy) + var(--ty)) / 2 - 18px)) scale(var(--peak)) rotate(-4deg);
+    }
+    88% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+        transform: translate(var(--tx), var(--ty)) scale(var(--s1));
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
+    .tb-fly {
+        animation: none;
+    }
+
     .tb-seat--turn .tb-plate,
     .tb-seat--pick .tb-plate,
     .tb-pile--ready .tb-card-back--1 {
