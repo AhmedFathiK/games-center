@@ -181,17 +181,47 @@ class CardCatalog
     {
         $cards = self::all();
 
-        if (! isset($cards[$cardId])) {
-            throw new \InvalidArgumentException("Unknown card id: {$cardId}");
+        if (isset($cards[$cardId])) {
+            return $cards[$cardId];
         }
 
-        return $cards[$cardId];
+        // A card from the second deck (see deckIds()) is the base card under
+        // a new, still-unique id.
+        if (str_ends_with($cardId, self::SECOND_DECK_SUFFIX)) {
+            $baseId = substr($cardId, 0, -strlen(self::SECOND_DECK_SUFFIX));
+
+            if (isset($cards[$baseId])) {
+                return [...$cards[$baseId], 'id' => $cardId];
+            }
+        }
+
+        throw new \InvalidArgumentException("Unknown card id: {$cardId}");
     }
 
-    /** @return array<int, string> every card id in the deck, unshuffled */
-    public static function deckIds(): array
+    /**
+     * Appended to a card's id for the copy that comes from the second deck, so
+     * every card in a two-deck game still has its own unique id.
+     */
+    public const SECOND_DECK_SUFFIX = '_d2';
+
+    /**
+     * Every card id in the deck, unshuffled. With $decks = 2 the whole deck is
+     * there twice (the second copy's ids end in SECOND_DECK_SUFFIX).
+     *
+     * @return array<int, string>
+     */
+    public static function deckIds(int $decks = 1): array
     {
-        return array_keys(self::all());
+        $ids = array_keys(self::all());
+
+        if ($decks < 2) {
+            return $ids;
+        }
+
+        return [
+            ...$ids,
+            ...array_map(static fn (string $id): string => $id.self::SECOND_DECK_SUFFIX, $ids),
+        ];
     }
 
     // Plain-English generic color names. No longer used by any actual

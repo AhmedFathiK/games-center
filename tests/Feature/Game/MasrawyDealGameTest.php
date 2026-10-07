@@ -373,7 +373,7 @@ class MasrawyDealGameTest extends TestCase
         $game = new MasrawyDealGame();
 
         $this->assertEquals(2, $game->minimumPlayers());
-        $this->assertEquals(10, $game->maximumPlayers());
+        $this->assertEquals(8, $game->maximumPlayers());
     }
 
     // --- Dealing / setup ---------------------------------------------------
@@ -401,6 +401,28 @@ class MasrawyDealGameTest extends TestCase
         $this->assertCount(106, $allCardIds);
         $this->assertCount(106, array_unique($allCardIds));
         $this->assertEqualsCanonicalizing(CardCatalog::deckIds(), $allCardIds);
+    }
+
+    public function test_six_or_more_players_are_dealt_from_two_decks(): void
+    {
+        $room = $this->makeRoom(6);
+
+        $state = (new MasrawyDealGame())->initializeState($room);
+
+        $allCardIds = array_merge(collect($state['hands'])->flatten()->all(), $state['draw_pile']);
+
+        $this->assertCount(212, $allCardIds);
+        $this->assertCount(212, array_unique($allCardIds));
+        $this->assertEqualsCanonicalizing(CardCatalog::deckIds(2), $allCardIds);
+        $this->assertCount(212 - 30, $state['draw_pile']);
+    }
+
+    public function test_second_deck_cards_resolve_to_their_base_card_under_their_own_id(): void
+    {
+        $copy = CardCatalog::get('money_1_1'.CardCatalog::SECOND_DECK_SUFFIX);
+
+        $this->assertSame('money_1_1_d2', $copy['id']);
+        $this->assertSame(CardCatalog::get('money_1_1')['value'], $copy['value']);
     }
 
     public function test_draw_pile_size_matches_player_count(): void

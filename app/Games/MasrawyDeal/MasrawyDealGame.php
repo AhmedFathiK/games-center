@@ -155,11 +155,14 @@ class MasrawyDealGame extends AbstractGame
         return 2;
     }
 
-    /** The room configuration supports up to ten players. */
+    /** The room configuration supports up to eight players. */
     public function maximumPlayers(): int
     {
-        return 10;
+        return 8;
     }
+
+    /** From this many players on, the game is dealt from two decks so it doesn't run dry. */
+    public const TWO_DECK_PLAYER_COUNT = 6;
 
     public function hostIsPlayer(): bool
     {
@@ -167,7 +170,7 @@ class MasrawyDealGame extends AbstractGame
     }
 
     /**
-     * Shuffles the full 106-card deck, deals 5 cards to each player one
+     * Shuffles the full 106-card deck (two of them from 6 players on), deals 5 cards to each player one
      * at a time in turn order (matching how a physical deck is actually
      * dealt), and sets up the empty per-player hand/bank/property
      * structures the rest of the game will build on.
@@ -181,7 +184,7 @@ class MasrawyDealGame extends AbstractGame
     {
         $playerIds = $room->players()->pluck('users.id')->shuffle()->values()->all();
 
-        $deck = CardCatalog::deckIds();
+        $deck = CardCatalog::deckIds(count($playerIds) >= self::TWO_DECK_PLAYER_COUNT ? 2 : 1);
         shuffle($deck);
 
         $hands = [];
