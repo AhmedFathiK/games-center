@@ -36,8 +36,40 @@ function sync() {
     isFullscreen.value = document.fullscreenElement !== null
 }
 
-async function enterFullscreenAndLock() {
+// Browsers only allow fullscreen from a tap, and drop it whenever the phone
+// locks or an app takes over. So the first tap after that goes back to
+// fullscreen + landscape on its own, unless the player left fullscreen on
+// purpose with the toggle.
+const OPT_OUT_KEY = 'md-fullscreen-opt-out'
+
+function optedOut(): boolean {
+    try {
+        return sessionStorage.getItem(OPT_OUT_KEY) === '1'
+    } catch {
+        return false
+    }
+}
+
+function setOptOut(value: boolean) {
+    try {
+        if (value) sessionStorage.setItem(OPT_OUT_KEY, '1')
+        else sessionStorage.removeItem(OPT_OUT_KEY)
+    } catch {
+        // Private mode: the toggle still works, it just won't be remembered.
+    }
+}
+
+function resumeOnTap(event: Event) {
+    if (!fullscreenSupported.value || document.fullscreenElement || optedOut()) return
+    if (!portraitPhone.value && !landscapePhone.value) return
+    if ((event.target as Element | null)?.closest?.('a')) return
+
+    void enterFullscreenAndLock(true)
+}
+
+async function enterFullscreenAndLock(quiet = false) {
     lockNote.value = null
+    setOptOut(false)
 
     try {
         if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.()
@@ -45,13 +77,14 @@ async function enterFullscreenAndLock() {
         if (!orientation?.lock) throw new Error('orientation lock unavailable')
         await orientation.lock('landscape')
     } catch {
-        lockNote.value = t('This browser can’t lock rotation. Turn off your phone’s rotation lock and turn it sideways.')
+        if (!quiet) lockNote.value = t('This browser can’t lock rotation. Turn off your phone’s rotation lock and turn it sideways.')
     }
 }
 
 async function toggleFullscreen() {
     try {
         if (document.fullscreenElement) {
+            setOptOut(true)
             await document.exitFullscreen()
         } else {
             await enterFullscreenAndLock()
@@ -67,12 +100,14 @@ onMounted(() => {
     portraitQuery.addEventListener('change', sync)
     landscapeQuery.addEventListener('change', sync)
     document.addEventListener('fullscreenchange', sync)
+    document.addEventListener('click', resumeOnTap, true)
 })
 
 onUnmounted(() => {
     portraitQuery.removeEventListener('change', sync)
     landscapeQuery.removeEventListener('change', sync)
     document.removeEventListener('fullscreenchange', sync)
+    document.removeEventListener('click', resumeOnTap, true)
 })
 </script>
 
@@ -81,7 +116,7 @@ onUnmounted(() => {
         <div class="lg-phone" aria-hidden="true"><span class="lg-phone-body"></span></div>
         <h2 id="lg-title" class="lg-title">{{ t('Rotate your phone') }}</h2>
         <p class="lg-text">{{ t('Masrawy Deal is played sideways so the whole table fits on screen.') }}</p>
-        <button v-if="fullscreenSupported" type="button" class="lg-btn" @click="enterFullscreenAndLock">
+        <button v-if="fullscreenSupported" type="button" class="lg-btn" @click="enterFullscreenAndLock()">
             {{ t('Lock landscape') }}
         </button>
         <p v-if="lockNote" class="lg-note" role="status">{{ lockNote }}</p>

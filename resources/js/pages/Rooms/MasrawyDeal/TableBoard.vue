@@ -39,6 +39,8 @@ const props = defineProps<{
     playerName: (id: number | string) => string
     // One-line description of a move ("played X into Y"), shown as its caption.
     describe?: (event: MasrawyActivity) => string
+    // "Tap a player" prompt, drawn on the felt and never in the way of taps.
+    pickHint?: string | null
     colorLabel: (color: string) => string
 }>()
 
@@ -509,6 +511,8 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
             </div>
         </div>
 
+        <div v-if="pickHint" class="tb-pick-hint" role="status">{{ pickHint }}</div>
+
         <!-- Move captions + flying cards. Teleported: the stage's perspective would turn position:fixed into position:absolute. -->
         <Teleport to="body">
             <div v-if="caption" class="tb-caption" role="status" aria-live="polite">{{ caption }}</div>
@@ -543,7 +547,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
        felt gets taller up to a 0.7 ratio while cards keep their size. */
     --tb-h: max(
         calc(var(--tb-w) * var(--tb-k)),
-        min(calc(100dvh - var(--md-reserve, 22rem) - var(--tb-top, 0.25rem)), calc(var(--tb-w) * 0.7))
+        min(calc(100dvh - var(--md-reserve, 22rem) - var(--tb-top, 0.25rem)), calc(var(--tb-w) * var(--tb-cap, 0.7)))
     );
     height: var(--tb-h);
     margin-block: var(--tb-top, 0.25rem) 0;
@@ -979,6 +983,23 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
         opacity: 0;
         transform: translate(-50%, 6px);
     }
+}
+
+.tb-pick-hint {
+    position: absolute;
+    left: calc(11% + 89% / 2);
+    top: 50%;
+    z-index: 5;
+    transform: translate(-50%, -50%);
+    padding: 0.3em 0.9em;
+    border-radius: 999px;
+    font-size: max(11px, calc(var(--u) * 1.7));
+    font-weight: 800;
+    white-space: nowrap;
+    color: #0f172a;
+    background: #fde047;
+    box-shadow: 0 4px 14px rgb(0 0 0 / 40%);
+    pointer-events: none;
 }
 
 .tb-seat--flash .tb-plate {

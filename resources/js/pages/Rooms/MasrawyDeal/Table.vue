@@ -1080,6 +1080,7 @@ onUnmounted(() => {
                 :can-draw="isMyTurn && !table.has_drawn_this_turn && pending === null && !submitting"
                 :pick-targets="pickablePlayerIds"
                 :describe="activityDescription"
+                :pick-hint="drawerCompact ? t('Tap a player on the table to choose the target.') : null"
                 :picked-id="targetId"
                 @open-set="openPropertySet"
                 @open-player="openPlayerSheet"
@@ -1104,7 +1105,7 @@ onUnmounted(() => {
             <section
                 v-if="gameIsLive"
                 class="md-fan"
-                :class="{ 'md-fan--flat': isReorderingHand, 'md-fan--selected': !!selectedEntry }"
+                :class="{ 'md-fan--flat': isReorderingHand, 'md-fan--selected': !!selectedEntry && !drawerCompact }"
                 :aria-label="t('Your cards')"
             >
                 <p v-if="isMyTurn && overHandLimit" class="md-fan-hint">{{ t('Discard down to 7 cards before ending your turn.') }}</p>
@@ -4595,19 +4596,26 @@ input[type='checkbox'] {
 }
 
 .md-root.md-root .md-play-panel.md-play-panel--compact {
-    top: 0.3rem;
-    right: auto;
-    bottom: auto;
-    left: 50%;
+    /* Bottom-right, where End Turn sits when nothing is selected: it never
+       covers the players you are about to tap. The hint itself is drawn on
+       the table (TableBoard's pickHint). */
+    top: auto;
+    right: 0.6rem;
+    bottom: calc(0.6rem + env(safe-area-inset-bottom));
+    left: auto;
     flex-direction: row;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
     width: auto;
-    max-width: 66vw;
-    padding: 0.25rem 0.5rem;
+    max-width: 40vw;
+    padding: 0.2rem 0.4rem;
     overflow: visible;
     border-radius: 999px;
-    transform: translateX(-50%);
+    transform: none;
+}
+
+.md-play-panel--compact .md-target-hint {
+    display: none;
 }
 
 .md-play-panel--compact .md-play-panel-header h3 {
@@ -4693,5 +4701,129 @@ input[type='checkbox'] {
 :global(html.md-play-mode),
 :global(html.md-play-mode body) {
     background: #0d1424;
+}
+/* The picker cards keep their own size inside the drawer (the drawer's generic
+   full-width button rules used to stretch the box), and the selection outline
+   is drawn on the card itself so it always hugs it. */
+.md-root.md-root .md-property-choice-card {
+    flex: 0 0 66px;
+    width: 66px;
+    min-width: 0;
+    height: 102px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+    background: none;
+}
+
+.md-root.md-root .md-property-choice-card--selected {
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.md-property-choice-card--selected :deep(.mc-card) {
+    box-shadow: 0 0 0 3px var(--rc-primary, #f59e0b), 0 4px 10px rgba(0, 0, 0, 0.45);
+    border-radius: 8px;
+}
+
+@media (orientation: landscape) and (max-height: 400px) {
+    .md-root.md-root .md-property-choice-card {
+        flex-basis: 52px;
+        width: 52px;
+        height: 80px;
+    }
+}
+
+/* ---- Response / notice dialogs in a sideways phone: picture big on the
+   left, words and buttons on the right, all inside the screen. ------------- */
+@media (orientation: landscape) and (max-height: 560px) {
+    .md-response-choice-backdrop,
+    .md-jsn-notice-backdrop {
+        padding: 0.4rem;
+    }
+
+    .md-response-choice {
+        width: min(94vw, 46rem);
+        max-height: calc(100dvh - 0.8rem);
+        grid-template-columns: auto minmax(0, 1fr);
+        column-gap: 1rem;
+        align-content: center;
+        align-items: center;
+        padding: 0.7rem 0.9rem;
+        gap: 0.5rem 1rem;
+        overflow-y: auto;
+    }
+
+    .md-response-choice > * {
+        grid-column: 2;
+    }
+
+    .md-response-choice .md-response-choice-birthday,
+    .md-response-choice .md-response-property-cards {
+        grid-column: 1;
+        grid-row: 1 / span 5;
+        align-self: center;
+    }
+
+    /* The artwork is a wide picture: give it half the dialog's width. */
+    .md-response-choice-birthday img {
+        width: min(52vw, 29rem);
+        height: auto;
+        max-height: calc(100dvh - 4rem);
+    }
+
+    .md-response-choice-birthday strong {
+        font-size: 0.8rem;
+    }
+
+    .md-response-property-cards {
+        flex-direction: row;
+        overflow: visible;
+    }
+
+    .md-response-choice h2 {
+        font-size: 1.05rem;
+    }
+
+    .md-response-choice p {
+        font-size: 0.85rem;
+    }
+
+    .md-response-choice-actions .md-btn {
+        min-height: 40px;
+    }
+
+    /* Small and stacked, like the portrait one, with a modest picture. */
+    .md-jsn-notice {
+        width: min(86vw, 19rem);
+        max-height: calc(100dvh - 0.8rem);
+        gap: 0.45rem;
+        padding: 0.6rem 0.8rem;
+    }
+
+    .md-jsn-notice-image {
+        width: auto;
+        max-width: 100%;
+        max-height: 34dvh;
+    }
+
+    .md-jsn-notice h2 {
+        font-size: 1rem;
+    }
+
+    .md-jsn-notice .md-btn {
+        min-height: 38px;
+    }
+}
+/* Sideways phone: the table is as large as the width allows (its height may
+   run past the screen; the page scrolls), with a little room under it so the
+   bottom row of players can be scrolled clear of the hand. */
+@media (orientation: landscape) and (max-height: 560px) {
+    .md-root.md-root:not(.md-root--ended) {
+        --md-reserve: -60rem;
+        --tb-cap: 0.6;
+        padding-bottom: calc(165px * var(--fan-scale) * var(--peek) + 0.6rem);
+    }
 }
 </style>
