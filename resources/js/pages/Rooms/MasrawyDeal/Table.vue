@@ -1034,7 +1034,6 @@ onUnmounted(() => {
                         <strong>{{ isMyTurn ? t('YOUR TURN') : t(':name’s turn', { name: playerName(table.current_player_id) }) }}</strong>
                         <span v-if="nextPlayerId !== null">{{ t('Next: :name', { name: playerName(nextPlayerId) }) }}</span>
                     </span>
-                    <span>{{ t('Plays left this turn:') }} <strong>{{ playsLeft }}</strong></span>
                     <span>{{ t('Draw pile:') }} <strong>{{ table.draw_pile_count }}</strong></span>
                     <span>{{ t('Discard pile:') }} <strong>{{ table.discard_pile.length }}</strong></span>
                 </div>

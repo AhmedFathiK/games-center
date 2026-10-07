@@ -508,7 +508,6 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
                 <!-- The badges live beside the button, not in it: a <button> clips what pokes out of its box. -->
                 <div class="tb-plate-wrap">
                     <span v-if="entry.isWinner" class="tb-crown" aria-hidden="true">👑</span>
-                    <span v-if="entry.isMe && live && isMyTurn" class="tb-plays">{{ t(':count plays left', { count: playsLeft }) }}</span>
                     <button
                         type="button"
                         class="tb-plate"
@@ -523,6 +522,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
                                 <span class="tb-hand" :title="t('Hand cards')">▤ {{ entry.seat.hand_count }}</span>
                             </span>
                         </span>
+                        <span v-if="entry.isTurn" class="tb-plays">{{ t(':count plays left', { count: playsLeft }) }}</span>
                         <span v-if="revealHands" class="tb-more" :title="t('View hand')" aria-hidden="true">⌄</span>
                     </button>
                 </div>
@@ -828,14 +828,11 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 }
 
 .tb-plays {
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 0.25em);
-    transform: translateX(-50%);
-    padding: 0.1em 0.6em;
+    margin-top: 0.1em;
+    padding: 0.05em 0.7em;
     border-radius: 999px;
     font-size: 0.85em;
-    font-weight: 700;
+    font-weight: 800;
     white-space: nowrap;
     color: #0f172a;
     background: var(--rc-primary, #f59e0b);
