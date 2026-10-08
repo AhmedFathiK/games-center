@@ -1,44 +1,44 @@
 <script setup lang="ts">
-import { Head, useForm } from '@inertiajs/vue3'
-import { ref } from 'vue'
-import AppLayout from '@/layouts/AppLayout.vue'
-import SettingsNav from '@/components/SettingsNav.vue'
-import { useI18n } from '@/i18n'
+import SettingsNav from '@/components/SettingsNav.vue';
+import { useI18n } from '@/i18n';
+import AppLayout from '@/layouts/AppLayout.vue';
+import { Head, useForm } from '@inertiajs/vue3';
+import { ref } from 'vue';
 
-defineOptions({ layout: AppLayout })
+defineOptions({ layout: AppLayout });
 
-const passwordInput = ref<HTMLInputElement | null>(null)
-const currentPasswordInput = ref<HTMLInputElement | null>(null)
-const showSaved = ref(false)
+const passwordInput = ref<HTMLInputElement | null>(null);
+const currentPasswordInput = ref<HTMLInputElement | null>(null);
+const showSaved = ref(false);
 
 const form = useForm({
     current_password: '',
     password: '',
     password_confirmation: '',
-})
-const { t } = useI18n()
+});
+const { t } = useI18n();
 
 const updatePassword = () => {
     form.put(route('password.update'), {
         preserveScroll: true,
         onSuccess: () => {
-            form.reset()
-            showSaved.value = true
-            setTimeout(() => (showSaved.value = false), 2000)
+            form.reset();
+            showSaved.value = true;
+            setTimeout(() => (showSaved.value = false), 2000);
         },
         onError: (errors: Record<string, string>) => {
             if (errors.password) {
-                form.reset('password', 'password_confirmation')
-                passwordInput.value?.focus()
+                form.reset('password', 'password_confirmation');
+                passwordInput.value?.focus();
             }
 
             if (errors.current_password) {
-                form.reset('current_password')
-                currentPasswordInput.value?.focus()
+                form.reset('current_password');
+                currentPasswordInput.value?.focus();
             }
         },
-    })
-}
+    });
+};
 </script>
 
 <template>
@@ -110,7 +110,6 @@ const updatePassword = () => {
 </template>
 
 <style scoped>
-
 .st-page {
     --st-ink: #0f1613;
     --st-surface: #16201c;

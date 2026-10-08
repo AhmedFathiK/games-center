@@ -1,21 +1,21 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3'
-import AuthLayout from '@/layouts/AuthLayout.vue'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import AuthLayout from '@/layouts/AuthLayout.vue';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 
 const form = useForm({
     name: '',
     email: '',
     password: '',
     password_confirmation: '',
-})
-const { t } = useI18n()
+});
+const { t } = useI18n();
 
 const submit = () => {
     form.post(route('register'), {
         onFinish: () => form.reset('password', 'password_confirmation'),
-    })
-}
+    });
+};
 </script>
 
 <template>
@@ -25,30 +25,13 @@ const submit = () => {
         <form @submit.prevent="submit" class="au-form">
             <div class="au-field">
                 <label for="name" class="au-label">{{ t('Name') }}</label>
-                <input
-                    id="name"
-                    v-model="form.name"
-                    type="text"
-                    required
-                    autofocus
-                    autocomplete="name"
-                    class="au-input"
-                    placeholder="Full name"
-                />
+                <input id="name" v-model="form.name" type="text" required autofocus autocomplete="name" class="au-input" placeholder="Full name" />
                 <p v-if="form.errors.name" role="alert" class="au-error">{{ form.errors.name }}</p>
             </div>
 
             <div class="au-field">
                 <label for="email" class="au-label">{{ t('Email address') }}</label>
-                <input
-                    id="email"
-                    v-model="form.email"
-                    type="email"
-                    required
-                    autocomplete="email"
-                    class="au-input"
-                    placeholder="email@example.com"
-                />
+                <input id="email" v-model="form.email" type="email" required autocomplete="email" class="au-input" placeholder="email@example.com" />
                 <p v-if="form.errors.email" role="alert" class="au-error">{{ form.errors.email }}</p>
             </div>
 

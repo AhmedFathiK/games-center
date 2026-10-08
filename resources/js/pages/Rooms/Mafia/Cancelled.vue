@@ -1,29 +1,29 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { Room, AuthUser } from '@/types/room'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import type { AuthUser, Room } from '@/types/room';
+import { computed } from 'vue';
 
 const props = defineProps<{
-    room: Room
-    auth: { user: AuthUser }
-    isHost: boolean
-}>()
-const { t } = useI18n()
+    room: Room;
+    auth: { user: AuthUser };
+    isHost: boolean;
+}>();
+const { t } = useI18n();
 
-const roleOrder = ['mafia', 'doctor', 'detective', 'civilian'] as const
+const roleOrder = ['mafia', 'doctor', 'detective', 'civilian'] as const;
 
 const roleLabels: Record<string, string> = {
     mafia: 'Mafia',
     doctor: 'Doctor',
     detective: 'Detective',
     civilian: 'Civilian',
-}
+};
 
 interface RevealedPlayer {
-    id: number
-    name: string
-    role: string
-    alive: boolean
+    id: number;
+    name: string;
+    role: string;
+    alive: boolean;
 }
 
 // role_reveal is populated for cancelled rooms the same way it is for
@@ -32,23 +32,23 @@ interface RevealedPlayer {
 // dispute over "who was about to win" needs anyone to go dig through
 // the database.
 const revealGroups = computed(() => {
-    const reveal = props.room.role_reveal ?? {}
+    const reveal = props.room.role_reveal ?? {};
 
-    const players: RevealedPlayer[] = props.room.players.map(p => ({
+    const players: RevealedPlayer[] = props.room.players.map((p) => ({
         id: p.id,
         name: p.name,
         alive: p.alive,
         role: reveal[String(p.id)] ?? 'civilian',
-    }))
+    }));
 
     return roleOrder
-        .map(role => ({
+        .map((role) => ({
             role,
             label: t(roleLabels[role]),
-            players: players.filter(p => p.role === role),
+            players: players.filter((p) => p.role === role),
         }))
-        .filter(group => group.players.length > 0)
-})
+        .filter((group) => group.players.length > 0);
+});
 </script>
 
 <template>
@@ -57,10 +57,7 @@ const revealGroups = computed(() => {
             <span class="ca-stamp">Room Cancelled</span>
         </div>
 
-        <p class="ca-note">
-            This game was cancelled before it finished. The state below
-            reflects the room at the moment it was cancelled.
-        </p>
+        <p class="ca-note">This game was cancelled before it finished. The state below reflects the room at the moment it was cancelled.</p>
 
         <section v-if="revealGroups.length > 0" class="ca-panel">
             <h2 class="ca-panel-title">Role Reveal</h2>

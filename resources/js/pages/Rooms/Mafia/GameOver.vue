@@ -1,55 +1,55 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { Room, AuthUser } from '@/types/room'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import type { AuthUser, Room } from '@/types/room';
+import { computed } from 'vue';
 
 const props = defineProps<{
-    room: Room
-    auth: { user: AuthUser }
-    isHost: boolean
-}>()
-const { t } = useI18n()
+    room: Room;
+    auth: { user: AuthUser };
+    isHost: boolean;
+}>();
+const { t } = useI18n();
 
 const winnerLabel = computed(() => {
-    if (props.room.winner === 'town') return t('Town Wins')
-    if (props.room.winner === 'mafia') return t('Mafia Wins')
-    return t('Game Over')
-})
+    if (props.room.winner === 'town') return t('Town Wins');
+    if (props.room.winner === 'mafia') return t('Mafia Wins');
+    return t('Game Over');
+});
 
-const roleOrder = ['mafia', 'doctor', 'detective', 'civilian'] as const
+const roleOrder = ['mafia', 'doctor', 'detective', 'civilian'] as const;
 
 const roleLabels: Record<string, string> = {
     mafia: 'Mafia',
     doctor: 'Doctor',
     detective: 'Detective',
     civilian: 'Civilian',
-}
+};
 
 interface RevealedPlayer {
-    id: number
-    name: string
-    role: string
-    alive: boolean
+    id: number;
+    name: string;
+    role: string;
+    alive: boolean;
 }
 
 const revealGroups = computed(() => {
-    const reveal = props.room.role_reveal ?? {}
+    const reveal = props.room.role_reveal ?? {};
 
-    const players: RevealedPlayer[] = props.room.players.map(p => ({
+    const players: RevealedPlayer[] = props.room.players.map((p) => ({
         id: p.id,
         name: p.name,
         alive: p.alive,
         role: reveal[String(p.id)] ?? 'civilian',
-    }))
+    }));
 
     return roleOrder
-        .map(role => ({
+        .map((role) => ({
             role,
             label: t(roleLabels[role]),
-            players: players.filter(p => p.role === role),
+            players: players.filter((p) => p.role === role),
         }))
-        .filter(group => group.players.length > 0)
-})
+        .filter((group) => group.players.length > 0);
+});
 </script>
 
 <template>

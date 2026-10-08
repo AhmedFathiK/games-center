@@ -1,38 +1,38 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { router } from '@inertiajs/vue3'
-import type { Room, AuthUser, You } from '@/types/room'
+import type { AuthUser, Room, You } from '@/types/room';
+import { router } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 
 const props = defineProps<{
-    room: Room
-    auth: { user: AuthUser }
-    isHost: boolean
-}>()
+    room: Room;
+    auth: { user: AuthUser };
+    isHost: boolean;
+}>();
 
 // This component only ever renders for Mafia rooms (Show.vue's
 // room.phase check), so room.you is always Mafia's own You shape here.
-const me = computed(() => props.room.you as You | null)
-const myRole = computed(() => me.value?.role ?? null)
-const amAlive = computed(() => me.value?.alive ?? null)
-const isParticipant = computed(() => myRole.value !== null)
+const me = computed(() => props.room.you as You | null);
+const myRole = computed(() => me.value?.role ?? null);
+const amAlive = computed(() => me.value?.alive ?? null);
+const isParticipant = computed(() => myRole.value !== null);
 
 function playerName(id: number | string | null) {
-    if (id === null) return 'no one'
-    const found = props.room.players.find(p => String(p.id) === String(id))
-    return found?.name ?? `Player #${id}`
+    if (id === null) return 'no one';
+    const found = props.room.players.find((p) => String(p.id) === String(id));
+    return found?.name ?? `Player #${id}`;
 }
 
-const alivePlayers = computed(() => props.room.players.filter(p => p.alive))
+const alivePlayers = computed(() => props.room.players.filter((p) => p.alive));
 
 // --- Public vote board ---------------------------------------------------
-const votes = computed(() => props.room.day_votes)
+const votes = computed(() => props.room.day_votes);
 
 function voteFor(id: number | string) {
-    return votes.value?.selections?.[String(id)] ?? null
+    return votes.value?.selections?.[String(id)] ?? null;
 }
 
 function voteConfirmedFor(id: number | string) {
-    return votes.value?.confirmed?.[String(id)] ?? false
+    return votes.value?.confirmed?.[String(id)] ?? false;
 }
 
 // Tally of "how many players currently have this person selected" —
@@ -40,125 +40,125 @@ function voteConfirmedFor(id: number | string) {
 // aggregation of data already on the page, not a new privacy surface.
 // Sorted by count so the leading target is easy to spot at a glance.
 const voteTally = computed(() => {
-    const selections = votes.value?.selections ?? {}
-    const counts: Record<string, number> = {}
+    const selections = votes.value?.selections ?? {};
+    const counts: Record<string, number> = {};
 
     for (const targetId of Object.values(selections)) {
-        if (targetId === null || targetId === undefined) continue
-        const key = String(targetId)
-        counts[key] = (counts[key] ?? 0) + 1
+        if (targetId === null || targetId === undefined) continue;
+        const key = String(targetId);
+        counts[key] = (counts[key] ?? 0) + 1;
     }
 
     return Object.entries(counts)
         .map(([id, count]) => ({ id, name: playerName(id), count }))
-        .sort((a, b) => b.count - a.count)
-})
+        .sort((a, b) => b.count - a.count);
+});
 
 function voteCountFor(id: number | string) {
-    return voteTally.value.find(t => t.id === String(id))?.count ?? 0
+    return voteTally.value.find((t) => t.id === String(id))?.count ?? 0;
 }
 
 // --- My vote (select -> confirm -> lock, same pattern as night actions) --
 const myVoteSelection = computed(() => {
     // Optimistic: show the pending pick instantly instead of waiting on
     // the round-trip, same as the night-phase pickers.
-    if (pendingVoteTargetId.value !== null) return pendingVoteTargetId.value
-    return votes.value?.selections?.[String(props.auth.user.id)] ?? null
-})
+    if (pendingVoteTargetId.value !== null) return pendingVoteTargetId.value;
+    return votes.value?.selections?.[String(props.auth.user.id)] ?? null;
+});
 
-const myVoteConfirmed = computed(() => votes.value?.confirmed?.[String(props.auth.user.id)] ?? false)
+const myVoteConfirmed = computed(() => votes.value?.confirmed?.[String(props.auth.user.id)] ?? false);
 
-const selecting = ref(false)
-const confirming = ref(false)
-const actionError = ref<string | null>(null)
-const pendingVoteTargetId = ref<number | string | null>(null)
+const selecting = ref(false);
+const confirming = ref(false);
+const actionError = ref<string | null>(null);
+const pendingVoteTargetId = ref<number | string | null>(null);
 
 function submitVoteSelect(targetId: number) {
-    pendingVoteTargetId.value = targetId
-    selecting.value = true
-    actionError.value = null
+    pendingVoteTargetId.value = targetId;
+    selecting.value = true;
+    actionError.value = null;
 
     router.post(
         `/rooms/${props.room.id}/actions`,
         { type: 'vote_select', target_id: targetId },
         {
-            onError: errors => {
-                actionError.value = Object.values(errors)[0] ?? 'Unable to submit your vote.'
-                pendingVoteTargetId.value = null
+            onError: (errors) => {
+                actionError.value = Object.values(errors)[0] ?? 'Unable to submit your vote.';
+                pendingVoteTargetId.value = null;
             },
             onFinish: () => {
-                selecting.value = false
-                pendingVoteTargetId.value = null
+                selecting.value = false;
+                pendingVoteTargetId.value = null;
             },
         },
-    )
+    );
 }
 
 function submitVoteConfirm() {
-    confirming.value = true
-    actionError.value = null
+    confirming.value = true;
+    actionError.value = null;
 
     router.post(
         `/rooms/${props.room.id}/actions`,
         { type: 'vote_confirm' },
         {
-            onError: errors => {
-                actionError.value = Object.values(errors)[0] ?? 'Unable to confirm your vote.'
+            onError: (errors) => {
+                actionError.value = Object.values(errors)[0] ?? 'Unable to confirm your vote.';
             },
             onFinish: () => {
-                confirming.value = false
+                confirming.value = false;
             },
         },
-    )
+    );
 }
 
 // --- Host: execute, skip, or advance to night -----------------------------
-const selectedExecuteTarget = ref<number | null>(null)
-const executing = ref(false)
-const executeError = ref<string | null>(null)
+const selectedExecuteTarget = ref<number | null>(null);
+const executing = ref(false);
+const executeError = ref<string | null>(null);
 
 function toggleExecuteTarget(id: number) {
-    selectedExecuteTarget.value = selectedExecuteTarget.value === id ? null : id
+    selectedExecuteTarget.value = selectedExecuteTarget.value === id ? null : id;
 }
 
 function submitExecute(targetId: number | null) {
-    executing.value = true
-    executeError.value = null
+    executing.value = true;
+    executeError.value = null;
 
     router.post(
         `/rooms/${props.room.id}/execute`,
         { target_id: targetId },
         {
-            onError: errors => {
-                executeError.value = Object.values(errors)[0] ?? 'Unable to execute.'
+            onError: (errors) => {
+                executeError.value = Object.values(errors)[0] ?? 'Unable to execute.';
             },
             onFinish: () => {
-                executing.value = false
-                selectedExecuteTarget.value = null
+                executing.value = false;
+                selectedExecuteTarget.value = null;
             },
         },
-    )
+    );
 }
 
-const advancing = ref(false)
-const advanceError = ref<string | null>(null)
+const advancing = ref(false);
+const advanceError = ref<string | null>(null);
 
 function advancePhase() {
-    advancing.value = true
-    advanceError.value = null
+    advancing.value = true;
+    advanceError.value = null;
 
     router.post(
         `/rooms/${props.room.id}/advance`,
         {},
         {
-            onError: errors => {
-                advanceError.value = Object.values(errors)[0] ?? 'Unable to advance the phase.'
+            onError: (errors) => {
+                advanceError.value = Object.values(errors)[0] ?? 'Unable to advance the phase.';
             },
             onFinish: () => {
-                advancing.value = false
+                advancing.value = false;
             },
         },
-    )
+    );
 }
 </script>
 
@@ -181,16 +181,10 @@ function advancePhase() {
 
             <div class="dp-roster">
                 <div v-for="p in room.players" :key="p.id" class="dp-row" :class="{ 'dp-row--dead': !p.alive }">
-                    <span class="dp-row-name">
-                        {{ p.name }}<span v-if="!p.alive" class="dp-dead-tag"> (dead)</span>
-                    </span>
+                    <span class="dp-row-name"> {{ p.name }}<span v-if="!p.alive" class="dp-dead-tag"> (dead)</span> </span>
                     <span class="dp-row-status">
-                        <template v-if="voteConfirmedFor(p.id)">
-                            Voted: {{ playerName(voteFor(p.id)) }}
-                        </template>
-                        <template v-else-if="voteFor(p.id)">
-                            Selected: {{ playerName(voteFor(p.id)) }} (pending)
-                        </template>
+                        <template v-if="voteConfirmedFor(p.id)"> Voted: {{ playerName(voteFor(p.id)) }} </template>
+                        <template v-else-if="voteFor(p.id)"> Selected: {{ playerName(voteFor(p.id)) }} (pending) </template>
                         <template v-else>No vote yet</template>
                     </span>
                 </div>
@@ -202,12 +196,8 @@ function advancePhase() {
             <h2 class="dp-panel-title">Cast Your Vote</h2>
 
             <p class="dp-status-line">
-                <template v-if="myVoteConfirmed">
-                    Confirmed: {{ playerName(myVoteSelection) }}. This cannot be changed.
-                </template>
-                <template v-else-if="myVoteSelection">
-                    Selected: {{ playerName(myVoteSelection) }} — confirm to lock it in.
-                </template>
+                <template v-if="myVoteConfirmed"> Confirmed: {{ playerName(myVoteSelection) }}. This cannot be changed. </template>
+                <template v-else-if="myVoteSelection"> Selected: {{ playerName(myVoteSelection) }} — confirm to lock it in. </template>
                 <template v-else>Choose who you think should be executed.</template>
             </p>
 
@@ -246,9 +236,7 @@ function advancePhase() {
         <!-- Host controls -->
         <section v-if="isHost" class="dp-panel">
             <h2 class="dp-panel-title">Host — Execute or Skip</h2>
-            <p class="dp-hint">
-                You may execute anyone, no one, or ignore the vote entirely — the tally above is advisory only.
-            </p>
+            <p class="dp-hint">You may execute anyone, no one, or ignore the vote entirely — the tally above is advisory only.</p>
 
             <div class="dp-target-picker">
                 <button
@@ -275,12 +263,7 @@ function advancePhase() {
                     {{ executing ? 'Working…' : 'Execute Selected' }}
                 </button>
 
-                <button
-                    type="button"
-                    class="dp-btn"
-                    :disabled="executing"
-                    @click="submitExecute(null)"
-                >
+                <button type="button" class="dp-btn" :disabled="executing" @click="submitExecute(null)">
                     {{ executing ? 'Working…' : 'Skip Execution' }}
                 </button>
             </div>
@@ -289,12 +272,7 @@ function advancePhase() {
 
             <div class="dp-divider" />
 
-            <button
-                type="button"
-                class="dp-btn dp-btn--primary"
-                :disabled="advancing"
-                @click="advancePhase"
-            >
+            <button type="button" class="dp-btn dp-btn--primary" :disabled="advancing" @click="advancePhase">
                 {{ advancing ? 'Advancing…' : 'Advance to Night' }}
             </button>
 

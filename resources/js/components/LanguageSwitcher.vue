@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import { router, usePage } from '@inertiajs/vue3'
-import { watch } from 'vue'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import { router, usePage } from '@inertiajs/vue3';
+import { watch } from 'vue';
 
-const page = usePage()
-const { t } = useI18n()
+const page = usePage();
+const { t } = useI18n();
 
-watch(() => page.props.locale, value => {
-    const locale = value === 'ar' ? 'ar' : 'en'
-    document.documentElement.lang = locale
-    document.documentElement.dir = locale === 'ar' ? 'rtl' : 'ltr'
-}, { immediate: true })
+watch(
+    () => page.props.locale,
+    (value) => {
+        const locale = value === 'ar' ? 'ar' : 'en';
+        document.documentElement.lang = locale;
+        document.documentElement.dir = locale === 'ar' ? 'rtl' : 'ltr';
+    },
+    { immediate: true },
+);
 
 function changeLanguage(event: Event) {
-    const locale = (event.target as HTMLSelectElement).value
-    router.post(route('locale.update'), { locale }, { preserveScroll: true })
+    const locale = (event.target as HTMLSelectElement).value;
+    router.post(route('locale.update'), { locale }, { preserveScroll: true });
 }
 </script>
 

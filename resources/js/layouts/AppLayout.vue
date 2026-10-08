@@ -1,58 +1,60 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
-import { Link, usePage } from '@inertiajs/vue3'
-import { useInitials } from '@/composables/useInitials'
-import { useI18n } from '@/i18n'
-import type { SharedData } from '@/types'
+import { useInitials } from '@/composables/useInitials';
+import { useI18n } from '@/i18n';
+import type { SharedData } from '@/types';
+import { Link, usePage } from '@inertiajs/vue3';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 
-const page = usePage<SharedData>()
-const { getInitials } = useInitials()
-const { t } = useI18n()
-const isUserMenuOpen = ref(false)
-const userMenuRef = ref<HTMLElement | null>(null)
+const page = usePage<SharedData>();
+const { getInitials } = useInitials();
+const { t } = useI18n();
+const isUserMenuOpen = ref(false);
+const userMenuRef = ref<HTMLElement | null>(null);
 
-const userInitials = getInitials(page.props.auth.user.name)
+const userInitials = getInitials(page.props.auth.user.name);
 
-watch(() => page.props.locale, value => {
-    const locale = value === 'ar' ? 'ar' : 'en'
-    document.documentElement.lang = locale
-    document.documentElement.dir = locale === 'ar' ? 'rtl' : 'ltr'
-}, { immediate: true })
+watch(
+    () => page.props.locale,
+    (value) => {
+        const locale = value === 'ar' ? 'ar' : 'en';
+        document.documentElement.lang = locale;
+        document.documentElement.dir = locale === 'ar' ? 'rtl' : 'ltr';
+    },
+    { immediate: true },
+);
 
 // The dropdown previously only closed via the trigger button or a link
 // inside it — clicking anywhere else on the page, or pressing Escape,
 // left it open. Both are standard expectations for any dropdown menu.
 function handleOutsideClick(event: MouseEvent) {
-    if (!isUserMenuOpen.value) return
+    if (!isUserMenuOpen.value) return;
     if (userMenuRef.value && !userMenuRef.value.contains(event.target as Node)) {
-        isUserMenuOpen.value = false
+        isUserMenuOpen.value = false;
     }
 }
 
 function handleEscape(event: KeyboardEvent) {
     if (event.key === 'Escape') {
-        isUserMenuOpen.value = false
+        isUserMenuOpen.value = false;
     }
 }
 
 onMounted(() => {
-    document.addEventListener('click', handleOutsideClick)
-    document.addEventListener('keydown', handleEscape)
-})
+    document.addEventListener('click', handleOutsideClick);
+    document.addEventListener('keydown', handleEscape);
+});
 
 onUnmounted(() => {
-    document.removeEventListener('click', handleOutsideClick)
-    document.removeEventListener('keydown', handleEscape)
-})
+    document.removeEventListener('click', handleOutsideClick);
+    document.removeEventListener('keydown', handleEscape);
+});
 </script>
 
 <template>
     <div class="app-shell">
         <header class="app-header">
             <div class="app-header-container">
-                <Link :href="route('home')" class="app-brand">
-                    Games Center
-                </Link>
+                <Link :href="route('home')" class="app-brand"> Games Center </Link>
 
                 <nav class="app-nav">
                     <Link
@@ -62,11 +64,7 @@ onUnmounted(() => {
                     >
                         {{ t('Games') }}
                     </Link>
-                    <Link
-                        :href="route('rooms.mine')"
-                        class="app-nav-link"
-                        :class="{ 'app-nav-link--active': route().current('rooms.mine') }"
-                    >
+                    <Link :href="route('rooms.mine')" class="app-nav-link" :class="{ 'app-nav-link--active': route().current('rooms.mine') }">
                         {{ t('My Rooms') }}
                     </Link>
                 </nav>

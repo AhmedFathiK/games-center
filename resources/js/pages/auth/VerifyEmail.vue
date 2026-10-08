@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3'
-import AuthLayout from '@/layouts/AuthLayout.vue'
+import AuthLayout from '@/layouts/AuthLayout.vue';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 
 defineProps<{
-    status?: string
-}>()
+    status?: string;
+}>();
 
-const form = useForm({})
+const form = useForm({});
 
 const submit = () => {
-    form.post(route('verification.send'))
-}
+    form.post(route('verification.send'));
+};
 </script>
 
 <template>
@@ -27,9 +27,7 @@ const submit = () => {
                 Resend verification email
             </button>
 
-            <Link :href="route('logout')" method="post" as="button" class="au-link au-link--centered">
-                Log out
-            </Link>
+            <Link :href="route('logout')" method="post" as="button" class="au-link au-link--centered"> Log out </Link>
         </form>
     </AuthLayout>
 </template>

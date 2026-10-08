@@ -10,84 +10,84 @@
  * Once the phone is sideways, a small fullscreen toggle is offered because the
  * browser toolbar costs a third of a landscape phone's height.
  */
-import { onMounted, onUnmounted, ref } from 'vue'
-import { Link } from '@inertiajs/vue3'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import { Link } from '@inertiajs/vue3';
+import { onMounted, onUnmounted, ref } from 'vue';
 
-const { t } = useI18n()
+const { t } = useI18n();
 
-const PORTRAIT_PHONE = '(pointer: coarse) and (max-width: 600px) and (orientation: portrait)'
-const LANDSCAPE_PHONE = '(pointer: coarse) and (orientation: landscape) and (max-height: 560px)'
+const PORTRAIT_PHONE = '(pointer: coarse) and (max-width: 600px) and (orientation: portrait)';
+const LANDSCAPE_PHONE = '(pointer: coarse) and (orientation: landscape) and (max-height: 560px)';
 
-type LockableOrientation = ScreenOrientation & { lock?: (orientation: string) => Promise<void> }
+type LockableOrientation = ScreenOrientation & { lock?: (orientation: string) => Promise<void> };
 
-const portraitPhone = ref(false)
-const landscapePhone = ref(false)
-const isFullscreen = ref(false)
-const fullscreenSupported = ref(false)
-const lockNote = ref<string | null>(null)
+const portraitPhone = ref(false);
+const landscapePhone = ref(false);
+const isFullscreen = ref(false);
+const fullscreenSupported = ref(false);
+const lockNote = ref<string | null>(null);
 
-const portraitQuery = window.matchMedia(PORTRAIT_PHONE)
-const landscapeQuery = window.matchMedia(LANDSCAPE_PHONE)
+const portraitQuery = window.matchMedia(PORTRAIT_PHONE);
+const landscapeQuery = window.matchMedia(LANDSCAPE_PHONE);
 
 function sync() {
-    portraitPhone.value = portraitQuery.matches
-    landscapePhone.value = landscapeQuery.matches
-    isFullscreen.value = document.fullscreenElement !== null
+    portraitPhone.value = portraitQuery.matches;
+    landscapePhone.value = landscapeQuery.matches;
+    isFullscreen.value = document.fullscreenElement !== null;
 }
 
 // Browsers only allow fullscreen from a tap, and drop it whenever the phone
 // locks or an app takes over. So the first tap after that goes back to
 // fullscreen + landscape on its own, unless the player left fullscreen on
 // purpose with the toggle.
-const OPT_OUT_KEY = 'md-fullscreen-opt-out'
+const OPT_OUT_KEY = 'md-fullscreen-opt-out';
 
 function optedOut(): boolean {
     try {
-        return sessionStorage.getItem(OPT_OUT_KEY) === '1'
+        return sessionStorage.getItem(OPT_OUT_KEY) === '1';
     } catch {
-        return false
+        return false;
     }
 }
 
 function setOptOut(value: boolean) {
     try {
-        if (value) sessionStorage.setItem(OPT_OUT_KEY, '1')
-        else sessionStorage.removeItem(OPT_OUT_KEY)
+        if (value) sessionStorage.setItem(OPT_OUT_KEY, '1');
+        else sessionStorage.removeItem(OPT_OUT_KEY);
     } catch {
         // Private mode: the toggle still works, it just won't be remembered.
     }
 }
 
 function resumeOnTap(event: Event) {
-    if (!fullscreenSupported.value || document.fullscreenElement || optedOut()) return
-    if (!portraitPhone.value && !landscapePhone.value) return
-    if ((event.target as Element | null)?.closest?.('a')) return
+    if (!fullscreenSupported.value || document.fullscreenElement || optedOut()) return;
+    if (!portraitPhone.value && !landscapePhone.value) return;
+    if ((event.target as Element | null)?.closest?.('a')) return;
 
-    void enterFullscreenAndLock(true)
+    void enterFullscreenAndLock(true);
 }
 
 async function enterFullscreenAndLock(quiet = false) {
-    lockNote.value = null
-    setOptOut(false)
+    lockNote.value = null;
+    setOptOut(false);
 
     try {
-        if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.()
-        const orientation = screen.orientation as LockableOrientation | undefined
-        if (!orientation?.lock) throw new Error('orientation lock unavailable')
-        await orientation.lock('landscape')
+        if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
+        const orientation = screen.orientation as LockableOrientation | undefined;
+        if (!orientation?.lock) throw new Error('orientation lock unavailable');
+        await orientation.lock('landscape');
     } catch {
-        if (!quiet) lockNote.value = t('This browser can’t lock rotation. Turn off your phone’s rotation lock and turn it sideways.')
+        if (!quiet) lockNote.value = t('This browser can’t lock rotation. Turn off your phone’s rotation lock and turn it sideways.');
     }
 }
 
 async function toggleFullscreen() {
     try {
         if (document.fullscreenElement) {
-            setOptOut(true)
-            await document.exitFullscreen()
+            setOptOut(true);
+            await document.exitFullscreen();
         } else {
-            await enterFullscreenAndLock()
+            await enterFullscreenAndLock();
         }
     } catch {
         // Fullscreen is a convenience; the table works without it.
@@ -95,20 +95,20 @@ async function toggleFullscreen() {
 }
 
 onMounted(() => {
-    fullscreenSupported.value = typeof document.documentElement.requestFullscreen === 'function'
-    sync()
-    portraitQuery.addEventListener('change', sync)
-    landscapeQuery.addEventListener('change', sync)
-    document.addEventListener('fullscreenchange', sync)
-    document.addEventListener('click', resumeOnTap, true)
-})
+    fullscreenSupported.value = typeof document.documentElement.requestFullscreen === 'function';
+    sync();
+    portraitQuery.addEventListener('change', sync);
+    landscapeQuery.addEventListener('change', sync);
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('click', resumeOnTap, true);
+});
 
 onUnmounted(() => {
-    portraitQuery.removeEventListener('change', sync)
-    landscapeQuery.removeEventListener('change', sync)
-    document.removeEventListener('fullscreenchange', sync)
-    document.removeEventListener('click', resumeOnTap, true)
-})
+    portraitQuery.removeEventListener('change', sync);
+    landscapeQuery.removeEventListener('change', sync);
+    document.removeEventListener('fullscreenchange', sync);
+    document.removeEventListener('click', resumeOnTap, true);
+});
 </script>
 
 <template>

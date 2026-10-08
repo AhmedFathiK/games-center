@@ -12,433 +12,395 @@
  * the platform-shared views (Show.vue, Mine.vue) at the top level.
  * Mafia's own files live the same way, under Rooms/Mafia/.
  */
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { router } from '@inertiajs/vue3'
-import type { FormDataConvertible } from '@inertiajs/core'
-import { VueDraggable } from 'vue-draggable-plus'
-import type { Room, AuthUser, MasrawyYou, MasrawyTableState, MasrawySeat, CardCatalogEntry, MasrawyActivity } from '@/types/room'
-import MasrawyCard from './Card.vue'
-import TableBoard from './TableBoard.vue'
-import LandscapeGate from './LandscapeGate.vue'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import type { AuthUser, CardCatalogEntry, MasrawyActivity, MasrawySeat, MasrawyTableState, MasrawyYou, Room } from '@/types/room';
+import type { FormDataConvertible } from '@inertiajs/core';
+import { router } from '@inertiajs/vue3';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { VueDraggable } from 'vue-draggable-plus';
+import MasrawyCard from './Card.vue';
+import LandscapeGate from './LandscapeGate.vue';
+import TableBoard from './TableBoard.vue';
 
 const props = defineProps<{
-    room: Room
-    auth: { user: AuthUser }
-    isHost: boolean
-}>()
-const { t } = useI18n()
+    room: Room;
+    auth: { user: AuthUser };
+    isHost: boolean;
+}>();
+const { t } = useI18n();
 
 // This component only ever renders for Masrawy Deal rooms (Show.vue's
 // game.slug check), so room.you/room.table are always this game's shapes.
-const you = computed(() => props.room.you as MasrawyYou | null)
-const table = computed(() => props.room.table as MasrawyTableState | null)
-const myId = computed(() => props.auth.user.id)
-const handOrder = ref<string[]>([])
-const handOrderLoaded = ref(false)
-const handOrderStorageKey = `masrawy-deal-hand-order:${props.room.id}:${props.auth.user.id}`
-const flippedCardIds = ref<string[]>([])
-const flippedCardsLoaded = ref(false)
-const flippedCardsStorageKey = `masrawy-deal-flipped-cards:${props.room.id}:${props.auth.user.id}`
-const isReorderingHand = ref(false)
-const showJustSayNoNotice = ref(false)
-const showBirthdayNotice = ref(false)
-const isResponsePromptCollapsed = ref(false)
-const kickingPlayerId = ref<number | null>(null)
-const hostKickError = ref<string | null>(null)
+const you = computed(() => props.room.you as MasrawyYou | null);
+const table = computed(() => props.room.table as MasrawyTableState | null);
+const myId = computed(() => props.auth.user.id);
+const handOrder = ref<string[]>([]);
+const handOrderLoaded = ref(false);
+const handOrderStorageKey = `masrawy-deal-hand-order:${props.room.id}:${props.auth.user.id}`;
+const flippedCardIds = ref<string[]>([]);
+const flippedCardsLoaded = ref(false);
+const flippedCardsStorageKey = `masrawy-deal-flipped-cards:${props.room.id}:${props.auth.user.id}`;
+const isReorderingHand = ref(false);
+const showJustSayNoNotice = ref(false);
+const showBirthdayNotice = ref(false);
+const isResponsePromptCollapsed = ref(false);
+const kickingPlayerId = ref<number | null>(null);
+const hostKickError = ref<string | null>(null);
 
 function reconcileHandOrder(hand: string[], preferredOrder: string[]): string[] {
-    const cardsInHand = new Set(hand)
-    const ordered = preferredOrder.filter((id, index) => cardsInHand.has(id) && preferredOrder.indexOf(id) === index)
+    const cardsInHand = new Set(hand);
+    const ordered = preferredOrder.filter((id, index) => cardsInHand.has(id) && preferredOrder.indexOf(id) === index);
 
-    return [...ordered, ...hand.filter(id => !ordered.includes(id))]
+    return [...ordered, ...hand.filter((id) => !ordered.includes(id))];
 }
 
 watch(
     () => [...(you.value?.hand ?? [])],
-    hand => {
-        handOrder.value = reconcileHandOrder(hand, handOrder.value.length > 0 ? handOrder.value : hand)
+    (hand) => {
+        handOrder.value = reconcileHandOrder(hand, handOrder.value.length > 0 ? handOrder.value : hand);
     },
     { immediate: true },
-)
+);
 
 onMounted(() => {
     window.Echo.private(`App.Models.User.${myId.value}`)
         .listen('.masrawy.just_say_no_countered', (event: { room_id: number }) => {
-            if (event.room_id === props.room.id) showJustSayNoNotice.value = true
+            if (event.room_id === props.room.id) showJustSayNoNotice.value = true;
         })
         .listen('.masrawy.birthday_played', (event: { room_id: number }) => {
             if (event.room_id === props.room.id) {
-                showBirthdayNotice.value = true
-                router.reload({ only: ['room'] })
+                showBirthdayNotice.value = true;
+                router.reload({ only: ['room'] });
             }
-        })
+        });
 
     try {
-        const savedOrder: unknown = JSON.parse(window.localStorage.getItem(handOrderStorageKey) ?? '[]')
-        if (Array.isArray(savedOrder) && savedOrder.every(id => typeof id === 'string')) {
-            handOrder.value = reconcileHandOrder(you.value?.hand ?? [], savedOrder)
+        const savedOrder: unknown = JSON.parse(window.localStorage.getItem(handOrderStorageKey) ?? '[]');
+        if (Array.isArray(savedOrder) && savedOrder.every((id) => typeof id === 'string')) {
+            handOrder.value = reconcileHandOrder(you.value?.hand ?? [], savedOrder);
         }
     } catch {
         // Sorting still works for this visit when local storage is unavailable.
     }
 
     try {
-        const savedOrientations: unknown = JSON.parse(window.localStorage.getItem(flippedCardsStorageKey) ?? '[]')
-        if (Array.isArray(savedOrientations) && savedOrientations.every(id => typeof id === 'string')) {
-            flippedCardIds.value = savedOrientations
+        const savedOrientations: unknown = JSON.parse(window.localStorage.getItem(flippedCardsStorageKey) ?? '[]');
+        if (Array.isArray(savedOrientations) && savedOrientations.every((id) => typeof id === 'string')) {
+            flippedCardIds.value = savedOrientations;
         }
     } catch {
         // Hand card orientation stays in memory when local storage is unavailable.
     }
 
-    handOrderLoaded.value = true
-    flippedCardsLoaded.value = true
-})
+    handOrderLoaded.value = true;
+    flippedCardsLoaded.value = true;
+});
 
-watch(handOrder, order => {
-    if (!handOrderLoaded.value) return
+watch(handOrder, (order) => {
+    if (!handOrderLoaded.value) return;
 
     try {
-        window.localStorage.setItem(handOrderStorageKey, JSON.stringify(order))
+        window.localStorage.setItem(handOrderStorageKey, JSON.stringify(order));
     } catch {
         // Keep the in-memory order even when the browser blocks local storage.
     }
-})
+});
 
-watch(flippedCardIds, ids => {
-    if (!flippedCardsLoaded.value) return
+watch(flippedCardIds, (ids) => {
+    if (!flippedCardsLoaded.value) return;
 
     try {
-        window.localStorage.setItem(flippedCardsStorageKey, JSON.stringify(ids))
+        window.localStorage.setItem(flippedCardsStorageKey, JSON.stringify(ids));
     } catch {
         // Keep the in-memory orientation when local storage is unavailable.
     }
-})
+});
 
 const discardStackCardIds = computed(() => {
-    const pile = table.value?.discard_pile ?? []
-    const topCardId = pile[pile.length - 1]
-    if (!topCardId) return []
+    const pile = table.value?.discard_pile ?? [];
+    const topCardId = pile[pile.length - 1];
+    if (!topCardId) return [];
 
-    const latestActivity = table.value?.recent_activity.at(-1)
-    const rentPlayCardIds = latestActivity?.type === 'play_rent' && latestActivity.card_id
-        ? [latestActivity.card_id, ...latestActivity.double_rent_card_ids]
-        : []
-    const pileTopCards = pile.slice(-rentPlayCardIds.length)
-    const rentPlayIsStillOnTop = rentPlayCardIds.length > 1
-        && pileTopCards.length === rentPlayCardIds.length
-        && rentPlayCardIds.every((cardId, index) => pileTopCards[index] === cardId)
+    const latestActivity = table.value?.recent_activity.at(-1);
+    const rentPlayCardIds =
+        latestActivity?.type === 'play_rent' && latestActivity.card_id ? [latestActivity.card_id, ...latestActivity.double_rent_card_ids] : [];
+    const pileTopCards = pile.slice(-rentPlayCardIds.length);
+    const rentPlayIsStillOnTop =
+        rentPlayCardIds.length > 1 &&
+        pileTopCards.length === rentPlayCardIds.length &&
+        rentPlayCardIds.every((cardId, index) => pileTopCards[index] === cardId);
 
-    return rentPlayIsStillOnTop ? rentPlayCardIds : [topCardId]
-})
+    return rentPlayIsStillOnTop ? rentPlayCardIds : [topCardId];
+});
 
-const COLORS = [
-    'brown', 'light_blue', 'pink', 'orange', 'red',
-    'yellow', 'green', 'dark_blue', 'railroad', 'utility',
-]
-const BANK_VISIBLE_CARD_LIMIT = 5
+const COLORS = ['brown', 'light_blue', 'pink', 'orange', 'red', 'yellow', 'green', 'dark_blue', 'railroad', 'utility'];
+const BANK_VISIBLE_CARD_LIMIT = 5;
 
 function colorLabel(color: string): string {
     return color
         .split('_')
-        .map(w => w[0].toUpperCase() + w.slice(1))
-        .join(' ')
+        .map((w) => w[0].toUpperCase() + w.slice(1))
+        .join(' ');
 }
 
 function entryFor(id: string): CardCatalogEntry | undefined {
-    return table.value?.catalog[id]
+    return table.value?.catalog[id];
 }
 
 function rentChartFor(id: string): number[] | undefined {
-    const entry = entryFor(id)
-    return entry?.type === 'property' && entry.color
-        ? table.value?.rent_chart[entry.color]
-        : undefined
+    const entry = entryFor(id);
+    return entry?.type === 'property' && entry.color ? table.value?.rent_chart[entry.color] : undefined;
 }
 
 function setSizeFor(id: string): number | undefined {
-    const entry = entryFor(id)
-    return entry?.type === 'property' && entry.color
-        ? table.value?.set_size[entry.color]
-        : undefined
+    const entry = entryFor(id);
+    return entry?.type === 'property' && entry.color ? table.value?.set_size[entry.color] : undefined;
 }
 
 function wildRentChartsFor(id: string): number[][] | undefined {
-    const entry = entryFor(id)
-    const colors = entry?.type === 'wildcard' && !entry.any_color && entry.colors?.length === 2
-        ? entry.colors
-        : []
-    const charts = colors.map(color => table.value?.rent_chart[color]).filter((chart): chart is number[] => Boolean(chart))
+    const entry = entryFor(id);
+    const colors = entry?.type === 'wildcard' && !entry.any_color && entry.colors?.length === 2 ? entry.colors : [];
+    const charts = colors.map((color) => table.value?.rent_chart[color]).filter((chart): chart is number[] => Boolean(chart));
 
-    return colors.length === 2 && charts.length === 2 ? charts : undefined
+    return colors.length === 2 && charts.length === 2 ? charts : undefined;
 }
 
 function wildSetSizesFor(id: string): number[] | undefined {
-    const entry = entryFor(id)
-    const colors = entry?.type === 'wildcard' && !entry.any_color && entry.colors?.length === 2
-        ? entry.colors
-        : []
-    const sizes = colors.map(color => table.value?.set_size[color]).filter((size): size is number => typeof size === 'number')
+    const entry = entryFor(id);
+    const colors = entry?.type === 'wildcard' && !entry.any_color && entry.colors?.length === 2 ? entry.colors : [];
+    const sizes = colors.map((color) => table.value?.set_size[color]).filter((size): size is number => typeof size === 'number');
 
-    return colors.length === 2 && sizes.length === 2 ? sizes : undefined
+    return colors.length === 2 && sizes.length === 2 ? sizes : undefined;
 }
 
 function label(id: string): string {
-    return entryFor(id)?.label ?? id
+    return entryFor(id)?.label ?? id;
 }
 
 function orientationColorsForCard(id: string): string[] {
-    const entry = entryFor(id)
-    const colors = entry?.colors ?? []
+    const entry = entryFor(id);
+    const colors = entry?.colors ?? [];
     if (entry?.type === 'wildcard') {
-        if (colors.includes('green') && colors.includes('dark_blue')) return ['green', 'dark_blue']
-        if (colors.includes('brown') && colors.includes('light_blue')) return ['brown', 'light_blue']
+        if (colors.includes('green') && colors.includes('dark_blue')) return ['green', 'dark_blue'];
+        if (colors.includes('brown') && colors.includes('light_blue')) return ['brown', 'light_blue'];
     }
 
-    return colors
+    return colors;
 }
 
 function activeColorForCard(id: string): string | undefined {
-    const colors = orientationColorsForCard(id)
-    if (colors.length !== 2) return undefined
-    return colors[flippedCardIds.value.includes(id) ? 1 : 0]
+    const colors = orientationColorsForCard(id);
+    if (colors.length !== 2) return undefined;
+    return colors[flippedCardIds.value.includes(id) ? 1 : 0];
 }
 
 function toggleHandReordering() {
-    isReorderingHand.value = !isReorderingHand.value
-    if (isReorderingHand.value) selectedCardId.value = null
+    isReorderingHand.value = !isReorderingHand.value;
+    if (isReorderingHand.value) selectedCardId.value = null;
 }
 
 // --- Roster / seats ----------------------------------------------------
 
 function playerName(id: number | string): string {
-    const found = props.room.players.find(p => String(p.id) === String(id))
-    return found?.name ?? `Player #${id}`
+    const found = props.room.players.find((p) => String(p.id) === String(id));
+    return found?.name ?? `Player #${id}`;
 }
 
 function propertyColorForCard(playerId: number, cardId: string): string | undefined {
-    const seat = table.value?.players.find(player => player.id === playerId)
-    return Object.entries(seat?.properties ?? {}).find(([, group]) => group.cards.includes(cardId))?.[0]
+    const seat = table.value?.players.find((player) => player.id === playerId);
+    return Object.entries(seat?.properties ?? {}).find(([, group]) => group.cards.includes(cardId))?.[0];
 }
 
-const mySeat = computed<MasrawySeat | undefined>(() =>
-    table.value?.players.find(s => s.id === myId.value),
-)
+const mySeat = computed<MasrawySeat | undefined>(() => table.value?.players.find((s) => s.id === myId.value));
 
-const opponents = computed(() => table.value?.players.filter(s => s.id !== myId.value) ?? [])
+const opponents = computed(() => table.value?.players.filter((s) => s.id !== myId.value) ?? []);
 
 const nextPlayerId = computed(() => {
-    const players = table.value?.players ?? []
-    const currentIndex = players.findIndex(seat => seat.id === table.value?.current_player_id)
-    return currentIndex < 0 || players.length < 2 ? null : players[(currentIndex + 1) % players.length]?.id ?? null
-})
+    const players = table.value?.players ?? [];
+    const currentIndex = players.findIndex((seat) => seat.id === table.value?.current_player_id);
+    return currentIndex < 0 || players.length < 2 ? null : (players[(currentIndex + 1) % players.length]?.id ?? null);
+});
 
 function seatFor(id: number | string): MasrawySeat | undefined {
-    return table.value?.players.find(s => String(s.id) === String(id))
+    return table.value?.players.find((s) => String(s.id) === String(id));
 }
 
-const selectedPropertySet = ref<{ playerId: number; color: string } | null>(null)
-const selectedPropertySetSeat = computed(() =>
-    selectedPropertySet.value ? seatFor(selectedPropertySet.value.playerId) : undefined,
-)
+const selectedPropertySet = ref<{ playerId: number; color: string } | null>(null);
+const selectedPropertySetSeat = computed(() => (selectedPropertySet.value ? seatFor(selectedPropertySet.value.playerId) : undefined));
 const selectedPropertySetGroup = computed(() => {
-    if (!selectedPropertySet.value || !selectedPropertySetSeat.value) return undefined
-    return selectedPropertySetSeat.value.properties[selectedPropertySet.value.color]
-})
+    if (!selectedPropertySet.value || !selectedPropertySetSeat.value) return undefined;
+    return selectedPropertySetSeat.value.properties[selectedPropertySet.value.color];
+});
 const selectedPropertySetCardIds = computed(() => {
-    const group = selectedPropertySetGroup.value
-    if (!group) return []
-    return [...group.cards, ...(group.house ? [group.house] : []), ...(group.hotel ? [group.hotel] : [])]
-})
+    const group = selectedPropertySetGroup.value;
+    if (!group) return [];
+    return [...group.cards, ...(group.house ? [group.house] : []), ...(group.hotel ? [group.hotel] : [])];
+});
 
 function openPropertySet(playerId: number, color: string) {
-    selectedPropertySet.value = { playerId, color }
+    selectedPropertySet.value = { playerId, color };
 }
 
 function closePropertySet() {
-    selectedPropertySet.value = null
+    selectedPropertySet.value = null;
 }
 
-const recentActivity = computed(() => [...(table.value?.recent_activity ?? [])].slice(-4).reverse())
-const currentTurnSeat = computed(() => table.value?.players.find((seat) => seat.id === table.value?.current_player_id));
-const currentTurnAttentionKey = computed(() => `${table.value?.turn_number ?? 0}:${table.value?.current_player_id ?? ''}`)
-const dismissedMyTurnAttentionKey = ref<string | null>(null)
-const showingPreviousTurn = ref(false)
-let previousTurnTimer: ReturnType<typeof setTimeout> | null = null
-const previousTurnSnapshot = ref<{ playerId: number; activity: MasrawyActivity[] } | null>(null)
-const previousTurnActivity = computed(() => previousTurnSnapshot.value?.activity ?? [])
-const previousTurnPlayerId = computed(() => previousTurnSnapshot.value?.playerId ?? null)
-const turnViewSeat = computed(() =>
-    showingPreviousTurn.value && previousTurnPlayerId.value !== null
-        ? seatFor(previousTurnPlayerId.value)
-        : currentTurnSeat.value,
-)
+const recentActivity = computed(() => [...(table.value?.recent_activity ?? [])].slice(-4).reverse());
+const currentTurnAttentionKey = computed(() => `${table.value?.turn_number ?? 0}:${table.value?.current_player_id ?? ''}`);
+const dismissedMyTurnAttentionKey = ref<string | null>(null);
+const showingPreviousTurn = ref(false);
+let previousTurnTimer: ReturnType<typeof setTimeout> | null = null;
+const previousTurnSnapshot = ref<{ playerId: number; activity: MasrawyActivity[] } | null>(null);
 const showMyTurnAttention = computed(
     () => gameIsLive.value && !showingPreviousTurn.value && isMyTurn.value && dismissedMyTurnAttentionKey.value !== currentTurnAttentionKey.value,
-)
-const currentTurnActivity = computed(() =>
-    (table.value?.turn_activity ?? []).filter((event) => event.player_id === table.value?.current_player_id),
-);
-const turnViewActivity = computed(() =>
-    showingPreviousTurn.value ? previousTurnActivity.value : currentTurnActivity.value,
-)
-const turnViewMoveCount = computed(() => turnViewActivity.value.filter(event => event.type !== 'draw').length)
-const currentTurnMoveCardIds = computed(
-    () =>
-        new Set(
-            turnViewActivity.value.flatMap((event) => [
-                ...(event.card_id ? [event.card_id] : []),
-                ...event.card_ids,
-                ...(event.target_card_id ? [event.target_card_id] : []),
-                ...(event.give_card_id ? [event.give_card_id] : []),
-                ...event.double_rent_card_ids,
-            ]),
-        ),
 );
 const dismissedTurnPlayerId = ref<number | null>(null);
-const paymentReceivedEvents = ref<MasrawyActivity[]>([])
-const latestSeenActivityId = ref(Math.max(0, ...(table.value?.recent_activity ?? []).map((event) => event.id)))
-const celebrationPieces = Array.from({ length: 28 }, (_, index) => index)
-const winnerModalDismissed = ref(false)
-const showWinnerModal = computed(() =>
-    props.room.status === 'finished' && props.room.winner !== null && !winnerModalDismissed.value,
-)
+const paymentReceivedEvents = ref<MasrawyActivity[]>([]);
+const latestSeenActivityId = ref(Math.max(0, ...(table.value?.recent_activity ?? []).map((event) => event.id)));
+const celebrationPieces = Array.from({ length: 28 }, (_, index) => index);
+const winnerModalDismissed = ref(false);
+const showWinnerModal = computed(() => props.room.status === 'finished' && props.room.winner !== null && !winnerModalDismissed.value);
 
 watch(
     () => table.value?.recent_activity.map((event) => event.id) ?? [],
     (activityIds) => {
-        const unseenIds = activityIds.filter((id) => id > latestSeenActivityId.value)
-        if (activityIds.length) latestSeenActivityId.value = Math.max(latestSeenActivityId.value, ...activityIds)
-        if (unseenIds.length === 0) return
+        const unseenIds = activityIds.filter((id) => id > latestSeenActivityId.value);
+        if (activityIds.length) latestSeenActivityId.value = Math.max(latestSeenActivityId.value, ...activityIds);
+        if (unseenIds.length === 0) return;
 
         const newPaymentsToMe = (table.value?.recent_activity ?? []).filter(
             (event) => unseenIds.includes(event.id) && event.type === 'pay' && event.target_id === myId.value,
-        )
-        if (newPaymentsToMe.length) paymentReceivedEvents.value = newPaymentsToMe
+        );
+        if (newPaymentsToMe.length) paymentReceivedEvents.value = newPaymentsToMe;
     },
-)
-
-const showTurnModal = computed(
-    () =>
-        gameIsLive.value &&
-        (showingPreviousTurn.value || !isMyTurn.value) &&
-        pending.value === null &&
-        turnViewSeat.value !== undefined &&
-        dismissedTurnPlayerId.value !== turnViewSeat.value.id,
 );
 
 watch(
     () => table.value,
     (nextTable, previousTable) => {
-        if (!nextTable || !previousTable || nextTable.turn_number === previousTable.turn_number) return
+        if (!nextTable || !previousTable || nextTable.turn_number === previousTable.turn_number) return;
 
         if (previousTurnTimer !== null) {
-            clearTimeout(previousTurnTimer)
-            previousTurnTimer = null
+            clearTimeout(previousTurnTimer);
+            previousTurnTimer = null;
         }
         previousTurnSnapshot.value = {
             playerId: previousTable.current_player_id,
             activity: previousTable.turn_activity.filter((event) => event.player_id === previousTable.current_player_id),
-        }
-        dismissedTurnPlayerId.value = null
+        };
+        dismissedTurnPlayerId.value = null;
         if (previousTable.current_player_id === myId.value) {
-            showingPreviousTurn.value = false
-            return
+            showingPreviousTurn.value = false;
+            return;
         }
-        showingPreviousTurn.value = true
+        showingPreviousTurn.value = true;
         previousTurnTimer = setTimeout(() => {
-            showingPreviousTurn.value = false
-            previousTurnTimer = null
-        }, 5000)
+            showingPreviousTurn.value = false;
+            previousTurnTimer = null;
+        }, 5000);
     },
 );
 
-function dismissTurnModal() {
-    dismissedTurnPlayerId.value = turnViewSeat.value?.id ?? null;
-}
-
 function dismissMyTurnAttention() {
-    dismissedMyTurnAttentionKey.value = currentTurnAttentionKey.value
+    dismissedMyTurnAttentionKey.value = currentTurnAttentionKey.value;
 }
 
 function dismissPaymentReceipt() {
-    paymentReceivedEvents.value = []
-}
-
-function activityCardLabels(event: MasrawyActivity): string[] {
-    const ids = [event.card_id, ...event.card_ids, event.target_card_id, event.give_card_id, ...event.double_rent_card_ids]
-    return [...new Set(ids.filter((id): id is string => Boolean(id)))].map(id => label(id))
+    paymentReceivedEvents.value = [];
 }
 
 function activityDescription(event: MasrawyActivity): string {
-    const cardName = event.card_id ? label(event.card_id) : ''
-    const target = event.target_id !== null ? playerName(event.target_id) : ''
-    const targetCardName = event.target_card_id ? label(event.target_card_id) : ''
-    const giveCardName = event.give_card_id ? label(event.give_card_id) : ''
-    const color = event.color ? colorLabel(event.color) : ''
+    const cardName = event.card_id ? label(event.card_id) : '';
+    const target = event.target_id !== null ? playerName(event.target_id) : '';
+    const targetCardName = event.target_card_id ? label(event.target_card_id) : '';
+    const giveCardName = event.give_card_id ? label(event.give_card_id) : '';
+    const color = event.color ? colorLabel(event.color) : '';
 
     switch (event.type) {
-        case 'play_money': return t('banked :card', { card: cardName })
-        case 'play_property': return t('played :card into :color', { card: cardName, color })
-        case 'bank_card': return t('banked :card as money (:amount M)', { card: cardName, amount: entryFor(event.card_id ?? '')?.value ?? 0 })
-        case 'play_pass_go': return t('played :card and drew 2 cards', { card: cardName })
-        case 'play_shisha': return t('added SHISHA to the :color Manti2a', { color })
-        case 'play_wil3a': return t('added WIL3A to the :color Manti2a', { color })
-        case 'play_debt_collector': return t('played :card against :target', { card: cardName, target })
-        case 'play_birthday': return t('played :card against everyone', { card: cardName })
+        case 'play_money':
+            return t('banked :card', { card: cardName });
+        case 'play_property':
+            return t('played :card into :color', { card: cardName, color });
+        case 'bank_card':
+            return t('banked :card as money (:amount M)', { card: cardName, amount: entryFor(event.card_id ?? '')?.value ?? 0 });
+        case 'play_pass_go':
+            return t('played :card and drew 2 cards', { card: cardName });
+        case 'play_shisha':
+            return t('added SHISHA to the :color Manti2a', { color });
+        case 'play_wil3a':
+            return t('added WIL3A to the :color Manti2a', { color });
+        case 'play_debt_collector':
+            return t('played :card against :target', { card: cardName, target });
+        case 'play_birthday':
+            return t('played :card against everyone', { card: cardName });
         case 'play_rent':
-            return `${t('played :card for :color rent', { card: cardName, color })}${target ? ` ${t('against :target', { target })}` : ''}${event.double_rent_card_ids.length ? ` ${t('(doubled)')}` : ''}`
-        case 'play_sly_deal': return t('played :card and took :targetCard from :target', { card: cardName, targetCard: targetCardName, target })
-        case 'play_forced_deal': return t('played :card and swapped :targetCard for :giveCard', { card: cardName, targetCard: targetCardName, giveCard: giveCardName })
-        case 'play_deal_breaker': return t('played :card and took the :color Manti2a from :target', { card: cardName, color: colorLabel(event.target_color ?? ''), target })
-        case 'move_wildcard': return t('moved :card to :color', { card: cardName, color })
-        case 'discard': return t('discarded :card', { card: cardName })
-        case 'respond_no': return t('played :card to stop an action', { card: cardName })
-        case 'decline': return t('declined the charge from :target', { target })
-        case 'pay': return target
-            ? t('paid :cards to :target', { cards: event.card_ids.map(id => label(id)).join('، '), target })
-            : t('paid :cards', { cards: event.card_ids.map(id => label(id)).join('، ') })
-        case 'draw': return t('drew cards')
-        default: return t('made a move')
+            return `${t('played :card for :color rent', { card: cardName, color })}${target ? ` ${t('against :target', { target })}` : ''}${event.double_rent_card_ids.length ? ` ${t('(doubled)')}` : ''}`;
+        case 'play_sly_deal':
+            return t('played :card and took :targetCard from :target', { card: cardName, targetCard: targetCardName, target });
+        case 'play_forced_deal':
+            return t('played :card and swapped :targetCard for :giveCard', { card: cardName, targetCard: targetCardName, giveCard: giveCardName });
+        case 'play_deal_breaker':
+            return t('played :card and took the :color Manti2a from :target', {
+                card: cardName,
+                color: colorLabel(event.target_color ?? ''),
+                target,
+            });
+        case 'move_wildcard':
+            return t('moved :card to :color', { card: cardName, color });
+        case 'discard':
+            return t('discarded :card', { card: cardName });
+        case 'respond_no':
+            return t('played :card to stop an action', { card: cardName });
+        case 'decline':
+            return t('declined the charge from :target', { target });
+        case 'pay':
+            return target
+                ? t('paid :cards to :target', { cards: event.card_ids.map((id) => label(id)).join('، '), target })
+                : t('paid :cards', { cards: event.card_ids.map((id) => label(id)).join('، ') });
+        case 'draw':
+            return t('drew cards');
+        default:
+            return t('made a move');
     }
 }
 
 const payableOptions = computed(() => {
     const assets = Object.entries(you.value?.payable_assets ?? {}).map(([id, value]) => {
-        const inBank = mySeat.value?.bank.includes(id) ?? false
-        const group = Object.entries(mySeat.value?.properties ?? {}).find(([, property]) => property.cards.includes(id) || property.house === id || property.hotel === id)?.[0]
-        const entry = entryFor(id)
+        const inBank = mySeat.value?.bank.includes(id) ?? false;
+        const group = Object.entries(mySeat.value?.properties ?? {}).find(
+            ([, property]) => property.cards.includes(id) || property.house === id || property.hotel === id,
+        )?.[0];
+        const entry = entryFor(id);
         const description = inBank
             ? `${label(id)} · bank`
             : group
-                ? `${label(id)} · ${colorLabel(group)} ${entry?.type === 'wildcard' ? 'wildcard' : 'property'}`
-                : label(id)
+              ? `${label(id)} · ${colorLabel(group)} ${entry?.type === 'wildcard' ? 'wildcard' : 'property'}`
+              : label(id);
 
-        return { id, value, description, inBank, group, entry }
-    })
-    const counts = new Map<string, number>()
-    for (const asset of assets) counts.set(asset.description, (counts.get(asset.description) ?? 0) + 1)
-    const seen = new Map<string, number>()
+        return { id, value, description, inBank, group, entry };
+    });
+    const counts = new Map<string, number>();
+    for (const asset of assets) counts.set(asset.description, (counts.get(asset.description) ?? 0) + 1);
+    const seen = new Map<string, number>();
 
-    return assets.map(asset => {
-        const copy = (seen.get(asset.description) ?? 0) + 1
-        seen.set(asset.description, copy)
-        const copyLabel = (counts.get(asset.description) ?? 0) > 1 ? ` · copy ${copy}` : ''
-        return { ...asset, display: `${asset.description}${copyLabel} · ${asset.value}M` }
-    })
-})
+    return assets.map((asset) => {
+        const copy = (seen.get(asset.description) ?? 0) + 1;
+        seen.set(asset.description, copy);
+        const copyLabel = (counts.get(asset.description) ?? 0) > 1 ? ` · copy ${copy}` : '';
+        return { ...asset, display: `${asset.description}${copyLabel} · ${asset.value}M` };
+    });
+});
 
 function seatBankTotal(seat: MasrawySeat): number {
-    return seat.bank.reduce((total, cardId) => total + (entryFor(cardId)?.value ?? 0), 0)
+    return seat.bank.reduce((total, cardId) => total + (entryFor(cardId)?.value ?? 0), 0);
 }
 
 function visibleBankCards(cardIds: string[]): string[] {
-    return cardIds.slice(-BANK_VISIBLE_CARD_LIMIT)
+    return cardIds.slice(-BANK_VISIBLE_CARD_LIMIT);
 }
 
 function hiddenBankCardCount(cardIds: string[]): number {
-    return Math.max(0, cardIds.length - BANK_VISIBLE_CARD_LIMIT)
+    return Math.max(0, cardIds.length - BANK_VISIBLE_CARD_LIMIT);
 }
 
 // --- Turn / pending state -----------------------------------------------
@@ -446,406 +408,397 @@ function hiddenBankCardCount(cardIds: string[]): number {
 // Table.vue also renders finished/cancelled Masrawy Deal rooms (see
 // Show.vue) since neither has a role-reveal-style screen the way Mafia
 // does; every action stays disabled once the game has actually ended.
-const gameIsLive = computed(() => props.room.status === 'in_progress')
-const isMyTurn = computed(() => gameIsLive.value && table.value?.current_player_id === myId.value)
-const pending = computed(() => table.value?.pending ?? null)
+const gameIsLive = computed(() => props.room.status === 'in_progress');
+const isMyTurn = computed(() => gameIsLive.value && table.value?.current_player_id === myId.value);
+const pending = computed(() => table.value?.pending ?? null);
 const paymentReason = computed(() => {
-    if (!pending.value) return t('Pay charge')
+    if (!pending.value) return t('Pay charge');
 
-    const source = playerName(pending.value.source_id)
-    const cardName = label(pending.value.card_id)
+    const source = playerName(pending.value.source_id);
+    const cardName = label(pending.value.card_id);
     return pending.value.color
         ? t('Pay :cardName for :color rent from :source', {
               cardName,
               color: colorLabel(pending.value.color),
               source,
           })
-        : t('Pay :cardName from :source', { cardName, source })
-})
-const canAct = computed(() => gameIsLive.value && pending.value === null && isMyTurn.value)
-const canPlayCard = computed(() => canAct.value && table.value?.has_drawn_this_turn === true)
-const playsLeft = computed(() => 3 - (table.value?.cards_played_this_turn ?? 0))
+        : t('Pay :cardName from :source', { cardName, source });
+});
+const canAct = computed(() => gameIsLive.value && pending.value === null && isMyTurn.value);
+const canPlayCard = computed(() => canAct.value && table.value?.has_drawn_this_turn === true);
+const playsLeft = computed(() => 3 - (table.value?.cards_played_this_turn ?? 0));
 
 // Charges I'm currently expected to answer (Just Say No or decline).
 const myOpenResponses = computed(() =>
-    (you.value?.responding_to ?? []).map(targetId => ({
+    (you.value?.responding_to ?? []).map((targetId) => ({
         targetId,
         charge: pending.value?.charges[String(targetId)] ?? null,
     })),
-)
+);
 
-const myJustSayNoCards = computed(() =>
-    (you.value?.hand ?? []).filter(id => entryFor(id)?.action === 'just_say_no'),
-)
-const responsePrompt = computed(() =>
-    myOpenResponses.value.find(entry => entry.charge?.phase === 'responding') ?? null,
-)
-const responseIsPayment = computed(() =>
-    pending.value !== null && ['debt_collector', 'birthday', 'rent'].includes(pending.value.kind),
-)
-const paymentReconsideration = computed(() =>
-    myOpenResponses.value.find(entry => entry.charge?.phase === 'paying') ?? null,
-)
+const myJustSayNoCards = computed(() => (you.value?.hand ?? []).filter((id) => entryFor(id)?.action === 'just_say_no'));
+const responsePrompt = computed(() => myOpenResponses.value.find((entry) => entry.charge?.phase === 'responding') ?? null);
+const responseIsPayment = computed(() => pending.value !== null && ['debt_collector', 'birthday', 'rent'].includes(pending.value.kind));
+const paymentReconsideration = computed(() => myOpenResponses.value.find((entry) => entry.charge?.phase === 'paying') ?? null);
 
 watch(
     () => {
-        if (!responsePrompt.value || !pending.value) return ''
-        const chainLength = pending.value.charges[String(responsePrompt.value.targetId)]?.chain.length ?? 0
-        return `${pending.value.kind}:${pending.value.card_id}:${responsePrompt.value.targetId}:${chainLength}`
+        if (!responsePrompt.value || !pending.value) return '';
+        const chainLength = pending.value.charges[String(responsePrompt.value.targetId)]?.chain.length ?? 0;
+        return `${pending.value.kind}:${pending.value.card_id}:${responsePrompt.value.targetId}:${chainLength}`;
     },
     () => {
-        isResponsePromptCollapsed.value = false
+        isResponsePromptCollapsed.value = false;
     },
-)
+);
 
 // --- Generic action submission --------------------------------------------
 
-const submitting = ref(false)
-const actionError = ref<string | null>(null)
+const submitting = ref(false);
+const actionError = ref<string | null>(null);
 
 function submit(payload: Record<string, FormDataConvertible>, onSuccess?: () => void) {
-    if (submitting.value) return
-    submitting.value = true
-    actionError.value = null
+    if (submitting.value) return;
+    submitting.value = true;
+    actionError.value = null;
 
-    router.post(
-        `/rooms/${props.room.id}/actions`,
-        payload,
-        {
-            preserveScroll: true,
-            onError: errors => {
-                actionError.value = Object.values(errors)[0] ?? 'That action was rejected.'
-            },
-            onSuccess: () => {
-                onSuccess?.()
-            },
-            onFinish: () => {
-                submitting.value = false
-            },
+    router.post(`/rooms/${props.room.id}/actions`, payload, {
+        preserveScroll: true,
+        onError: (errors) => {
+            actionError.value = Object.values(errors)[0] ?? 'That action was rejected.';
         },
-    )
+        onSuccess: () => {
+            onSuccess?.();
+        },
+        onFinish: () => {
+            submitting.value = false;
+        },
+    });
 }
 
 function draw() {
-    submit({ type: 'draw' })
+    submit({ type: 'draw' });
 }
 
 function endTurn() {
-    submit({ type: 'end_turn' }, clearSelection)
+    submit({ type: 'end_turn' }, clearSelection);
 }
 
 function playPassGo(cardId: string) {
-    submit({ type: 'play_pass_go', card_id: cardId }, clearSelection)
+    submit({ type: 'play_pass_go', card_id: cardId }, clearSelection);
 }
 
 function playShisha(cardId: string, color: string) {
-    submit({ type: 'play_shisha', card_id: cardId, color }, clearSelection)
+    submit({ type: 'play_shisha', card_id: cardId, color }, clearSelection);
 }
 
 function playWil3a(cardId: string, color: string) {
-    submit({ type: 'play_wil3a', card_id: cardId, color }, clearSelection)
+    submit({ type: 'play_wil3a', card_id: cardId, color }, clearSelection);
 }
 
 function bankCard(cardId: string) {
-    submit({ type: 'bank_card', card_id: cardId }, clearSelection)
+    submit({ type: 'bank_card', card_id: cardId }, clearSelection);
 }
 
-const confirmBankCardId = ref<string | null>(null)
+const confirmBankCardId = ref<string | null>(null);
 
 function requestBankCard(cardId: string) {
-    confirmBankCardId.value = cardId
+    confirmBankCardId.value = cardId;
 }
 
 function cancelBankCard() {
-    confirmBankCardId.value = null
+    confirmBankCardId.value = null;
 }
 
 function confirmBankCard() {
-    if (confirmBankCardId.value) bankCard(confirmBankCardId.value)
+    if (confirmBankCardId.value) bankCard(confirmBankCardId.value);
 }
 
 function discard(cardId: string) {
-    submit({ type: 'discard', card_id: cardId }, clearSelection)
+    submit({ type: 'discard', card_id: cardId }, clearSelection);
 }
 
 // --- Selected card / contextual play panel --------------------------------
 
-const selectedCardId = ref<string | null>(null)
-const selectedEntry = computed(() => (selectedCardId.value ? entryFor(selectedCardId.value) : undefined))
-const selectedIsWildRent = computed(() => selectedEntry.value?.type === 'rent' && selectedEntry.value.any_color)
-const selectedIsPlainRent = computed(() => selectedEntry.value?.type === 'rent' && !selectedEntry.value.any_color)
-const selectedIsElBob = computed(() => selectedEntry.value?.type === 'wildcard' && selectedEntry.value.any_color)
-const selectedIsTwoColorWild = computed(() => selectedEntry.value?.type === 'wildcard' && !selectedEntry.value.any_color)
+const selectedCardId = ref<string | null>(null);
+const selectedEntry = computed(() => (selectedCardId.value ? entryFor(selectedCardId.value) : undefined));
+const selectedIsWildRent = computed(() => selectedEntry.value?.type === 'rent' && selectedEntry.value.any_color);
+const selectedIsPlainRent = computed(() => selectedEntry.value?.type === 'rent' && !selectedEntry.value.any_color);
+const selectedIsElBob = computed(() => selectedEntry.value?.type === 'wildcard' && selectedEntry.value.any_color);
+const selectedIsTwoColorWild = computed(() => selectedEntry.value?.type === 'wildcard' && !selectedEntry.value.any_color);
 
 const activeWildcardColor = computed(() => {
-    if (!selectedIsTwoColorWild.value) return undefined
-    return activeColorForCard(selectedEntry.value?.id ?? '')
-})
+    if (!selectedIsTwoColorWild.value) return undefined;
+    return activeColorForCard(selectedEntry.value?.id ?? '');
+});
 
 const activeRentColor = computed(() => {
-    if (!selectedIsPlainRent.value) return undefined
-    return activeColorForCard(selectedEntry.value?.id ?? '')
-})
+    if (!selectedIsPlainRent.value) return undefined;
+    return activeColorForCard(selectedEntry.value?.id ?? '');
+});
 
-const selectedRentColor = computed(() => selectedIsPlainRent.value ? activeRentColor.value : rentColor.value)
+const selectedRentColor = computed(() => (selectedIsPlainRent.value ? activeRentColor.value : rentColor.value));
 
 function rentColorIssue(color: string): string | null {
-    const cards = mySeat.value?.properties[color]?.cards ?? []
-    if (cards.length === 0) return `You have no ${colorLabel(color)} properties to charge rent on.`
-    if (cards.every(cardId => entryFor(cardId)?.any_color)) return 'EL BOB wildcards alone cannot earn rent.'
+    const cards = mySeat.value?.properties[color]?.cards ?? [];
+    if (cards.length === 0) return `You have no ${colorLabel(color)} properties to charge rent on.`;
+    if (cards.every((cardId) => entryFor(cardId)?.any_color)) return 'EL BOB wildcards alone cannot earn rent.';
 
-    return null
+    return null;
 }
 
 function rotateSelectedWildcard() {
-    const cardId = selectedEntry.value?.id
-    if (!cardId) return
+    const cardId = selectedEntry.value?.id;
+    if (!cardId) return;
 
     flippedCardIds.value = flippedCardIds.value.includes(cardId)
-        ? flippedCardIds.value.filter(id => id !== cardId)
-        : [...flippedCardIds.value, cardId]
+        ? flippedCardIds.value.filter((id) => id !== cardId)
+        : [...flippedCardIds.value, cardId];
 }
 
 function selectCard(id: string) {
-    selectedCardId.value = selectedCardId.value === id ? null : id
-    pickSkipped.value = false
-    actionError.value = null
-    confirmBankCardId.value = null
+    selectedCardId.value = selectedCardId.value === id ? null : id;
+    pickSkipped.value = false;
+    actionError.value = null;
+    confirmBankCardId.value = null;
     // Reset any in-progress sub-form when switching cards.
-    wildcardColor.value = ''
-    targetId.value = null
-    targetCardId.value = ''
-    giveCardId.value = ''
-    dealBreakerColor.value = ''
-    doubleRentIds.value = []
-    rentColor.value = ''
-    targetColor.value = ''
+    wildcardColor.value = '';
+    targetId.value = null;
+    targetCardId.value = '';
+    giveCardId.value = '';
+    dealBreakerColor.value = '';
+    doubleRentIds.value = [];
+    rentColor.value = '';
+    targetColor.value = '';
 }
 
 function resetTargetSelections() {
-    targetCardId.value = ''
-    dealBreakerColor.value = ''
-    wildcardColor.value = ''
-    giveCardId.value = ''
+    targetCardId.value = '';
+    dealBreakerColor.value = '';
+    wildcardColor.value = '';
+    giveCardId.value = '';
 }
 
 function clearSelection() {
-    selectedCardId.value = null
+    selectedCardId.value = null;
 }
 
-const wildcardColor = ref('')
+const wildcardColor = ref('');
 
 function playMoney(id: string) {
-    submit({ type: 'play_money', card_id: id }, clearSelection)
+    submit({ type: 'play_money', card_id: id }, clearSelection);
 }
 
 function playProperty(id: string, color?: string) {
-    const payload: Record<string, FormDataConvertible> = { type: 'play_property', card_id: id }
-    if (color) payload.color = color
-    submit(payload, clearSelection)
+    const payload: Record<string, FormDataConvertible> = { type: 'play_property', card_id: id };
+    if (color) payload.color = color;
+    submit(payload, clearSelection);
 }
 
 // --- Targeted-action sub-forms -------------------------------------------
 
-const targetId = ref<number | null>(null)
-const targetColor = ref('')
-const targetCardId = ref('')
-const giveCardId = ref('')
-const dealBreakerColor = ref('')
-const doubleRentIds = ref<string[]>([])
-const rentColor = ref('')
+const targetId = ref<number | null>(null);
+const targetColor = ref('');
+const targetCardId = ref('');
+const giveCardId = ref('');
+const dealBreakerColor = ref('');
+const doubleRentIds = ref<string[]>([]);
+const rentColor = ref('');
 
-const targetOpponent = computed(() => (targetId.value !== null ? seatFor(targetId.value) : undefined))
+const targetOpponent = computed(() => (targetId.value !== null ? seatFor(targetId.value) : undefined));
 
 function opponentPropertyCards(seat?: MasrawySeat): { id: string; group: string }[] {
-    if (!seat) return []
-    const out: { id: string; group: string }[] = []
+    if (!seat) return [];
+    const out: { id: string; group: string }[] = [];
     for (const [color, group] of Object.entries(seat.properties)) {
         for (const cardId of group.cards) {
-            out.push({ id: cardId, group: color })
+            out.push({ id: cardId, group: color });
         }
     }
-    return out
+    return out;
 }
 
 function stealablePropertyGroups(seat?: MasrawySeat): { color: string; cardIds: string[] }[] {
-    if (!seat) return []
+    if (!seat) return [];
 
     return Object.entries(seat.properties)
         .filter(([color, group]) => {
-            const hasEnoughCards = group.cards.length >= (table.value?.set_size[color] ?? Number.POSITIVE_INFINITY)
-            const hasNonElBobCard = group.cards.some(cardId => !entryFor(cardId)?.any_color)
+            const hasEnoughCards = group.cards.length >= (table.value?.set_size[color] ?? Number.POSITIVE_INFINITY);
+            const hasNonElBobCard = group.cards.some((cardId) => !entryFor(cardId)?.any_color);
 
-            return !hasEnoughCards || !hasNonElBobCard
+            return !hasEnoughCards || !hasNonElBobCard;
         })
         .map(([color, group]) => ({ color, cardIds: group.cards }))
-        .filter(group => group.cardIds.length > 0)
+        .filter((group) => group.cardIds.length > 0);
 }
 
 function opponentCompleteSetColors(seat?: MasrawySeat): string[] {
-    if (!seat) return []
+    if (!seat) return [];
 
     return Object.entries(seat.properties)
         .filter(([color, group]) => group.cards.length >= (table.value?.set_size[color] ?? Number.POSITIVE_INFINITY))
-        .map(([color]) => color)
+        .map(([color]) => color);
 }
 
-const myDoubleRentCards = computed(() =>
-    (you.value?.hand ?? []).filter(id => entryFor(id)?.action === 'double_rent'),
-)
-const maxDoubleRentCardsThisPlay = computed(() => Math.min(2, Math.max(0, playsLeft.value - 1)))
+const myDoubleRentCards = computed(() => (you.value?.hand ?? []).filter((id) => entryFor(id)?.action === 'double_rent'));
+const maxDoubleRentCardsThisPlay = computed(() => Math.min(2, Math.max(0, playsLeft.value - 1)));
 
-const targetStealablePropertyGroups = computed(() => stealablePropertyGroups(targetOpponent.value))
-const myStealablePropertyGroups = computed(() => stealablePropertyGroups(mySeat.value))
-const myOwnColors = computed(() => Object.keys(mySeat.value?.properties ?? {}))
-const rentableMyColors = computed(() => myOwnColors.value.filter(color => rentColorIssue(color) === null))
-const selectedRentIssue = computed(() => selectedRentColor.value ? rentColorIssue(selectedRentColor.value) : null)
-const myCompleteSetColors = computed(() => myOwnColors.value.filter(color => {
-    const group = mySeat.value?.properties[color]
-    return Boolean(group && group.cards.length >= (table.value?.set_size[color] ?? Number.POSITIVE_INFINITY))
-}))
-const myShishaColors = computed(() => myCompleteSetColors.value.filter(color => mySeat.value?.properties[color]?.house === null))
-const myWil3aColors = computed(() => myCompleteSetColors.value.filter(color => {
-    const group = mySeat.value?.properties[color]
-    return Boolean(group?.house && !group.hotel)
-}))
+const targetStealablePropertyGroups = computed(() => stealablePropertyGroups(targetOpponent.value));
+const myStealablePropertyGroups = computed(() => stealablePropertyGroups(mySeat.value));
+const myOwnColors = computed(() => Object.keys(mySeat.value?.properties ?? {}));
+const rentableMyColors = computed(() => myOwnColors.value.filter((color) => rentColorIssue(color) === null));
+const selectedRentIssue = computed(() => (selectedRentColor.value ? rentColorIssue(selectedRentColor.value) : null));
+const myCompleteSetColors = computed(() =>
+    myOwnColors.value.filter((color) => {
+        const group = mySeat.value?.properties[color];
+        return Boolean(group && group.cards.length >= (table.value?.set_size[color] ?? Number.POSITIVE_INFINITY));
+    }),
+);
+const myShishaColors = computed(() => myCompleteSetColors.value.filter((color) => mySeat.value?.properties[color]?.house === null));
+const myWil3aColors = computed(() =>
+    myCompleteSetColors.value.filter((color) => {
+        const group = mySeat.value?.properties[color];
+        return Boolean(group?.house && !group.hotel);
+    }),
+);
 
 function playDebtCollector(cardId: string) {
-    if (targetId.value === null) return
-    submit({ type: 'play_debt_collector', card_id: cardId, target_id: targetId.value }, clearSelection)
+    if (targetId.value === null) return;
+    submit({ type: 'play_debt_collector', card_id: cardId, target_id: targetId.value }, clearSelection);
 }
 
 function playBirthday(cardId: string) {
-    submit({ type: 'play_birthday', card_id: cardId }, clearSelection)
+    submit({ type: 'play_birthday', card_id: cardId }, clearSelection);
 }
 
 function playRent(cardId: string, isWild: boolean, color: string) {
-    if (!color) return
-    const payload: Record<string, FormDataConvertible> = { type: 'play_rent', card_id: cardId, color }
+    if (!color) return;
+    const payload: Record<string, FormDataConvertible> = { type: 'play_rent', card_id: cardId, color };
     if (isWild) {
-        if (targetId.value === null) return
-        payload.target_id = targetId.value
+        if (targetId.value === null) return;
+        payload.target_id = targetId.value;
     }
-    if (doubleRentIds.value.length > 0) payload.double_rent_card_ids = doubleRentIds.value
-    submit(payload, clearSelection)
+    if (doubleRentIds.value.length > 0) payload.double_rent_card_ids = doubleRentIds.value;
+    submit(payload, clearSelection);
 }
 
 function playSlyDeal(cardId: string) {
-    if (targetId.value === null || !targetCardId.value) return
+    if (targetId.value === null || !targetCardId.value) return;
     const payload: Record<string, FormDataConvertible> = {
         type: 'play_sly_deal',
         card_id: cardId,
         target_id: targetId.value,
         target_card_id: targetCardId.value,
-    }
-    if (wildcardColor.value) payload.color = wildcardColor.value
-    submit(payload, clearSelection)
+    };
+    if (wildcardColor.value) payload.color = wildcardColor.value;
+    submit(payload, clearSelection);
 }
 
 function playForcedDeal(cardId: string) {
-    if (targetId.value === null || !targetCardId.value || !giveCardId.value) return
+    if (targetId.value === null || !targetCardId.value || !giveCardId.value) return;
     const payload: Record<string, FormDataConvertible> = {
         type: 'play_forced_deal',
         card_id: cardId,
         target_id: targetId.value,
         target_card_id: targetCardId.value,
         give_card_id: giveCardId.value,
-    }
-    if (wildcardColor.value) payload.color = wildcardColor.value
-    submit(payload, clearSelection)
+    };
+    if (wildcardColor.value) payload.color = wildcardColor.value;
+    submit(payload, clearSelection);
 }
 
 function playDealBreaker(cardId: string) {
-    if (targetId.value === null || !dealBreakerColor.value) return
-    submit({ type: 'play_deal_breaker', card_id: cardId, target_id: targetId.value, target_color: dealBreakerColor.value }, clearSelection)
+    if (targetId.value === null || !dealBreakerColor.value) return;
+    submit({ type: 'play_deal_breaker', card_id: cardId, target_id: targetId.value, target_color: dealBreakerColor.value }, clearSelection);
 }
 
 // --- move_wildcard (free, not a "play") -----------------------------------
 
-const moveWildcardId = ref('')
-const moveWildcardColor = ref('')
+const moveWildcardId = ref('');
+const moveWildcardColor = ref('');
 
-const myWildcards = computed(() => opponentPropertyCards(mySeat.value).filter(c => entryFor(c.id)?.type === 'wildcard'))
+const myWildcards = computed(() => opponentPropertyCards(mySeat.value).filter((c) => entryFor(c.id)?.type === 'wildcard'));
 
 function moveWildcardValidColors(cardId: string): string[] {
-    if (!cardId) return []
-    const entry = entryFor(cardId)
-    if (!entry) return []
-    return entry.any_color ? COLORS : (entry.colors ?? [])
+    if (!cardId) return [];
+    const entry = entryFor(cardId);
+    if (!entry) return [];
+    return entry.any_color ? COLORS : (entry.colors ?? []);
 }
 
 function moveWildcard() {
-    if (!moveWildcardId.value || !moveWildcardColor.value) return
-    submit(
-        { type: 'move_wildcard', card_id: moveWildcardId.value, color: moveWildcardColor.value },
-        () => {
-            moveWildcardId.value = ''
-            moveWildcardColor.value = ''
-        },
-    )
+    if (!moveWildcardId.value || !moveWildcardColor.value) return;
+    submit({ type: 'move_wildcard', card_id: moveWildcardId.value, color: moveWildcardColor.value }, () => {
+        moveWildcardId.value = '';
+        moveWildcardColor.value = '';
+    });
 }
 
 // --- Responding to a pending action (Just Say No / decline) ---------------
 
 function respondNo(targetIdForCharge: number) {
-    const cardId = myJustSayNoCards.value[0]
-    if (!cardId) return
-    isResponsePromptCollapsed.value = false
-    if (pending.value?.kind === 'birthday') showBirthdayNotice.value = false
+    const cardId = myJustSayNoCards.value[0];
+    if (!cardId) return;
+    isResponsePromptCollapsed.value = false;
+    if (pending.value?.kind === 'birthday') showBirthdayNotice.value = false;
     submit({ type: 'respond_no', card_id: cardId, target_id: targetIdForCharge }, () => {
-        paySelection.value = []
-        isPayModalOpen.value = false
-        isPayModalCollapsed.value = false
-    })
+        paySelection.value = [];
+        isPayModalOpen.value = false;
+        isPayModalCollapsed.value = false;
+    });
 }
 
 function decline(targetIdForCharge: number) {
-    isResponsePromptCollapsed.value = false
-    if (pending.value?.kind === 'birthday') showBirthdayNotice.value = false
-    submit({ type: 'decline', target_id: targetIdForCharge })
+    isResponsePromptCollapsed.value = false;
+    if (pending.value?.kind === 'birthday') showBirthdayNotice.value = false;
+    submit({ type: 'decline', target_id: targetIdForCharge });
 }
 
 function collapseResponsePrompt() {
-    isResponsePromptCollapsed.value = true
-    showJustSayNoNotice.value = false
+    isResponsePromptCollapsed.value = true;
+    showJustSayNoNotice.value = false;
 }
 
 function acceptBirthdayCharge() {
-    showBirthdayNotice.value = false
+    showBirthdayNotice.value = false;
 
     if (responsePrompt.value) {
-        decline(responsePrompt.value.targetId)
-        return
+        decline(responsePrompt.value.targetId);
+        return;
     }
 
     if (you.value?.owes !== null && you.value?.owes !== undefined) {
-        openPayModal()
+        openPayModal();
     }
 }
 
 function kickPlayer(playerId: number) {
-    kickingPlayerId.value = playerId
-    hostKickError.value = null
+    kickingPlayerId.value = playerId;
+    hostKickError.value = null;
 
-    router.post(`/rooms/${props.room.id}/kick/${playerId}`, {}, {
-        onSuccess: () => {
-            closePlayerSheet()
+    router.post(
+        `/rooms/${props.room.id}/kick/${playerId}`,
+        {},
+        {
+            onSuccess: () => {
+                closePlayerSheet();
+            },
+            onError: (errors) => {
+                hostKickError.value = Object.values(errors)[0] ?? 'Unable to remove that player.';
+            },
+            onFinish: () => {
+                kickingPlayerId.value = null;
+                confirmKickId.value = null;
+            },
         },
-        onError: errors => {
-            hostKickError.value = Object.values(errors)[0] ?? 'Unable to remove that player.'
-        },
-        onFinish: () => {
-            kickingPlayerId.value = null
-            confirmKickId.value = null
-        },
-    })
+    );
 }
 
 // --- Player sheet (tap a seat on the table) -----------------------------
 
-const selectedPlayerId = ref<number | null>(null)
-const confirmKickId = ref<number | null>(null)
-const sheetSeat = computed(() => (selectedPlayerId.value === null ? undefined : seatFor(selectedPlayerId.value)))
+const selectedPlayerId = ref<number | null>(null);
+const confirmKickId = ref<number | null>(null);
+const sheetSeat = computed(() => (selectedPlayerId.value === null ? undefined : seatFor(selectedPlayerId.value)));
 const sheetCanKick = computed(
     () =>
         gameIsLive.value &&
@@ -853,88 +806,82 @@ const sheetCanKick = computed(
         sheetSeat.value !== undefined &&
         sheetSeat.value.id !== myId.value &&
         (table.value?.players.length ?? 0) > props.room.game.minimum_players,
-)
+);
 // Finished/cancelled rooms send every hand, so seats can be tapped to see them.
-const revealHands = computed(() => !gameIsLive.value && (table.value?.players.some(seat => seat.hand !== null) ?? false))
+const revealHands = computed(() => !gameIsLive.value && (table.value?.players.some((seat) => seat.hand !== null) ?? false));
 
 function openPlayerSheet(playerId: number) {
-    hostKickError.value = null
-    confirmKickId.value = null
-    selectedPlayerId.value = playerId
+    hostKickError.value = null;
+    confirmKickId.value = null;
+    selectedPlayerId.value = playerId;
 }
 
 function closePlayerSheet() {
-    selectedPlayerId.value = null
-    confirmKickId.value = null
+    selectedPlayerId.value = null;
+    confirmKickId.value = null;
 }
 
 function openSetFromSheet(playerId: number, color: string) {
-    openPropertySet(playerId, color)
+    openPropertySet(playerId, color);
 }
 
 // --- Paying -------------------------------------------------------------
 
-const paySelection = ref<string[]>([])
-const isPayModalOpen = ref(false)
-const isPayModalCollapsed = ref(false)
+const paySelection = ref<string[]>([]);
+const isPayModalOpen = ref(false);
+const isPayModalCollapsed = ref(false);
 
 watch(
     () => you.value?.owes ?? null,
     (owed, previousOwed) => {
         if (owed !== null && owed !== previousOwed) {
-            paySelection.value = []
-            actionError.value = null
-            isPayModalOpen.value = true
-            isPayModalCollapsed.value = false
+            paySelection.value = [];
+            actionError.value = null;
+            isPayModalOpen.value = true;
+            isPayModalCollapsed.value = false;
         } else if (owed === null) {
-            paySelection.value = []
-            isPayModalOpen.value = false
-            isPayModalCollapsed.value = false
+            paySelection.value = [];
+            isPayModalOpen.value = false;
+            isPayModalCollapsed.value = false;
         }
     },
     { immediate: true },
-)
+);
 
-const payTotal = computed(() =>
-    paySelection.value.reduce((sum, id) => sum + (you.value?.payable_assets?.[id] ?? 0), 0),
-)
-const totalPayable = computed(() =>
-    Object.values(you.value?.payable_assets ?? {}).reduce((sum, value) => sum + value, 0),
-)
-const cannotCoverOwed = computed(() => you.value?.owes !== null && you.value?.owes !== undefined && totalPayable.value < you.value.owes)
-const canSubmitPayment = computed(() =>
-    paySelection.value.length > 0 && (
-        cannotCoverOwed.value
-            ? paySelection.value.length === payableOptions.value.length
-            : payTotal.value >= (you.value?.owes ?? 0)
-    ),
-)
+const payTotal = computed(() => paySelection.value.reduce((sum, id) => sum + (you.value?.payable_assets?.[id] ?? 0), 0));
+const totalPayable = computed(() => Object.values(you.value?.payable_assets ?? {}).reduce((sum, value) => sum + value, 0));
+const cannotCoverOwed = computed(() => you.value?.owes !== null && you.value?.owes !== undefined && totalPayable.value < you.value.owes);
+const canSubmitPayment = computed(
+    () =>
+        paySelection.value.length > 0 &&
+        (cannotCoverOwed.value ? paySelection.value.length === payableOptions.value.length : payTotal.value >= (you.value?.owes ?? 0)),
+);
 
 function togglePayCard(id: string) {
-    actionError.value = null
-    const i = paySelection.value.indexOf(id)
-    if (i === -1) paySelection.value.push(id)
-    else paySelection.value.splice(i, 1)
+    actionError.value = null;
+    const i = paySelection.value.indexOf(id);
+    if (i === -1) paySelection.value.push(id);
+    else paySelection.value.splice(i, 1);
 }
 
 function openPayModal() {
-    actionError.value = null
-    isPayModalOpen.value = true
-    isPayModalCollapsed.value = false
+    actionError.value = null;
+    isPayModalOpen.value = true;
+    isPayModalCollapsed.value = false;
 }
 
 function collapsePayModal() {
-    isPayModalOpen.value = false
-    isPayModalCollapsed.value = true
+    isPayModalOpen.value = false;
+    isPayModalCollapsed.value = true;
 }
 
 function pay() {
-    if (!canSubmitPayment.value) return
+    if (!canSubmitPayment.value) return;
     submit({ type: 'pay', card_ids: [...paySelection.value] }, () => {
-        paySelection.value = []
-        isPayModalOpen.value = false
-        isPayModalCollapsed.value = false
-    })
+        paySelection.value = [];
+        isPayModalOpen.value = false;
+        isPayModalCollapsed.value = false;
+    });
 }
 
 // --- Hand limit discard ---------------------------------------------------
@@ -943,66 +890,61 @@ function pay() {
 // Each card knows its index and the hand size; the fan's rotation, spacing and
 // arc are all computed in CSS from those two numbers.
 function fanStyle(index: number): Record<string, number> {
-    return { '--i': index, '--n': Math.max(1, handOrder.value.length) }
+    return { '--i': index, '--n': Math.max(1, handOrder.value.length) };
 }
 
 // --- Choosing a target on the table ----------------------------------------
 // Cards that charge or take from one opponent let you tap that player on the
 // table instead of opening a select list; the list stays as a fallback.
-const TARGET_PLAYER_ACTIONS = ['debt_collector', 'sly_deal', 'forced_deal', 'deal_breaker']
+const TARGET_PLAYER_ACTIONS = ['debt_collector', 'sly_deal', 'forced_deal', 'deal_breaker'];
 
 // While a targeting card waits for its target the drawer shrinks to a hint so
 // the table underneath stays tappable; "More options" opens it fully.
-const pickSkipped = ref(false)
+const pickSkipped = ref(false);
 const pickablePlayerIds = computed<number[] | null>(() => {
-    const entry = selectedEntry.value
-    if (!entry || !canPlayCard.value) return null
-    const needsTarget = (entry.action !== undefined && TARGET_PLAYER_ACTIONS.includes(entry.action)) || selectedIsWildRent.value
-    return needsTarget ? opponents.value.map(o => o.id) : null
-})
+    const entry = selectedEntry.value;
+    if (!entry || !canPlayCard.value) return null;
+    const needsTarget = (entry.action !== undefined && TARGET_PLAYER_ACTIONS.includes(entry.action)) || selectedIsWildRent.value;
+    return needsTarget ? opponents.value.map((o) => o.id) : null;
+});
 
-const drawerCompact = computed(() => pickablePlayerIds.value !== null && targetId.value === null && !pickSkipped.value)
+const drawerCompact = computed(() => pickablePlayerIds.value !== null && targetId.value === null && !pickSkipped.value);
 
 function pickTarget(playerId: number) {
     if (targetId.value !== playerId) {
-        targetId.value = playerId
-        resetTargetSelections()
+        targetId.value = playerId;
+        resetTargetSelections();
     }
 }
 
-const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7)
-const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_turn === true && overHandLimit.value)
-const autoEndTurnReady = computed(() =>
-    canAct.value &&
-    table.value?.has_drawn_this_turn === true &&
-    playsLeft.value <= 0 &&
-    !overHandLimit.value,
-)
-const autoEndTurnAttemptedKey = ref<string | null>(null)
+const overHandLimit = computed(() => (you.value?.hand.length ?? 0) > 7);
+const canDiscard = computed(() => canAct.value && table.value?.has_drawn_this_turn === true && overHandLimit.value);
+const autoEndTurnReady = computed(() => canAct.value && table.value?.has_drawn_this_turn === true && playsLeft.value <= 0 && !overHandLimit.value);
+const autoEndTurnAttemptedKey = ref<string | null>(null);
 
 watch(
     () => [autoEndTurnReady.value, submitting.value] as const,
     ([ready, isSubmitting]) => {
-        const turnKey = `${table.value?.turn_number ?? ''}:${myId.value}`
-        if (!ready || isSubmitting || autoEndTurnAttemptedKey.value === turnKey) return
+        const turnKey = `${table.value?.turn_number ?? ''}:${myId.value}`;
+        if (!ready || isSubmitting || autoEndTurnAttemptedKey.value === turnKey) return;
 
-        autoEndTurnAttemptedKey.value = turnKey
-        endTurn()
+        autoEndTurnAttemptedKey.value = turnKey;
+        endTurn();
     },
     { immediate: true },
-)
+);
 
 // Phones held sideways have very little height: Show.vue's page header is
 // hidden (see the :global rules below) so the table gets the screen.
 onMounted(() => {
-    document.documentElement.classList.add('md-play-mode')
-})
+    document.documentElement.classList.add('md-play-mode');
+});
 
 onUnmounted(() => {
-    document.documentElement.classList.remove('md-play-mode')
-    if (previousTurnTimer !== null) clearTimeout(previousTurnTimer)
-    window.Echo.leave(`App.Models.User.${myId.value}`)
-})
+    document.documentElement.classList.remove('md-play-mode');
+    if (previousTurnTimer !== null) clearTimeout(previousTurnTimer);
+    window.Echo.leave(`App.Models.User.${myId.value}`);
+});
 </script>
 
 <template>
@@ -1012,7 +954,7 @@ onUnmounted(() => {
              Show.vue's branch guard already keeps this component from
              rendering for — this is a defensive fallback, not an expected
              path, so it stays a plain message rather than a full layout. -->
-            <p v-if="!table || !you" class="md-hint">{{ t('Loading…') }}</p>
+        <p v-if="!table || !you" class="md-hint">{{ t('Loading…') }}</p>
 
         <template v-else>
             <div v-if="room.status === 'finished'" class="md-banner md-banner--finished" role="status">
@@ -1034,35 +976,44 @@ onUnmounted(() => {
                         <strong>{{ isMyTurn ? t('YOUR TURN') : t(':name’s turn', { name: playerName(table.current_player_id) }) }}</strong>
                         <span v-if="nextPlayerId !== null">{{ t('Next: :name', { name: playerName(nextPlayerId) }) }}</span>
                     </span>
-                    <span>{{ t('Draw pile:') }} <strong>{{ table.draw_pile_count }}</strong></span>
-                    <span>{{ t('Discard pile:') }} <strong>{{ table.discard_pile.length }}</strong></span>
+                    <span
+                        >{{ t('Draw pile:') }} <strong>{{ table.draw_pile_count }}</strong></span
+                    >
+                    <span
+                        >{{ t('Discard pile:') }} <strong>{{ table.discard_pile.length }}</strong></span
+                    >
                 </div>
 
                 <div v-if="recentActivity.length" class="md-activity" aria-live="polite" :aria-label="t('Recent plays')">
                     <strong class="md-activity-title">{{ t('Recent plays') }}</strong>
                     <ol>
                         <li v-for="event in recentActivity" :key="event.id">
-                            <strong><bdi>{{ playerName(event.player_id) }}</bdi></strong> {{ activityDescription(event) }}
+                            <strong
+                                ><bdi>{{ playerName(event.player_id) }}</bdi></strong
+                            >
+                            {{ activityDescription(event) }}
                         </li>
                     </ol>
                 </div>
-
             </section>
 
             <!-- Pending action banner -->
             <section v-if="pending" class="md-pending">
                 <p class="md-pending-title">
-                    {{ t(':name played :card', { name: playerName(pending.source_id), card: label(pending.card_id) }) }}{{ pending.multiplier && pending.multiplier > 1 ? ` (×${pending.multiplier})` : '' }}
+                    {{ t(':name played :card', { name: playerName(pending.source_id), card: label(pending.card_id) })
+                    }}{{ pending.multiplier && pending.multiplier > 1 ? ` (×${pending.multiplier})` : '' }}
                 </p>
 
                 <ul class="md-charges">
                     <li v-for="(charge, targetIdKey) in pending.charges" :key="targetIdKey" class="md-charge">
-                        <span><bdi>{{ playerName(targetIdKey) }}</bdi>: {{ charge.phase }}</span>
+                        <span
+                            ><bdi>{{ playerName(targetIdKey) }}</bdi
+                            >: {{ charge.phase }}</span
+                        >
                         <span v-if="charge.owed > 0"> — owes {{ charge.owed }}M</span>
                         <span v-if="charge.outcome"> — {{ charge.outcome }}</span>
                     </li>
                 </ul>
-
             </section>
 
             <!-- Round 3D table: one sector per seat, me at the bottom -->
@@ -1087,14 +1038,23 @@ onUnmounted(() => {
                 @pick-target="pickTarget"
             >
                 <template #discard>
-                    <div class="md-discard-stack" :aria-label="t('Top card of discard pile; :count cards in pile', { count: table.discard_pile.length })">
+                    <div
+                        class="md-discard-stack"
+                        :aria-label="t('Top card of discard pile; :count cards in pile', { count: table.discard_pile.length })"
+                    >
                         <div
                             v-for="(cardId, index) in discardStackCardIds"
                             :key="cardId"
                             class="md-discard-play-card"
                             :style="{ zIndex: index + 1, '--discard-card-offset': `${index * 3}px` }"
                         >
-                            <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                            <MasrawyCard
+                                :entry="entryFor(cardId)!"
+                                :rent-chart="rentChartFor(cardId)"
+                                :set-size="setSizeFor(cardId)"
+                                :wild-rent-charts="wildRentChartsFor(cardId)"
+                                :wild-set-sizes="wildSetSizesFor(cardId)"
+                            />
                         </div>
                     </div>
                 </template>
@@ -1108,7 +1068,9 @@ onUnmounted(() => {
                 :aria-label="t('Your cards')"
             >
                 <p v-if="isMyTurn && overHandLimit" class="md-fan-hint">{{ t('Discard down to 7 cards before ending your turn.') }}</p>
-                <p v-else-if="isReorderingHand" class="md-fan-hint">{{ t('Press and hold a card, then drag it to reorder. Your order is saved on this device.') }}</p>
+                <p v-else-if="isReorderingHand" class="md-fan-hint">
+                    {{ t('Press and hold a card, then drag it to reorder. Your order is saved on this device.') }}
+                </p>
                 <p v-else-if="pending && !canAct && !selectedEntry" class="md-fan-hint">{{ t('Waiting on a pending action.') }}</p>
 
                 <VueDraggable
@@ -1145,7 +1107,14 @@ onUnmounted(() => {
                             :disabled="!gameIsLive || isReorderingHand"
                             @click="selectCard(cardId)"
                         >
-                            <MasrawyCard :entry="entryFor(cardId)!" :active-color="activeColorForCard(cardId)" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                            <MasrawyCard
+                                :entry="entryFor(cardId)!"
+                                :active-color="activeColorForCard(cardId)"
+                                :rent-chart="rentChartFor(cardId)"
+                                :set-size="setSizeFor(cardId)"
+                                :wild-rent-charts="wildRentChartsFor(cardId)"
+                                :wild-set-sizes="wildSetSizesFor(cardId)"
+                            />
                         </button>
                     </div>
                 </VueDraggable>
@@ -1174,53 +1143,67 @@ onUnmounted(() => {
             </div>
 
             <section v-if="selectedEntry" class="md-play-panel" :class="{ 'md-play-panel--compact': drawerCompact }">
-                    <header class="md-play-panel-header">
-                        <h3>{{ label(selectedEntry.id) }}</h3>
-                        <button class="md-play-panel-close" type="button" :aria-label="t('Close card options')" @click="clearSelection">×</button>
-                    </header>
-                    <MasrawyCard
-                        :entry="selectedEntry"
-                        size="lg"
-                        :active-color="selectedIsTwoColorWild ? activeWildcardColor : (selectedIsPlainRent ? activeRentColor : undefined)"
-                        :rent-chart="rentChartFor(selectedEntry.id)"
-                        :set-size="setSizeFor(selectedEntry.id)"
-                        :wild-rent-charts="wildRentChartsFor(selectedEntry.id)"
-                        :wild-set-sizes="wildSetSizesFor(selectedEntry.id)"
-                    />
+                <header class="md-play-panel-header">
+                    <h3>{{ label(selectedEntry.id) }}</h3>
+                    <button class="md-play-panel-close" type="button" :aria-label="t('Close card options')" @click="clearSelection">×</button>
+                </header>
+                <MasrawyCard
+                    :entry="selectedEntry"
+                    size="lg"
+                    :active-color="selectedIsTwoColorWild ? activeWildcardColor : selectedIsPlainRent ? activeRentColor : undefined"
+                    :rent-chart="rentChartFor(selectedEntry.id)"
+                    :set-size="setSizeFor(selectedEntry.id)"
+                    :wild-rent-charts="wildRentChartsFor(selectedEntry.id)"
+                    :wild-set-sizes="wildSetSizesFor(selectedEntry.id)"
+                />
 
-                    <div class="md-play-controls">
-                        <p v-if="selectedIsTwoColorWild || selectedIsPlainRent" class="md-wildcard-active-hint">
-                            {{ t('Top color is active:') }}
-                            <strong>{{ colorLabel((selectedIsTwoColorWild ? activeWildcardColor : activeRentColor) ?? '') }}</strong>.
-                            {{ t('Rotate 180° to switch.') }}
-                        </p>
-                        <button
-                            v-if="selectedIsTwoColorWild || selectedIsPlainRent"
-                            class="md-btn md-btn--muted"
-                            type="button"
-                            @click="rotateSelectedWildcard"
-                        >
-                            {{ t('Rotate 180°') }}
-                        </button>
-                        <p v-if="isMyTurn && pending === null && !table.has_drawn_this_turn" class="md-hint">
-                            {{ t('Draw before playing a card. Tap the draw pile in the corner.') }}
-                        </p>
-                        <p v-else-if="pickablePlayerIds !== null && targetId === null" class="md-hint md-target-hint">
-                            {{ t('Tap a player on the table to choose the target.') }}
-                        </p>
-                        <button
-                            v-if="drawerCompact && !(isMyTurn && pending === null && !table.has_drawn_this_turn)"
-                            class="md-btn md-btn--muted md-more-options"
-                            type="button"
-                            @click="pickSkipped = true"
-                        >{{ t('More options') }}</button>
-                        <p v-else-if="!canAct" class="md-hint">
-                            {{ t(pending ? 'You can adjust this card while waiting for the response.' : 'You can prepare this card now. Play options unlock on your turn.') }}
-                        </p>
+                <div class="md-play-controls">
+                    <p v-if="selectedIsTwoColorWild || selectedIsPlainRent" class="md-wildcard-active-hint">
+                        {{ t('Top color is active:') }}
+                        <strong>{{ colorLabel((selectedIsTwoColorWild ? activeWildcardColor : activeRentColor) ?? '') }}</strong
+                        >.
+                        {{ t('Rotate 180° to switch.') }}
+                    </p>
+                    <button
+                        v-if="selectedIsTwoColorWild || selectedIsPlainRent"
+                        class="md-btn md-btn--muted"
+                        type="button"
+                        @click="rotateSelectedWildcard"
+                    >
+                        {{ t('Rotate 180°') }}
+                    </button>
+                    <p v-if="isMyTurn && pending === null && !table.has_drawn_this_turn" class="md-hint">
+                        {{ t('Draw before playing a card. Tap the draw pile in the corner.') }}
+                    </p>
+                    <p v-else-if="pickablePlayerIds !== null && targetId === null" class="md-hint md-target-hint">
+                        {{ t('Tap a player on the table to choose the target.') }}
+                    </p>
+                    <button
+                        v-if="drawerCompact && !(isMyTurn && pending === null && !table.has_drawn_this_turn)"
+                        class="md-btn md-btn--muted md-more-options"
+                        type="button"
+                        @click="pickSkipped = true"
+                    >
+                        {{ t('More options') }}
+                    </button>
+                    <p v-else-if="!canAct" class="md-hint">
+                        {{
+                            t(
+                                pending
+                                    ? 'You can adjust this card while waiting for the response.'
+                                    : 'You can prepare this card now. Play options unlock on your turn.',
+                            )
+                        }}
+                    </p>
 
-                        <template v-if="canPlayCard">
+                    <template v-if="canPlayCard">
                         <!-- Money -->
-                        <button v-if="selectedEntry.type === 'money'" class="md-btn" :disabled="submitting || playsLeft < 1" @click="playMoney(selectedEntry.id)">
+                        <button
+                            v-if="selectedEntry.type === 'money'"
+                            class="md-btn"
+                            :disabled="submitting || playsLeft < 1"
+                            @click="playMoney(selectedEntry.id)"
+                        >
                             {{ t('Play as Money (:amount M)', { amount: selectedEntry.value }) }}
                         </button>
 
@@ -1233,7 +1216,11 @@ onUnmounted(() => {
 
                         <!-- Two-color wildcard -->
                         <template v-if="selectedIsTwoColorWild">
-                            <button class="md-btn" :disabled="submitting || playsLeft < 1 || !activeWildcardColor" @click="playProperty(selectedEntry.id, activeWildcardColor)">
+                            <button
+                                class="md-btn"
+                                :disabled="submitting || playsLeft < 1 || !activeWildcardColor"
+                                @click="playProperty(selectedEntry.id, activeWildcardColor)"
+                            >
                                 {{ t('Play as Property (:color)', { color: colorLabel(activeWildcardColor ?? '') }) }}
                             </button>
                         </template>
@@ -1244,13 +1231,22 @@ onUnmounted(() => {
                                 <option value="" disabled>{{ t('Choose a color') }}</option>
                                 <option v-for="c in COLORS" :key="c" :value="c">{{ colorLabel(c) }}</option>
                             </select>
-                            <button class="md-btn" :disabled="submitting || playsLeft < 1 || !wildcardColor" @click="playProperty(selectedEntry.id, wildcardColor)">
+                            <button
+                                class="md-btn"
+                                :disabled="submitting || playsLeft < 1 || !wildcardColor"
+                                @click="playProperty(selectedEntry.id, wildcardColor)"
+                            >
                                 {{ t('Play as Property') }}
                             </button>
                         </template>
 
                         <!-- GARAB 7AZAK / Pass Go -->
-                        <button v-if="selectedEntry.action === 'pass_go'" class="md-btn" :disabled="submitting || playsLeft < 1" @click="playPassGo(selectedEntry.id)">
+                        <button
+                            v-if="selectedEntry.action === 'pass_go'"
+                            class="md-btn"
+                            :disabled="submitting || playsLeft < 1"
+                            @click="playPassGo(selectedEntry.id)"
+                        >
                             {{ t('Play Pass Go (draw 2)') }}
                         </button>
 
@@ -1260,7 +1256,11 @@ onUnmounted(() => {
                                 <option value="" disabled>{{ t('Choose a complete Manti2a') }}</option>
                                 <option v-for="c in myShishaColors" :key="c" :value="c">{{ colorLabel(c) }}</option>
                             </select>
-                            <button class="md-btn" :disabled="submitting || playsLeft < 1 || !targetColor" @click="playShisha(selectedEntry.id, targetColor)">
+                            <button
+                                class="md-btn"
+                                :disabled="submitting || playsLeft < 1 || !targetColor"
+                                @click="playShisha(selectedEntry.id, targetColor)"
+                            >
                                 {{ t('Play SHISHA on :color', { color: targetColor ? colorLabel(targetColor) : t('a Manti2a') }) }}
                             </button>
                         </template>
@@ -1269,7 +1269,11 @@ onUnmounted(() => {
                                 <option value="" disabled>{{ t('Choose a complete Manti2a with SHISHA') }}</option>
                                 <option v-for="c in myWil3aColors" :key="c" :value="c">{{ colorLabel(c) }}</option>
                             </select>
-                            <button class="md-btn" :disabled="submitting || playsLeft < 1 || !targetColor" @click="playWil3a(selectedEntry.id, targetColor)">
+                            <button
+                                class="md-btn"
+                                :disabled="submitting || playsLeft < 1 || !targetColor"
+                                @click="playWil3a(selectedEntry.id, targetColor)"
+                            >
                                 {{ t('Play WIL3A on :color', { color: targetColor ? colorLabel(targetColor) : t('a Manti2a') }) }}
                             </button>
                         </template>
@@ -1280,13 +1284,22 @@ onUnmounted(() => {
                                 <option :value="null" disabled>{{ t('Choose a player') }}</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
-                            <button class="md-btn" :disabled="submitting || playsLeft < 1 || targetId === null" @click="playDebtCollector(selectedEntry.id)">
+                            <button
+                                class="md-btn"
+                                :disabled="submitting || playsLeft < 1 || targetId === null"
+                                @click="playDebtCollector(selectedEntry.id)"
+                            >
                                 {{ t('Play (charge 5M)') }}
                             </button>
                         </template>
 
                         <!-- 3ID MILADY YA KELAB / Birthday -->
-                        <button v-if="selectedEntry.action === 'birthday'" class="md-btn" :disabled="submitting || playsLeft < 1" @click="playBirthday(selectedEntry.id)">
+                        <button
+                            v-if="selectedEntry.action === 'birthday'"
+                            class="md-btn"
+                            :disabled="submitting || playsLeft < 1"
+                            @click="playBirthday(selectedEntry.id)"
+                        >
                             {{ t('Play (2M from everyone)') }}
                         </button>
 
@@ -1298,13 +1311,21 @@ onUnmounted(() => {
                             <p v-if="selectedIsWildRent && rentableMyColors.length === 0" class="md-action-warning" role="alert">
                                 {{ myOwnColors.length ? 'EL BOB wildcards alone cannot earn rent.' : 'You have no properties to charge rent on.' }}
                             </p>
-                            <select v-if="selectedIsWildRent && rentableMyColors.length > 0" v-model="rentColor" :aria-label="t('Which color to charge')">
+                            <select
+                                v-if="selectedIsWildRent && rentableMyColors.length > 0"
+                                v-model="rentColor"
+                                :aria-label="t('Which color to charge')"
+                            >
                                 <option value="" disabled>{{ t('Which color to charge') }}</option>
                                 <option v-for="c in rentableMyColors" :key="c" :value="c">
                                     {{ colorLabel(c) }}
                                 </option>
                             </select>
-                            <select v-if="selectedIsWildRent && rentableMyColors.length > 0" v-model="targetId" :aria-label="t('Choose the player to charge')">
+                            <select
+                                v-if="selectedIsWildRent && rentableMyColors.length > 0"
+                                v-model="targetId"
+                                :aria-label="t('Choose the player to charge')"
+                            >
                                 <option :value="null" disabled>{{ t('Choose a player') }}</option>
                                 <option v-for="o in opponents" :key="o.id" :value="o.id">{{ playerName(o.id) }}</option>
                             </select>
@@ -1322,7 +1343,13 @@ onUnmounted(() => {
                             </fieldset>
                             <button
                                 class="md-btn"
-                                :disabled="submitting || playsLeft < (1 + doubleRentIds.length) || !(selectedIsPlainRent ? activeRentColor : rentColor) || Boolean(selectedRentIssue) || (selectedIsWildRent && (targetId === null || rentableMyColors.length === 0))"
+                                :disabled="
+                                    submitting ||
+                                    playsLeft < 1 + doubleRentIds.length ||
+                                    !(selectedIsPlainRent ? activeRentColor : rentColor) ||
+                                    Boolean(selectedRentIssue) ||
+                                    (selectedIsWildRent && (targetId === null || rentableMyColors.length === 0))
+                                "
                                 @click="playRent(selectedEntry.id, !!selectedIsWildRent, selectedIsPlainRent ? activeRentColor! : rentColor)"
                             >
                                 {{ t('Play Rent') }}<span v-if="selectedIsPlainRent && activeRentColor"> ({{ colorLabel(activeRentColor) }})</span>
@@ -1338,7 +1365,11 @@ onUnmounted(() => {
                             <p v-if="targetId !== null && targetStealablePropertyGroups.length === 0" class="md-hint">
                                 {{ t('That player has no available properties to take; complete Manati2 can’t be taken.') }}
                             </p>
-                            <div v-if="targetStealablePropertyGroups.length" class="md-property-choice-groups" :aria-label="t('Choose a property to take')">
+                            <div
+                                v-if="targetStealablePropertyGroups.length"
+                                class="md-property-choice-groups"
+                                :aria-label="t('Choose a property to take')"
+                            >
                                 <section v-for="group in targetStealablePropertyGroups" :key="group.color" class="md-property-choice-group">
                                     <h4>{{ colorLabel(group.color) }}</h4>
                                     <div class="md-property-choice-cards">
@@ -1350,20 +1381,38 @@ onUnmounted(() => {
                                             :class="{ 'md-property-choice-card--selected': targetCardId === cardId }"
                                             :aria-label="t('Take :card from :player', { card: label(cardId), player: playerName(targetId!) })"
                                             :aria-pressed="targetCardId === cardId"
-                                            @click="targetCardId = cardId; wildcardColor = ''"
+                                            @click="
+                                                targetCardId = cardId;
+                                                wildcardColor = '';
+                                            "
                                         >
-                                            <MasrawyCard :entry="entryFor(cardId)!" :active-color="entryFor(cardId)?.type === 'wildcard' ? group.color : undefined" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                                            <MasrawyCard
+                                                :entry="entryFor(cardId)!"
+                                                :active-color="entryFor(cardId)?.type === 'wildcard' ? group.color : undefined"
+                                                :rent-chart="rentChartFor(cardId)"
+                                                :set-size="setSizeFor(cardId)"
+                                                :wild-rent-charts="wildRentChartsFor(cardId)"
+                                                :wild-set-sizes="wildSetSizesFor(cardId)"
+                                            />
                                         </button>
                                     </div>
                                 </section>
                             </div>
-                            <select v-if="targetCardId && entryFor(targetCardId)?.type === 'wildcard'" v-model="wildcardColor" :aria-label="t('Choose the taken wildcard’s new color')">
+                            <select
+                                v-if="targetCardId && entryFor(targetCardId)?.type === 'wildcard'"
+                                v-model="wildcardColor"
+                                :aria-label="t('Choose the taken wildcard’s new color')"
+                            >
                                 <option value="">{{ t('Keep current color') }}</option>
-                                <option v-for="c in (entryFor(targetCardId)?.any_color ? COLORS : entryFor(targetCardId)?.colors)" :key="c" :value="c">
+                                <option v-for="c in entryFor(targetCardId)?.any_color ? COLORS : entryFor(targetCardId)?.colors" :key="c" :value="c">
                                     {{ colorLabel(c) }}
                                 </option>
                             </select>
-                            <button class="md-btn" :disabled="submitting || playsLeft < 1 || targetId === null || !targetCardId" @click="playSlyDeal(selectedEntry.id)">
+                            <button
+                                class="md-btn"
+                                :disabled="submitting || playsLeft < 1 || targetId === null || !targetCardId"
+                                @click="playSlyDeal(selectedEntry.id)"
+                            >
                                 {{ t('Take Property') }}
                             </button>
                         </template>
@@ -1377,9 +1426,15 @@ onUnmounted(() => {
                             <p v-if="targetId !== null && targetStealablePropertyGroups.length === 0" class="md-hint">
                                 {{ t('That player has no available properties to swap; complete Manati2 can’t be taken.') }}
                             </p>
-                            <div v-if="targetStealablePropertyGroups.length" class="md-property-choice-groups" :aria-label="t('Choose their property to take')">
+                            <div
+                                v-if="targetStealablePropertyGroups.length"
+                                class="md-property-choice-groups"
+                                :aria-label="t('Choose their property to take')"
+                            >
                                 <section v-for="group in targetStealablePropertyGroups" :key="group.color" class="md-property-choice-group">
-                                    <h4>{{ colorLabel(group.color) }} · <bdi>{{ playerName(targetId!) }}</bdi></h4>
+                                    <h4>
+                                        {{ colorLabel(group.color) }} · <bdi>{{ playerName(targetId!) }}</bdi>
+                                    </h4>
                                     <div class="md-property-choice-cards">
                                         <button
                                             v-for="cardId in group.cardIds"
@@ -1389,9 +1444,19 @@ onUnmounted(() => {
                                             :class="{ 'md-property-choice-card--selected': targetCardId === cardId }"
                                             :aria-label="t('Take :card from :player', { card: label(cardId), player: playerName(targetId!) })"
                                             :aria-pressed="targetCardId === cardId"
-                                            @click="targetCardId = cardId; wildcardColor = ''"
+                                            @click="
+                                                targetCardId = cardId;
+                                                wildcardColor = '';
+                                            "
                                         >
-                                            <MasrawyCard :entry="entryFor(cardId)!" :active-color="entryFor(cardId)?.type === 'wildcard' ? group.color : undefined" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                                            <MasrawyCard
+                                                :entry="entryFor(cardId)!"
+                                                :active-color="entryFor(cardId)?.type === 'wildcard' ? group.color : undefined"
+                                                :rent-chart="rentChartFor(cardId)"
+                                                :set-size="setSizeFor(cardId)"
+                                                :wild-rent-charts="wildRentChartsFor(cardId)"
+                                                :wild-set-sizes="wildSetSizesFor(cardId)"
+                                            />
                                         </button>
                                     </div>
                                 </section>
@@ -1400,7 +1465,11 @@ onUnmounted(() => {
                             <p v-if="targetCardId && myStealablePropertyGroups.length === 0" class="md-hint">
                                 {{ t('You have no properties available to swap; complete Manati2 can’t be given.') }}
                             </p>
-                            <div v-if="targetCardId && myStealablePropertyGroups.length" class="md-property-choice-groups" :aria-label="t('Choose one of your properties to give')">
+                            <div
+                                v-if="targetCardId && myStealablePropertyGroups.length"
+                                class="md-property-choice-groups"
+                                :aria-label="t('Choose one of your properties to give')"
+                            >
                                 <section v-for="group in myStealablePropertyGroups" :key="group.color" class="md-property-choice-group">
                                     <h4>{{ colorLabel(group.color) }}{{ t(' · You') }}</h4>
                                     <div class="md-property-choice-cards">
@@ -1414,14 +1483,25 @@ onUnmounted(() => {
                                             :aria-pressed="giveCardId === cardId"
                                             @click="giveCardId = cardId"
                                         >
-                                            <MasrawyCard :entry="entryFor(cardId)!" :active-color="entryFor(cardId)?.type === 'wildcard' ? group.color : undefined" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                                            <MasrawyCard
+                                                :entry="entryFor(cardId)!"
+                                                :active-color="entryFor(cardId)?.type === 'wildcard' ? group.color : undefined"
+                                                :rent-chart="rentChartFor(cardId)"
+                                                :set-size="setSizeFor(cardId)"
+                                                :wild-rent-charts="wildRentChartsFor(cardId)"
+                                                :wild-set-sizes="wildSetSizesFor(cardId)"
+                                            />
                                         </button>
                                     </div>
                                 </section>
                             </div>
-                            <select v-if="targetCardId && entryFor(targetCardId)?.type === 'wildcard'" v-model="wildcardColor" :aria-label="t('Choose the taken wildcard’s new color')">
+                            <select
+                                v-if="targetCardId && entryFor(targetCardId)?.type === 'wildcard'"
+                                v-model="wildcardColor"
+                                :aria-label="t('Choose the taken wildcard’s new color')"
+                            >
                                 <option value="">{{ t('Keep current color') }}</option>
-                                <option v-for="c in (entryFor(targetCardId)?.any_color ? COLORS : entryFor(targetCardId)?.colors)" :key="c" :value="c">
+                                <option v-for="c in entryFor(targetCardId)?.any_color ? COLORS : entryFor(targetCardId)?.colors" :key="c" :value="c">
                                     {{ colorLabel(c) }}
                                 </option>
                             </select>
@@ -1443,13 +1523,21 @@ onUnmounted(() => {
                             <p v-if="targetId !== null && opponentCompleteSetColors(targetOpponent).length === 0" class="md-hint">
                                 {{ t('That player has no complete Manati2 to take.') }}
                             </p>
-                            <select v-model="dealBreakerColor" :disabled="targetId === null || opponentCompleteSetColors(targetOpponent).length === 0" :aria-label="t('Choose their complete Manti2a')">
+                            <select
+                                v-model="dealBreakerColor"
+                                :disabled="targetId === null || opponentCompleteSetColors(targetOpponent).length === 0"
+                                :aria-label="t('Choose their complete Manti2a')"
+                            >
                                 <option value="" disabled>{{ t('Choose one of their complete Manati2') }}</option>
                                 <option v-for="c in opponentCompleteSetColors(targetOpponent)" :key="c" :value="c">
                                     {{ colorLabel(c) }}
                                 </option>
                             </select>
-                            <button class="md-btn" :disabled="submitting || playsLeft < 1 || targetId === null || !dealBreakerColor" @click="playDealBreaker(selectedEntry.id)">
+                            <button
+                                class="md-btn"
+                                :disabled="submitting || playsLeft < 1 || targetId === null || !dealBreakerColor"
+                                @click="playDealBreaker(selectedEntry.id)"
+                            >
                                 {{ t('Take Complete Manti2a') }}
                             </button>
                         </template>
@@ -1464,11 +1552,20 @@ onUnmounted(() => {
                             {{ t('Bank instead · worth :amount M', { amount: selectedEntry.value }) }}
                         </button>
 
-                        <div v-if="confirmBankCardId === selectedEntry.id" class="md-bank-confirm" role="alertdialog" aria-labelledby="md-bank-confirm-title">
-                            <strong id="md-bank-confirm-title">{{ t('Bank :card for :amount M?', { card: label(selectedEntry.id), amount: selectedEntry.value }) }}</strong>
+                        <div
+                            v-if="confirmBankCardId === selectedEntry.id"
+                            class="md-bank-confirm"
+                            role="alertdialog"
+                            aria-labelledby="md-bank-confirm-title"
+                        >
+                            <strong id="md-bank-confirm-title">{{
+                                t('Bank :card for :amount M?', { card: label(selectedEntry.id), amount: selectedEntry.value })
+                            }}</strong>
                             <p>{{ t('This uses a play and permanently gives up this card’s effect.') }}</p>
                             <div>
-                                <button class="md-btn md-btn--primary" :disabled="submitting" @click="confirmBankCard">{{ t('Confirm bank') }}</button>
+                                <button class="md-btn md-btn--primary" :disabled="submitting" @click="confirmBankCard">
+                                    {{ t('Confirm bank') }}
+                                </button>
                                 <button class="md-btn md-btn--muted" :disabled="submitting" @click="cancelBankCard">{{ t('Keep card') }}</button>
                             </div>
                         </div>
@@ -1476,8 +1573,8 @@ onUnmounted(() => {
                         <button class="md-btn md-btn--muted" :disabled="submitting || !canDiscard" @click="discard(selectedEntry.id)">
                             {{ t('Discard') }}
                         </button>
-                        </template>
-                    </div>
+                    </template>
+                </div>
             </section>
 
             <!-- Move a wildcard (free, on your own turn, no pending action) -->
@@ -1485,9 +1582,7 @@ onUnmounted(() => {
                 <h3 class="md-section-title">{{ t('Move a Wildcard (free)') }}</h3>
                 <select v-model="moveWildcardId" :aria-label="t('Choose one of your wildcards to move')" @change="moveWildcardColor = ''">
                     <option value="" disabled>{{ t('Choose one of your wildcards') }}</option>
-                    <option v-for="c in myWildcards" :key="c.id" :value="c.id">
-                        {{ label(c.id) }} (currently {{ colorLabel(c.group) }})
-                    </option>
+                    <option v-for="c in myWildcards" :key="c.id" :value="c.id">{{ label(c.id) }} (currently {{ colorLabel(c.group) }})</option>
                 </select>
                 <select v-model="moveWildcardColor" :disabled="!moveWildcardId" :aria-label="t('Choose the wildcard’s new color')">
                     <option value="" disabled>{{ t('New color') }}</option>
@@ -1499,22 +1594,12 @@ onUnmounted(() => {
                     {{ t('Move') }}
                 </button>
             </section>
-
-
-
-
-
         </template>
 
         <!-- The old LIVE TURN dialog is gone: every play now flies across the table (TableBoard's move layer). -->
 
         <!-- Player sheet: everything about one seat, opened by tapping its plate on the table -->
-        <div
-            v-if="sheetSeat && table"
-            class="md-ps-backdrop"
-            @click.self="closePlayerSheet"
-            @keydown.esc="closePlayerSheet"
-        >
+        <div v-if="sheetSeat && table" class="md-ps-backdrop" @click.self="closePlayerSheet" @keydown.esc="closePlayerSheet">
             <section class="md-ps" role="dialog" aria-modal="true" aria-labelledby="md-ps-title">
                 <header class="md-ps-header">
                     <span class="md-ps-avatar" aria-hidden="true">{{ playerName(sheetSeat.id).charAt(0).toUpperCase() }}</span>
@@ -1523,35 +1608,75 @@ onUnmounted(() => {
                             {{ playerName(sheetSeat.id) }}<span v-if="sheetSeat.id === myId"> {{ t('(you)') }}</span>
                         </h2>
                         <p class="md-ps-tags">
-                            <span v-if="gameIsLive && sheetSeat.id === table.current_player_id" class="md-ps-tag md-ps-tag--turn">{{ t('— current turn') }}</span>
-                            <span v-if="room.winner !== null && String(sheetSeat.id) === room.winner" class="md-ps-tag md-ps-tag--win">♛ {{ t('Winner') }}</span>
+                            <span v-if="gameIsLive && sheetSeat.id === table.current_player_id" class="md-ps-tag md-ps-tag--turn">{{
+                                t('— current turn')
+                            }}</span>
+                            <span v-if="room.winner !== null && String(sheetSeat.id) === room.winner" class="md-ps-tag md-ps-tag--win"
+                                >♛ {{ t('Winner') }}</span
+                            >
                         </p>
                     </div>
                     <button class="md-ps-close" type="button" :aria-label="t('Close')" @click="closePlayerSheet">×</button>
                 </header>
 
                 <div class="md-ps-stats">
-                    <span><strong>{{ seatBankTotal(sheetSeat) }}M</strong>{{ t('Bank') }}</span>
-                    <span><strong>{{ sheetSeat.hand_count }}</strong>{{ t('Hand cards') }}</span>
-                    <span><strong>{{ Object.keys(sheetSeat.properties).length }}</strong>{{ t('Manati2') }}</span>
+                    <span
+                        ><strong>{{ seatBankTotal(sheetSeat) }}M</strong>{{ t('Bank') }}</span
+                    >
+                    <span
+                        ><strong>{{ sheetSeat.hand_count }}</strong
+                        >{{ t('Hand cards') }}</span
+                    >
+                    <span
+                        ><strong>{{ Object.keys(sheetSeat.properties).length }}</strong
+                        >{{ t('Manati2') }}</span
+                    >
                 </div>
 
                 <div class="md-ps-body">
                     <section v-if="sheetSeat.hand" class="md-ps-section">
                         <h3 class="md-group-label">{{ t('Hand: :count card(s)', { count: sheetSeat.hand_count }) }}</h3>
                         <div class="md-card-row md-ps-cards">
-                            <MasrawyCard v-for="cardId in sheetSeat.hand" :key="cardId" :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                            <MasrawyCard
+                                v-for="cardId in sheetSeat.hand"
+                                :key="cardId"
+                                :entry="entryFor(cardId)!"
+                                :rent-chart="rentChartFor(cardId)"
+                                :set-size="setSizeFor(cardId)"
+                                :wild-rent-charts="wildRentChartsFor(cardId)"
+                                :wild-set-sizes="wildSetSizesFor(cardId)"
+                            />
                         </div>
                     </section>
 
                     <section class="md-ps-section">
                         <h3 class="md-group-label">{{ t('Bank · :amount M', { amount: seatBankTotal(sheetSeat) }) }}</h3>
-                        <div v-if="sheetSeat.bank.length > 0" class="md-seat-bank-stack" :aria-label="t(':count money cards in bank; showing the newest :shown', { count: sheetSeat.bank.length, shown: Math.min(sheetSeat.bank.length, BANK_VISIBLE_CARD_LIMIT) })">
+                        <div
+                            v-if="sheetSeat.bank.length > 0"
+                            class="md-seat-bank-stack"
+                            :aria-label="
+                                t(':count money cards in bank; showing the newest :shown', {
+                                    count: sheetSeat.bank.length,
+                                    shown: Math.min(sheetSeat.bank.length, BANK_VISIBLE_CARD_LIMIT),
+                                })
+                            "
+                        >
                             <span v-if="hiddenBankCardCount(sheetSeat.bank) > 0" class="md-seat-bank-overflow" aria-hidden="true">
                                 +{{ hiddenBankCardCount(sheetSeat.bank) }}
                             </span>
-                            <span v-for="(cardId, index) in visibleBankCards(sheetSeat.bank)" :key="cardId" class="md-seat-bank-card" :style="{ zIndex: index + 1 }">
-                                <MasrawyCard :entry="entryFor(cardId)!" :rent-chart="rentChartFor(cardId)" :set-size="setSizeFor(cardId)" :wild-rent-charts="wildRentChartsFor(cardId)" :wild-set-sizes="wildSetSizesFor(cardId)" />
+                            <span
+                                v-for="(cardId, index) in visibleBankCards(sheetSeat.bank)"
+                                :key="cardId"
+                                class="md-seat-bank-card"
+                                :style="{ zIndex: index + 1 }"
+                            >
+                                <MasrawyCard
+                                    :entry="entryFor(cardId)!"
+                                    :rent-chart="rentChartFor(cardId)"
+                                    :set-size="setSizeFor(cardId)"
+                                    :wild-rent-charts="wildRentChartsFor(cardId)"
+                                    :wild-set-sizes="wildSetSizesFor(cardId)"
+                                />
                             </span>
                         </div>
                         <p v-else class="md-hint">{{ t('Bank: empty') }}</p>
@@ -1565,12 +1690,17 @@ onUnmounted(() => {
                                 :key="color"
                                 type="button"
                                 class="md-seat-set-preview"
-                                :aria-label="t('View :name’s :color Manti2a in detail', { name: playerName(sheetSeat.id), color: colorLabel(String(color)) })"
+                                :aria-label="
+                                    t('View :name’s :color Manti2a in detail', { name: playerName(sheetSeat.id), color: colorLabel(String(color)) })
+                                "
                                 @click="openSetFromSheet(sheetSeat.id, String(color))"
                             >
                                 <span class="md-seat-set-heading">
                                     <strong>{{ colorLabel(String(color)) }}</strong>
-                                    <small>{{ t(':count cards', { count: group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }) }}<span v-if="group.house"> · SHISHA</span><span v-if="group.hotel"> · WIL3A</span></small>
+                                    <small
+                                        >{{ t(':count cards', { count: group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) })
+                                        }}<span v-if="group.house"> · SHISHA</span><span v-if="group.hotel"> · WIL3A</span></small
+                                    >
                                 </span>
                                 <span
                                     class="md-seat-set-stack"
@@ -1578,7 +1708,11 @@ onUnmounted(() => {
                                     :style="{ '--set-card-count': group.cards.length + (group.house ? 1 : 0) + (group.hotel ? 1 : 0) }"
                                 >
                                     <span
-                                        v-for="(cardId, index) in [...group.cards, ...(group.house ? [group.house] : []), ...(group.hotel ? [group.hotel] : [])]"
+                                        v-for="(cardId, index) in [
+                                            ...group.cards,
+                                            ...(group.house ? [group.house] : []),
+                                            ...(group.hotel ? [group.hotel] : []),
+                                        ]"
                                         :key="cardId"
                                         class="md-seat-set-card"
                                         :style="{ zIndex: index + 1 }"
@@ -1604,7 +1738,12 @@ onUnmounted(() => {
                     <p v-if="hostKickError" role="alert" class="md-error">{{ hostKickError }}</p>
                     <template v-if="confirmKickId === sheetSeat.id">
                         <span class="md-ps-confirm">{{ t('Remove :name from the game?', { name: playerName(sheetSeat.id) }) }}</span>
-                        <button class="md-btn md-btn--danger" type="button" :disabled="kickingPlayerId === sheetSeat.id" @click="kickPlayer(sheetSeat.id)">
+                        <button
+                            class="md-btn md-btn--danger"
+                            type="button"
+                            :disabled="kickingPlayerId === sheetSeat.id"
+                            @click="kickPlayer(sheetSeat.id)"
+                        >
                             {{ kickingPlayerId === sheetSeat.id ? t('Removing…') : t('Remove') }}
                         </button>
                         <button class="md-btn md-btn--muted" type="button" @click="confirmKickId = null">{{ t('Keep player') }}</button>
@@ -1632,7 +1771,15 @@ onUnmounted(() => {
                     </div>
                     <button class="md-set-modal-close" type="button" :aria-label="t('Close Manti2a details')" @click="closePropertySet">×</button>
                 </header>
-                <div class="md-set-modal-cards" :aria-label="t(':count cards in :color Manti2a', { count: selectedPropertySetCardIds.length, color: colorLabel(selectedPropertySet.color) })">
+                <div
+                    class="md-set-modal-cards"
+                    :aria-label="
+                        t(':count cards in :color Manti2a', {
+                            count: selectedPropertySetCardIds.length,
+                            color: colorLabel(selectedPropertySet.color),
+                        })
+                    "
+                >
                     <div v-for="cardId in selectedPropertySetCardIds" :key="cardId" class="md-set-modal-card">
                         <MasrawyCard
                             :entry="entryFor(cardId)!"
@@ -1661,7 +1808,12 @@ onUnmounted(() => {
             </section>
         </div>
 
-        <div v-if="paymentReceivedEvents.length && !isPayModalOpen && !showWinnerModal" class="md-payment-received-backdrop" @click.self="dismissPaymentReceipt" @keydown.esc="dismissPaymentReceipt">
+        <div
+            v-if="paymentReceivedEvents.length && !isPayModalOpen && !showWinnerModal"
+            class="md-payment-received-backdrop"
+            @click.self="dismissPaymentReceipt"
+            @keydown.esc="dismissPaymentReceipt"
+        >
             <section class="md-payment-received" role="dialog" aria-modal="true" aria-labelledby="md-payment-received-title">
                 <header class="md-payment-received-header">
                     <div>
@@ -1674,9 +1826,7 @@ onUnmounted(() => {
                     <li v-for="event in paymentReceivedEvents" :key="event.id">
                         <strong>{{ t(':name paid you:', { name: playerName(event.player_id) }) }}</strong>
                         <div class="md-payment-receipt-cards">
-                            <span v-for="cardId in event.card_ids" :key="cardId">
-                                {{ label(cardId) }} · {{ entryFor(cardId)?.value ?? 0 }}M
-                            </span>
+                            <span v-for="cardId in event.card_ids" :key="cardId"> {{ label(cardId) }} · {{ entryFor(cardId)?.value ?? 0 }}M </span>
                         </div>
                     </li>
                 </ul>
@@ -1700,21 +1850,26 @@ onUnmounted(() => {
                 ></span>
             </div>
             <section class="md-winner-modal" role="dialog" aria-modal="true" aria-labelledby="md-winner-title">
-                <button class="md-winner-close" type="button" :aria-label="t('Close winner announcement')" @click="winnerModalDismissed = true">×</button>
+                <button class="md-winner-close" type="button" :aria-label="t('Close winner announcement')" @click="winnerModalDismissed = true">
+                    ×
+                </button>
                 <span class="md-winner-trophy" aria-hidden="true">🏆</span>
                 <p class="md-turn-modal-eyebrow">{{ t('GAME OVER') }}</p>
-                <h2 id="md-winner-title">{{ room.winner === String(myId) ? t('You won!') : t(':name wins!', { name: playerName(room.winner ?? '') }) }}</h2>
-                <p>{{ room.winner === String(myId) ? t('Congratulations! You completed the winning Manati2.') : t(':name completed the winning Manati2.', { name: playerName(room.winner ?? '') }) }}</p>
+                <h2 id="md-winner-title">
+                    {{ room.winner === String(myId) ? t('You won!') : t(':name wins!', { name: playerName(room.winner ?? '') }) }}
+                </h2>
+                <p>
+                    {{
+                        room.winner === String(myId)
+                            ? t('Congratulations! You completed the winning Manati2.')
+                            : t(':name completed the winning Manati2.', { name: playerName(room.winner ?? '') })
+                    }}
+                </p>
                 <button class="md-btn md-btn--primary" type="button" @click="winnerModalDismissed = true">{{ t('Celebrate!') }}</button>
             </section>
         </div>
 
-        <button
-            v-if="you.owes !== null && isPayModalCollapsed"
-            class="md-pay-reopen"
-            type="button"
-            @click="openPayModal"
-        >
+        <button v-if="you.owes !== null && isPayModalCollapsed" class="md-pay-reopen" type="button" @click="openPayModal">
             {{ t('Pay :amount M', { amount: you.owes }) }}
         </button>
 
@@ -1725,7 +1880,9 @@ onUnmounted(() => {
                         <h2 id="md-pay-modal-title">{{ paymentReason }}</h2>
                         <p>{{ t('You owe :amount M. Selected: :selected M.', { amount: you.owes, selected: payTotal }) }}</p>
                     </div>
-                    <button class="md-btn md-btn--muted md-pay-modal-close" :aria-label="t('Collapse payment window')" @click="collapsePayModal">−</button>
+                    <button class="md-btn md-btn--muted md-pay-modal-close" :aria-label="t('Collapse payment window')" @click="collapsePayModal">
+                        −
+                    </button>
                 </header>
 
                 <p v-if="actionError" class="md-pay-modal-error" role="alert">{{ actionError }}</p>
@@ -1757,7 +1914,9 @@ onUnmounted(() => {
                                 :wild-set-sizes="wildSetSizesFor(asset.id)"
                             />
                         </span>
-                        <span class="md-pay-card-info">{{ asset.inBank ? t('Bank') : asset.group ? colorLabel(asset.group) : t('Property') }} · {{ asset.value }}M</span>
+                        <span class="md-pay-card-info"
+                            >{{ asset.inBank ? t('Bank') : asset.group ? colorLabel(asset.group) : t('Property') }} · {{ asset.value }}M</span
+                        >
                         <span v-if="paySelection.includes(asset.id)" class="md-pay-card-check" aria-hidden="true">✓</span>
                     </button>
                 </div>
@@ -1788,10 +1947,12 @@ onUnmounted(() => {
                     <button class="md-response-choice-collapse" type="button" @click="collapseResponsePrompt">{{ t('Review table') }}</button>
                 </div>
                 <div v-if="pending.kind === 'birthday'" class="md-response-choice-birthday">
-                    <img src="/assets/images/3id%20Milady%20Ya%20Kelab.png" alt="3id Milady Ya Kelab">
-                        <strong>{{ t('3id Milady Ya Kelab') }}</strong>
+                    <img src="/assets/images/3id%20Milady%20Ya%20Kelab.png" alt="3id Milady Ya Kelab" />
+                    <strong>{{ t('3id Milady Ya Kelab') }}</strong>
                 </div>
-                <h2 id="md-response-choice-title">{{ t(':name played :card', { name: playerName(pending.source_id), card: label(pending.card_id) }) }}</h2>
+                <h2 id="md-response-choice-title">
+                    {{ t(':name played :card', { name: playerName(pending.source_id), card: label(pending.card_id) }) }}
+                </h2>
                 <div v-if="pending.target_card_id || pending.give_card_id" class="md-response-property-cards">
                     <div v-if="pending.target_card_id && entryFor(pending.target_card_id)" class="md-response-property-card">
                         <strong>{{ t('Card being taken') }}</strong>
@@ -1816,7 +1977,15 @@ onUnmounted(() => {
                         />
                     </div>
                 </div>
-                <p>{{ t(responseIsPayment ? 'Do you want to cancel the action or pay the charge?' : 'Do you want to cancel this action or let it happen?') }}</p>
+                <p>
+                    {{
+                        t(
+                            responseIsPayment
+                                ? 'Do you want to cancel the action or pay the charge?'
+                                : 'Do you want to cancel this action or let it happen?',
+                        )
+                    }}
+                </p>
                 <div class="md-response-choice-actions">
                     <button
                         v-if="myJustSayNoCards.length > 0"
@@ -1827,12 +1996,7 @@ onUnmounted(() => {
                     >
                         {{ t('3AND OMO') }}
                     </button>
-                    <button
-                        class="md-btn md-btn--muted"
-                        type="button"
-                        :disabled="submitting"
-                        @click="decline(responsePrompt.targetId)"
-                    >
+                    <button class="md-btn md-btn--muted" type="button" :disabled="submitting" @click="decline(responsePrompt.targetId)">
                         {{ t(responseIsPayment ? 'EDFA3' : 'Let it happen') }}
                     </button>
                 </div>
@@ -1849,19 +2013,43 @@ onUnmounted(() => {
             {{ t('Respond to :card', { card: label(pending.card_id) }) }}
         </button>
 
-        <div v-if="showJustSayNoNotice" class="md-jsn-notice-backdrop" @click.self="showJustSayNoNotice = false" @keydown.esc="showJustSayNoNotice = false">
+        <div
+            v-if="showJustSayNoNotice"
+            class="md-jsn-notice-backdrop"
+            @click.self="showJustSayNoNotice = false"
+            @keydown.esc="showJustSayNoNotice = false"
+        >
             <section class="md-jsn-notice" role="dialog" aria-modal="true" aria-labelledby="md-jsn-notice-title">
-                <button class="md-turn-modal-close md-jsn-notice-close" type="button" :aria-label="t('Close notification')" @click="showJustSayNoNotice = false">×</button>
-                <img src="/assets/images/Da%203and%20Omo%20Ya%20Adham.png" alt="Da 3and Omo Ya Adham" class="md-jsn-notice-image">
+                <button
+                    class="md-turn-modal-close md-jsn-notice-close"
+                    type="button"
+                    :aria-label="t('Close notification')"
+                    @click="showJustSayNoNotice = false"
+                >
+                    ×
+                </button>
+                <img src="/assets/images/Da%203and%20Omo%20Ya%20Adham.png" alt="Da 3and Omo Ya Adham" class="md-jsn-notice-image" />
                 <h2 id="md-jsn-notice-title">{{ t('Da 3and Omo Ya Adham') }}</h2>
                 <button class="md-btn md-btn--primary" type="button" @click="showJustSayNoNotice = false">{{ t('Continue') }}</button>
             </section>
         </div>
 
-        <div v-if="showBirthdayNotice && !responsePrompt && myJustSayNoCards.length === 0" class="md-jsn-notice-backdrop" @click.self="showBirthdayNotice = false" @keydown.esc="showBirthdayNotice = false">
+        <div
+            v-if="showBirthdayNotice && !responsePrompt && myJustSayNoCards.length === 0"
+            class="md-jsn-notice-backdrop"
+            @click.self="showBirthdayNotice = false"
+            @keydown.esc="showBirthdayNotice = false"
+        >
             <section class="md-jsn-notice" role="dialog" aria-modal="true" aria-labelledby="md-birthday-notice-title">
-                <button class="md-turn-modal-close md-jsn-notice-close" type="button" :aria-label="t('Close notification')" @click="showBirthdayNotice = false">×</button>
-                <img src="/assets/images/3id%20Milady%20Ya%20Kelab.png" alt="3id Milady Ya Kelab" class="md-jsn-notice-image">
+                <button
+                    class="md-turn-modal-close md-jsn-notice-close"
+                    type="button"
+                    :aria-label="t('Close notification')"
+                    @click="showBirthdayNotice = false"
+                >
+                    ×
+                </button>
+                <img src="/assets/images/3id%20Milady%20Ya%20Kelab.png" alt="3id Milady Ya Kelab" class="md-jsn-notice-image" />
                 <h2 id="md-birthday-notice-title">{{ t('3id Milady Ya Kelab') }}</h2>
                 <button class="md-btn md-btn--primary" type="button" :disabled="submitting" @click="acceptBirthdayCharge">{{ t('Edfa3') }}</button>
             </section>
@@ -2103,7 +2291,9 @@ onUnmounted(() => {
     border: 1px dashed var(--rc-border);
     border-radius: 8px;
     background: var(--rc-surface-alt);
-    box-shadow: 2px -2px 0 -1px var(--rc-border), 4px -4px 0 -1px var(--rc-border);
+    box-shadow:
+        2px -2px 0 -1px var(--rc-border),
+        4px -4px 0 -1px var(--rc-border);
     justify-content: start;
     padding-left: 2px;
     box-sizing: border-box;
@@ -2145,7 +2335,10 @@ onUnmounted(() => {
     color: var(--rc-text-on-surface);
     text-align: left;
     cursor: pointer;
-    transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+    transition:
+        border-color 140ms ease,
+        box-shadow 140ms ease,
+        transform 140ms ease;
 }
 
 .md-seat-set-preview:hover,
@@ -2363,7 +2556,6 @@ onUnmounted(() => {
         gap: 0.65rem;
         padding: 0.8rem;
     }
-
 }
 
 .md-turn-modal-backdrop {
@@ -2509,7 +2701,9 @@ onUnmounted(() => {
     border: 1px dashed var(--rc-border);
     border-radius: 10px;
     background: var(--rc-surface-alt);
-    box-shadow: 2px -2px 0 -1px var(--rc-border), 4px -4px 0 -1px var(--rc-border);
+    box-shadow:
+        2px -2px 0 -1px var(--rc-border),
+        4px -4px 0 -1px var(--rc-border);
     justify-content: start;
     padding-left: 8px;
     box-sizing: border-box;
@@ -2812,7 +3006,9 @@ onUnmounted(() => {
 .md-winner-modal {
     z-index: 1;
     border-color: color-mix(in srgb, #facc15 62%, var(--rc-border));
-    box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.1), 0 24px 90px rgba(0, 0, 0, 0.65);
+    box-shadow:
+        0 0 0 4px rgba(250, 204, 21, 0.1),
+        0 24px 90px rgba(0, 0, 0, 0.65);
 }
 
 .md-winner-close {
@@ -2972,9 +3168,9 @@ onUnmounted(() => {
         transform: scale(0.48);
     }
 
-        .md-turn-property-group .md-turn-card :deep(.mc-card--flipped) {
-            transform: translate(48%, 48%) rotate(180deg) scale(0.48);
-            transform-origin: top left;
+    .md-turn-property-group .md-turn-card :deep(.mc-card--flipped) {
+        transform: translate(48%, 48%) rotate(180deg) scale(0.48);
+        transform-origin: top left;
     }
 }
 
@@ -3626,7 +3822,10 @@ onUnmounted(() => {
     border-radius: 8px;
     background: transparent;
     cursor: pointer;
-    transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+    transition:
+        transform 120ms ease,
+        border-color 120ms ease,
+        box-shadow 120ms ease;
 }
 
 .md-property-choice-card :deep(.mc-card) {
@@ -4487,7 +4686,9 @@ input[type='checkbox'] {
 }
 
 .md-fan-card--selected :deep(.mc-card) {
-    box-shadow: 0 0 0 3px #f59e0b, 0 8px 18px rgba(0, 0, 0, 0.55);
+    box-shadow:
+        0 0 0 3px #f59e0b,
+        0 8px 18px rgba(0, 0, 0, 0.55);
     border-radius: 12px;
 }
 
@@ -4722,7 +4923,9 @@ input[type='checkbox'] {
 }
 
 .md-property-choice-card--selected :deep(.mc-card) {
-    box-shadow: 0 0 0 3px var(--rc-primary, #f59e0b), 0 4px 10px rgba(0, 0, 0, 0.45);
+    box-shadow:
+        0 0 0 3px var(--rc-primary, #f59e0b),
+        0 4px 10px rgba(0, 0, 0, 0.45);
     border-radius: 8px;
 }
 

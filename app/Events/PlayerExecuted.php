@@ -19,7 +19,7 @@ class PlayerExecuted implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('rooms.' . $this->room->id),
+            new PrivateChannel('rooms.'.$this->room->id),
         ];
     }
 

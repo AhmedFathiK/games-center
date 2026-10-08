@@ -1,66 +1,65 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { router } from '@inertiajs/vue3'
-import type { Room, AuthUser, MafiaNightState, NightActionState, You } from '@/types/room'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import type { AuthUser, MafiaNightState, NightActionState, Room, You } from '@/types/room';
+import { router } from '@inertiajs/vue3';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 const props = defineProps<{
-    room: Room
-    auth: { user: AuthUser }
-    isHost: boolean
-}>()
-const { t } = useI18n()
+    room: Room;
+    auth: { user: AuthUser };
+    isHost: boolean;
+}>();
+const { t } = useI18n();
 
 // This component only ever renders for Mafia rooms (Show.vue's
 // room.phase check), so room.you is always Mafia's own You shape here.
-const me = computed(() => props.room.you as You | null)
-const myRole = computed(() => me.value?.role ?? null)
-const amAlive = computed(() => me.value?.alive ?? null)
-const isParticipant = computed(() => myRole.value !== null)
+const me = computed(() => props.room.you as You | null);
+const myRole = computed(() => me.value?.role ?? null);
+const amAlive = computed(() => me.value?.alive ?? null);
+const isParticipant = computed(() => myRole.value !== null);
 
 function playerName(id: number | string | null) {
-    if (id === null) return 'no one'
-    const found = props.room.players.find(p => String(p.id) === String(id))
-    return found?.name ?? `Player #${id}`
+    if (id === null) return 'no one';
+    const found = props.room.players.find((p) => String(p.id) === String(id));
+    return found?.name ?? `Player #${id}`;
 }
 
-const alivePlayers = computed(() => props.room.players.filter(p => p.alive))
+const alivePlayers = computed(() => props.room.players.filter((p) => p.alive));
 
-const isMyTurn = computed(() => props.room.night_step === myRole.value)
+const isMyTurn = computed(() => props.room.night_step === myRole.value);
 
 // Mirrors MafiaGame::nextNightStep() purely for labeling the host's
 // advance button — the server is still what actually enforces this.
 function nextStepAfter(current: string, configuration: Record<string, number | boolean>) {
-    const order: Array<'mafia' | 'doctor' | 'detective'> = ['mafia', 'doctor', 'detective']
+    const order: Array<'mafia' | 'doctor' | 'detective'> = ['mafia', 'doctor', 'detective'];
     const enabled: Record<string, boolean> = {
         mafia: true,
         doctor: !!configuration.doctor,
         detective: !!configuration.detective,
-    }
-    const index = order.indexOf(current as 'mafia' | 'doctor' | 'detective')
+    };
+    const index = order.indexOf(current as 'mafia' | 'doctor' | 'detective');
     for (let i = index + 1; i < order.length; i++) {
-        if (enabled[order[i]]) return order[i]
+        if (enabled[order[i]]) return order[i];
     }
-    return null
+    return null;
 }
 
 const advanceButtonLabel = computed(() => {
-    if (advancing.value) return 'Advancing…'
-    const current = props.room.night_step ?? 'mafia'
-    const next = nextStepAfter(current, props.room.configuration)
-    if (!next) return 'Advance to Day'
-    return t(`Let ${next.charAt(0).toUpperCase()}${next.slice(1)} Act`)
-})
+    if (advancing.value) return 'Advancing…';
+    const current = props.room.night_step ?? 'mafia';
+    const next = nextStepAfter(current, props.room.configuration);
+    if (!next) return 'Advance to Day';
+    return t(`Let ${next.charAt(0).toUpperCase()}${next.slice(1)} Act`);
+});
 
 // Used by the banner and by the doctor/detective "sit tight" status
 // lines — factored out so both stay in sync instead of independently
 // capitalizing (or, previously, forgetting to capitalize) the same
 // raw night_step value.
 const currentTurnLabel = computed(() => {
-    const step = props.room.night_step ?? 'mafia'
-    return t(step.charAt(0).toUpperCase() + step.slice(1))
-})
-
+    const step = props.room.night_step ?? 'mafia';
+    return t(step.charAt(0).toUpperCase() + step.slice(1));
+});
 
 // --- Live updates for channels beyond the base room channel --------------
 // Show.vue already subscribes to `rooms.{id}` and reloads on every
@@ -71,151 +70,141 @@ const currentTurnLabel = computed(() => {
 // a game, so there's nothing to re-subscribe on prop updates.
 onMounted(() => {
     if (myRole.value === 'mafia') {
-        window.Echo.private(`rooms.${props.room.id}.mafia`).listen(
-            '.night-action.updated',
-            () => router.reload({ only: ['room'] }),
-        )
+        window.Echo.private(`rooms.${props.room.id}.mafia`).listen('.night-action.updated', () => router.reload({ only: ['room'] }));
     }
 
     if (props.isHost) {
-        window.Echo.private(`rooms.${props.room.id}.host`).listen(
-            '.night-action.updated',
-            () => router.reload({ only: ['room'] }),
-        )
+        window.Echo.private(`rooms.${props.room.id}.host`).listen('.night-action.updated', () => router.reload({ only: ['room'] }));
     }
-})
+});
 
 onUnmounted(() => {
     if (myRole.value === 'mafia') {
-        window.Echo.leave(`rooms.${props.room.id}.mafia`)
+        window.Echo.leave(`rooms.${props.room.id}.mafia`);
     }
 
     if (props.isHost) {
-        window.Echo.leave(`rooms.${props.room.id}.host`)
+        window.Echo.leave(`rooms.${props.room.id}.host`);
     }
-})
+});
 
 // --- Submitting actions ------------------------------------------------
-const selecting = ref(false)
-const confirming = ref(false)
-const actionError = ref<string | null>(null)
+const selecting = ref(false);
+const confirming = ref(false);
+const actionError = ref<string | null>(null);
 
 // Set the moment a target is clicked, cleared once the round-trip
 // finishes — lets the picker highlight the choice instantly instead of
 // waiting on the network before the UI reacts.
-const pendingTargetId = ref<number | string | null>(null)
+const pendingTargetId = ref<number | string | null>(null);
 
 function submitSelect(type: string, targetId: number) {
-    pendingTargetId.value = targetId
-    selecting.value = true
-    actionError.value = null
+    pendingTargetId.value = targetId;
+    selecting.value = true;
+    actionError.value = null;
 
     router.post(
         `/rooms/${props.room.id}/actions`,
         { type, target_id: targetId },
         {
-            onError: errors => {
-                actionError.value = Object.values(errors)[0] ?? 'Unable to submit selection.'
-                pendingTargetId.value = null
+            onError: (errors) => {
+                actionError.value = Object.values(errors)[0] ?? 'Unable to submit selection.';
+                pendingTargetId.value = null;
             },
             onFinish: () => {
-                selecting.value = false
-                pendingTargetId.value = null
+                selecting.value = false;
+                pendingTargetId.value = null;
             },
         },
-    )
+    );
 }
 
 function submitConfirm(type: string) {
-    confirming.value = true
-    actionError.value = null
+    confirming.value = true;
+    actionError.value = null;
 
     router.post(
         `/rooms/${props.room.id}/actions`,
         { type },
         {
-            onError: errors => {
-                actionError.value = Object.values(errors)[0] ?? 'Unable to confirm.'
+            onError: (errors) => {
+                actionError.value = Object.values(errors)[0] ?? 'Unable to confirm.';
             },
             onFinish: () => {
-                confirming.value = false
+                confirming.value = false;
             },
         },
-    )
+    );
 }
 
-const advancing = ref(false)
-const advanceError = ref<string | null>(null)
+const advancing = ref(false);
+const advanceError = ref<string | null>(null);
 
 function advancePhase() {
-    advancing.value = true
-    advanceError.value = null
+    advancing.value = true;
+    advanceError.value = null;
 
     router.post(
         `/rooms/${props.room.id}/advance`,
         {},
         {
-            onError: errors => {
-                advanceError.value = Object.values(errors)[0] ?? 'Unable to advance the phase.'
+            onError: (errors) => {
+                advanceError.value = Object.values(errors)[0] ?? 'Unable to advance the phase.';
             },
             onFinish: () => {
-                advancing.value = false
+                advancing.value = false;
             },
         },
-    )
+    );
 }
 
 // --- Mafia coordination state -------------------------------------------
-const mafiaState = computed<MafiaNightState | null>(() =>
-    myRole.value === 'mafia' ? (me.value?.night_action as MafiaNightState) : null,
-)
+const mafiaState = computed<MafiaNightState | null>(() => (myRole.value === 'mafia' ? (me.value?.night_action as MafiaNightState) : null));
 
-const myMafiaSelection = computed(() => mafiaState.value?.selections?.[String(props.auth.user.id)] ?? null)
-const myMafiaConfirmed = computed(() => mafiaState.value?.confirmed?.[String(props.auth.user.id)] ?? false)
+const myMafiaSelection = computed(() => mafiaState.value?.selections?.[String(props.auth.user.id)] ?? null);
+const myMafiaConfirmed = computed(() => mafiaState.value?.confirmed?.[String(props.auth.user.id)] ?? false);
 
 const mafiaRoster = computed(() => {
-    if (myRole.value !== 'mafia') return []
-    const teammates = me.value?.mafia_team ?? []
-    return [{ id: props.auth.user.id, name: 'You' }, ...teammates]
-})
+    if (myRole.value !== 'mafia') return [];
+    const teammates = me.value?.mafia_team ?? [];
+    return [{ id: props.auth.user.id, name: 'You' }, ...teammates];
+});
 
 function mafiaPickFor(id: number) {
     if (id === props.auth.user.id && pendingTargetId.value !== null) {
-        return pendingTargetId.value
+        return pendingTargetId.value;
     }
-    return mafiaState.value?.selections?.[String(id)] ?? null
+    return mafiaState.value?.selections?.[String(id)] ?? null;
 }
 
 function mafiaConfirmedFor(id: number) {
-    return mafiaState.value?.confirmed?.[String(id)] ?? false
+    return mafiaState.value?.confirmed?.[String(id)] ?? false;
 }
 
 const mafiaConsensusLocked = computed(() => {
-    const roster = mafiaRoster.value
-    if (roster.length === 0) return false
-    if (!roster.every(m => mafiaConfirmedFor(m.id))) return false
-    const targets = new Set(roster.map(m => String(mafiaPickFor(m.id))))
-    return targets.size === 1
-})
+    const roster = mafiaRoster.value;
+    if (roster.length === 0) return false;
+    if (!roster.every((m) => mafiaConfirmedFor(m.id))) return false;
+    const targets = new Set(roster.map((m) => String(mafiaPickFor(m.id))));
+    return targets.size === 1;
+});
 
 // --- Doctor / detective solo state --------------------------------------
 const soloAction = computed<NightActionState | null>(() =>
-    myRole.value === 'doctor' || myRole.value === 'detective'
-        ? (me.value?.night_action as NightActionState)
-        : null,
-)
+    myRole.value === 'doctor' || myRole.value === 'detective' ? (me.value?.night_action as NightActionState) : null,
+);
 
-const mySoloSelection = computed(() => soloAction.value?.selected_target_id ?? null)
-const mySoloConfirmed = computed(() => soloAction.value?.confirmed ?? false)
+const mySoloSelection = computed(() => soloAction.value?.selected_target_id ?? null);
+const mySoloConfirmed = computed(() => soloAction.value?.confirmed ?? false);
 
 // --- Host oversight state -------------------------------------------------
-const hostRoles = computed(() => props.room.host_view?.roles ?? {})
-const hostNightActions = computed(() => props.room.host_view?.night_actions ?? null)
+const hostRoles = computed(() => props.room.host_view?.roles ?? {});
+const hostNightActions = computed(() => props.room.host_view?.night_actions ?? null);
 
 function playersWithRole(role: string) {
     return Object.entries(hostRoles.value)
         .filter(([, r]) => r === role)
-        .map(([id]) => ({ id: Number(id), name: playerName(id) }))
+        .map(([id]) => ({ id: Number(id), name: playerName(id) }));
 }
 
 // Tally of "how many mafia currently have this target selected" —
@@ -224,27 +213,25 @@ function playersWithRole(role: string) {
 // the per-member rows below. Counts pending and confirmed selections
 // alike; sorted by count so the leading target is easy to spot.
 const mafiaTargetTally = computed(() => {
-    const selections = hostNightActions.value?.mafia?.selections ?? {}
-    const counts: Record<string, number> = {}
+    const selections = hostNightActions.value?.mafia?.selections ?? {};
+    const counts: Record<string, number> = {};
 
     for (const targetId of Object.values(selections)) {
-        if (targetId === null || targetId === undefined) continue
-        const key = String(targetId)
-        counts[key] = (counts[key] ?? 0) + 1
+        if (targetId === null || targetId === undefined) continue;
+        const key = String(targetId);
+        counts[key] = (counts[key] ?? 0) + 1;
     }
 
     return Object.entries(counts)
         .map(([id, count]) => ({ id, name: playerName(id), count }))
-        .sort((a, b) => b.count - a.count)
-})
+        .sort((a, b) => b.count - a.count);
+});
 </script>
 
 <template>
     <div class="np-root">
         <div class="np-banner">
-            <span class="np-stamp">
-                Night · Round {{ room.round }} · {{ currentTurnLabel }}'s Turn
-            </span>
+            <span class="np-stamp"> Night · Round {{ room.round }} · {{ currentTurnLabel }}'s Turn </span>
         </div>
 
         <!-- Host oversight — always shown to the host, in addition to any player panel below -->
@@ -321,12 +308,7 @@ const mafiaTargetTally = computed(() => {
 
             <div class="np-divider" />
 
-            <button
-                type="button"
-                class="np-btn np-btn--primary"
-                :disabled="advancing"
-                @click="advancePhase"
-            >
+            <button type="button" class="np-btn np-btn--primary" :disabled="advancing" @click="advancePhase">
                 {{ advanceButtonLabel }}
             </button>
 
@@ -343,12 +325,8 @@ const mafiaTargetTally = computed(() => {
                     <div v-for="m in mafiaRoster" :key="m.id" class="np-row">
                         <span class="np-row-name">{{ m.name }}</span>
                         <span class="np-row-status">
-                            <template v-if="mafiaConfirmedFor(m.id)">
-                                Confirmed: {{ playerName(mafiaPickFor(m.id)) }}
-                            </template>
-                            <template v-else-if="mafiaPickFor(m.id)">
-                                Selected: {{ playerName(mafiaPickFor(m.id)) }} (pending)
-                            </template>
+                            <template v-if="mafiaConfirmedFor(m.id)"> Confirmed: {{ playerName(mafiaPickFor(m.id)) }} </template>
+                            <template v-else-if="mafiaPickFor(m.id)"> Selected: {{ playerName(mafiaPickFor(m.id)) }} (pending) </template>
                             <template v-else>No selection yet</template>
                         </span>
                     </div>
@@ -358,9 +336,7 @@ const mafiaTargetTally = computed(() => {
                     {{ mafiaConsensusLocked ? 'Target locked in.' : 'Waiting for full Mafia consensus.' }}
                 </p>
 
-                <p v-if="!isMyTurn && !myMafiaConfirmed" class="np-status-line">
-                    The host has moved on — your turn has ended for this round.
-                </p>
+                <p v-if="!isMyTurn && !myMafiaConfirmed" class="np-status-line">The host has moved on — your turn has ended for this round.</p>
 
                 <div v-if="isMyTurn" class="np-target-picker">
                     <button
@@ -386,9 +362,7 @@ const mafiaTargetTally = computed(() => {
                     {{ confirming ? 'Confirming…' : 'Confirm Kill Target' }}
                 </button>
 
-                <p v-if="myMafiaConfirmed" class="np-locked">
-                    You confirmed: {{ playerName(myMafiaSelection) }}. This cannot be changed.
-                </p>
+                <p v-if="myMafiaConfirmed" class="np-locked">You confirmed: {{ playerName(myMafiaSelection) }}. This cannot be changed.</p>
 
                 <p v-if="actionError" role="alert" class="np-error">{{ actionError }}</p>
             </section>
@@ -397,15 +371,9 @@ const mafiaTargetTally = computed(() => {
                 <h2 class="np-panel-title">{{ t('Doctor — Choose Someone to Save') }}</h2>
 
                 <p class="np-status-line">
-                    <template v-if="mySoloConfirmed">
-                        Confirmed: {{ playerName(mySoloSelection) }}. This cannot be changed.
-                    </template>
-                    <template v-else-if="!isMyTurn">
-                        It's currently {{ currentTurnLabel }}'s turn. Sit tight.
-                    </template>
-                    <template v-else-if="mySoloSelection">
-                        Selected: {{ playerName(mySoloSelection) }} — confirm to lock it in.
-                    </template>
+                    <template v-if="mySoloConfirmed"> Confirmed: {{ playerName(mySoloSelection) }}. This cannot be changed. </template>
+                    <template v-else-if="!isMyTurn"> It's currently {{ currentTurnLabel }}'s turn. Sit tight. </template>
+                    <template v-else-if="mySoloSelection"> Selected: {{ playerName(mySoloSelection) }} — confirm to lock it in. </template>
                     <template v-else>Choose a player to save tonight.</template>
                 </p>
 
@@ -442,20 +410,17 @@ const mafiaTargetTally = computed(() => {
                 <p class="np-status-line">
                     <template v-if="me?.detective_result">
                         {{ playerName(me!.detective_result!.target_id) }} is
-                        <strong>{{ me!.detective_result!.is_mafia ? t('Mafia') : t('not Mafia') }}</strong>.
+                        <strong>{{ me!.detective_result!.is_mafia ? t('Mafia') : t('not Mafia') }}</strong
+                        >.
                     </template>
-                    <template v-else-if="!isMyTurn">
-                        It's currently {{ currentTurnLabel }}'s turn. Sit tight.
-                    </template>
-                    <template v-else-if="mySoloSelection">
-                        Selected: {{ playerName(mySoloSelection) }} — confirm to investigate.
-                    </template>
+                    <template v-else-if="!isMyTurn"> It's currently {{ currentTurnLabel }}'s turn. Sit tight. </template>
+                    <template v-else-if="mySoloSelection"> Selected: {{ playerName(mySoloSelection) }} — confirm to investigate. </template>
                     <template v-else>Choose a player to investigate tonight.</template>
                 </p>
 
                 <div class="np-target-picker">
                     <button
-                        v-for="p in alivePlayers.filter(p => p.id !== auth.user.id)"
+                        v-for="p in alivePlayers.filter((p) => p.id !== auth.user.id)"
                         :key="p.id"
                         type="button"
                         class="np-target"
@@ -486,12 +451,8 @@ const mafiaTargetTally = computed(() => {
                     {{ amAlive ? 'Night Falls' : 'You Have Been Eliminated' }}
                 </h2>
                 <p class="np-muted">
-                    <template v-if="amAlive">
-                        Nothing to do right now — it's currently {{ currentTurnLabel }}'s turn.
-                    </template>
-                    <template v-else>
-                        You can no longer act, but you can keep watching how the game unfolds.
-                    </template>
+                    <template v-if="amAlive"> Nothing to do right now — it's currently {{ currentTurnLabel }}'s turn. </template>
+                    <template v-else> You can no longer act, but you can keep watching how the game unfolds. </template>
                 </p>
             </section>
         </template>

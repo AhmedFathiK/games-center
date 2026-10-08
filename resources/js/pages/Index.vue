@@ -1,119 +1,114 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { router } from '@inertiajs/vue3'
-import AppLayout from '@/layouts/AppLayout.vue'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import AppLayout from '@/layouts/AppLayout.vue';
+import { router } from '@inertiajs/vue3';
+import { ref } from 'vue';
 
-defineOptions({ layout: AppLayout })
-const { t, gameName } = useI18n()
+defineOptions({ layout: AppLayout });
+const { t, gameName } = useI18n();
 
 interface ConfigurationField {
-    type: 'integer' | 'boolean'
-    default?: number | boolean
-    min?: number
-    max?: number
+    type: 'integer' | 'boolean';
+    default?: number | boolean;
+    min?: number;
+    max?: number;
 }
 
 interface Game {
-    id: number
-    name: string
-    slug: string
-    description: string | null
-    minimum_players: number
-    maximum_players: number
-    host_is_player: boolean
-    configuration_schema: Record<string, ConfigurationField>
+    id: number;
+    name: string;
+    slug: string;
+    description: string | null;
+    minimum_players: number;
+    maximum_players: number;
+    host_is_player: boolean;
+    configuration_schema: Record<string, ConfigurationField>;
 }
 
 const props = defineProps<{
-    games: Game[]
-}>()
+    games: Game[];
+}>();
 
-const selectedGame = ref<Game | null>(null)
-const configuration = ref<Record<string, number | boolean>>({})
-const maxPlayers = ref<number>(0)
-const creatingRoom = ref(false)
-const error = ref<string | null>(null)
+const selectedGame = ref<Game | null>(null);
+const configuration = ref<Record<string, number | boolean>>({});
+const maxPlayers = ref<number>(0);
+const creatingRoom = ref(false);
+const error = ref<string | null>(null);
 
 // --- Join by code ------------------------------------------------------
-const roomCode = ref('')
-const joiningByCode = ref(false)
-const joinCodeError = ref<string | null>(null)
+const roomCode = ref('');
+const joiningByCode = ref(false);
+const joinCodeError = ref<string | null>(null);
 
 function joinByCode() {
-    if (!roomCode.value.trim()) return
+    if (!roomCode.value.trim()) return;
 
-    joiningByCode.value = true
-    joinCodeError.value = null
+    joiningByCode.value = true;
+    joinCodeError.value = null;
 
     router.post(
         route('rooms.find'),
         { code: roomCode.value.trim() },
         {
-            onError: errors => {
-                joinCodeError.value = Object.values(errors)[0] ?? 'Unable to find that room.'
+            onError: (errors) => {
+                joinCodeError.value = Object.values(errors)[0] ?? 'Unable to find that room.';
             },
             onFinish: () => {
-                joiningByCode.value = false
+                joiningByCode.value = false;
             },
         },
-    )
+    );
 }
 
 function selectGame(game: Game) {
-    selectedGame.value = game
-    configuration.value = {}
+    selectedGame.value = game;
+    configuration.value = {};
     // Default to a modest lobby size rather than the game's absolute
     // ceiling — defaulting to the maximum makes an empty room look like
     // it needs 20 people before anyone would consider starting it. This
     // is a generic min/max-based heuristic (not a Mafia-specific rule),
     // so it applies the same way to any future game.
-    maxPlayers.value = Math.min(game.maximum_players, game.minimum_players + 4)
-    error.value = null
+    maxPlayers.value = Math.min(game.maximum_players, game.minimum_players + 4);
+    error.value = null;
 
     for (const [key, field] of Object.entries(game.configuration_schema)) {
         if (field.default !== undefined) {
-            configuration.value[key] = field.default
+            configuration.value[key] = field.default;
         } else if (field.type === 'integer' && field.min !== undefined) {
-            configuration.value[key] = field.min
+            configuration.value[key] = field.min;
         }
     }
 }
 
 function fieldLabel(key: string) {
-    const label = key
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, character => character.toUpperCase())
+    const label = key.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase());
 
-    return t(label)
+    return t(label);
 }
 
 function stepMaxPlayers(delta: number) {
-    if (!selectedGame.value) return
-    const next = maxPlayers.value + delta
-    maxPlayers.value = Math.min(
-        Math.max(next, selectedGame.value.minimum_players),
-        selectedGame.value.maximum_players,
-    )
+    if (!selectedGame.value) return;
+    const next = maxPlayers.value + delta;
+    maxPlayers.value = Math.min(Math.max(next, selectedGame.value.minimum_players), selectedGame.value.maximum_players);
 }
 
 function stepField(key: string, field: ConfigurationField, delta: number) {
-    const current = Number(configuration.value[key] ?? field.default ?? field.min ?? 0)
-    let next = current + delta
-    if (field.min !== undefined) next = Math.max(next, field.min)
-    if (field.max !== undefined) next = Math.min(next, field.max)
-    configuration.value[key] = next
+    const current = Number(configuration.value[key] ?? field.default ?? field.min ?? 0);
+    let next = current + delta;
+    if (field.min !== undefined) next = Math.max(next, field.min);
+    if (field.max !== undefined) next = Math.min(next, field.max);
+    configuration.value[key] = next;
 }
 
 function toggleField(key: string) {
-    configuration.value[key] = !configuration.value[key]
+    configuration.value[key] = !configuration.value[key];
 }
 
 async function createRoom() {
-    if (!selectedGame.value) return
+    if (!selectedGame.value) return;
 
-    creatingRoom.value = true
-    error.value = null
+    creatingRoom.value = true;
+    error.value = null;
 
     router.post(
         route('rooms.store'),
@@ -123,14 +118,14 @@ async function createRoom() {
             configuration: configuration.value,
         },
         {
-            onError: errors => {
-                error.value = Object.values(errors)[0] ?? 'Unable to create the room.'
+            onError: (errors) => {
+                error.value = Object.values(errors)[0] ?? 'Unable to create the room.';
             },
             onFinish: () => {
-                creatingRoom.value = false
+                creatingRoom.value = false;
             },
         },
-    )
+    );
 }
 </script>
 
@@ -138,7 +133,7 @@ async function createRoom() {
     <div class="gc-page">
         <div class="gc-container">
             <header class="gc-header">
-            <p class="gc-eyebrow">Games Center</p>
+                <p class="gc-eyebrow">Games Center</p>
                 <h1 class="gc-title">{{ t('Choose a Game') }}</h1>
                 <p class="gc-subtitle">{{ t('Choose a game, configure your room, and invite your friends.') }}</p>
             </header>
@@ -165,11 +160,7 @@ async function createRoom() {
                         spellcheck="false"
                         @input="roomCode = roomCode.toUpperCase()"
                     />
-                    <button
-                        type="submit"
-                        class="gc-joinbar-btn"
-                        :disabled="joiningByCode || !roomCode.trim()"
-                    >
+                    <button type="submit" class="gc-joinbar-btn" :disabled="joiningByCode || !roomCode.trim()">
                         {{ joiningByCode ? t('Joining…') : t('Join Room') }}
                     </button>
                 </form>
@@ -210,9 +201,7 @@ async function createRoom() {
                                 {{ game.description }}
                             </span>
 
-                            <span class="gc-mono gc-range">
-                                {{ game.minimum_players }}–{{ game.maximum_players }} {{ t('players') }}
-                            </span>
+                            <span class="gc-mono gc-range"> {{ game.minimum_players }}–{{ game.maximum_players }} {{ t('players') }} </span>
                         </span>
                     </button>
 
@@ -253,11 +242,7 @@ async function createRoom() {
                         </div>
                     </div>
 
-                    <div
-                        v-for="(field, key) in selectedGame.configuration_schema"
-                        :key="key"
-                        class="gc-field"
-                    >
+                    <div v-for="(field, key) in selectedGame.configuration_schema" :key="key" class="gc-field">
                         <label class="gc-field-label">{{ fieldLabel(key) }}</label>
 
                         <div v-if="field.type === 'integer'" class="gc-stepper">
@@ -295,12 +280,7 @@ async function createRoom() {
 
                     <p v-if="error" role="alert" class="gc-error">{{ error }}</p>
 
-                    <button
-                        type="button"
-                        class="gc-create-btn"
-                        :disabled="creatingRoom"
-                        @click="createRoom"
-                    >
+                    <button type="button" class="gc-create-btn" :disabled="creatingRoom" @click="createRoom">
                         {{ creatingRoom ? t('Creating Room…') : t('Create Room') }}
                     </button>
                 </div>
@@ -324,7 +304,6 @@ async function createRoom() {
 </template>
 
 <style scoped>
-
 .gc-page {
     --gc-ink: #0f1613;
     --gc-surface: #16201c;
@@ -519,7 +498,10 @@ async function createRoom() {
     border-radius: 10px;
     padding: 1rem 1.1rem;
     cursor: pointer;
-    transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+    transition:
+        border-color 0.15s ease,
+        transform 0.15s ease,
+        background 0.15s ease;
 }
 
 .gc-module:hover {
@@ -700,7 +682,9 @@ async function createRoom() {
     background: var(--gc-surface-raised);
     position: relative;
     cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease;
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease;
 }
 
 .gc-toggle--on {

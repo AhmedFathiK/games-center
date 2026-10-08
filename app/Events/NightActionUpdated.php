@@ -19,7 +19,7 @@ class NightActionUpdated implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('rooms.' . $this->room->id . '.mafia'),
+            new PrivateChannel('rooms.'.$this->room->id.'.mafia'),
         ];
     }
 

@@ -1,24 +1,24 @@
 <script setup lang="ts">
-import { useForm } from '@inertiajs/vue3'
-import { ref } from 'vue'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import { useForm } from '@inertiajs/vue3';
+import { ref } from 'vue';
 
-const showModal = ref(false)
-const passwordInput = ref<HTMLInputElement | null>(null)
-const { t } = useI18n()
+const showModal = ref(false);
+const passwordInput = ref<HTMLInputElement | null>(null);
+const { t } = useI18n();
 
 const form = useForm({
     password: '',
-})
+});
 
 function openModal() {
-    showModal.value = true
+    showModal.value = true;
 }
 
 function closeModal() {
-    showModal.value = false
-    form.clearErrors()
-    form.reset()
+    showModal.value = false;
+    form.clearErrors();
+    form.reset();
 }
 
 function deleteUser() {
@@ -27,7 +27,7 @@ function deleteUser() {
         onSuccess: () => closeModal(),
         onError: () => passwordInput.value?.focus(),
         onFinish: () => form.reset(),
-    })
+    });
 }
 </script>
 
@@ -43,7 +43,11 @@ function deleteUser() {
                 <form @submit.prevent="deleteUser" class="da-form">
                     <h3 class="da-modal-title">{{ t('Are you sure you want to delete your account?') }}</h3>
                     <p class="da-modal-text">
-                        {{ t('Once your account is deleted, all of its resources and data will also be permanently deleted. Please enter your password to confirm.') }}
+                        {{
+                            t(
+                                'Once your account is deleted, all of its resources and data will also be permanently deleted. Please enter your password to confirm.',
+                            )
+                        }}
                     </p>
 
                     <div class="da-field">

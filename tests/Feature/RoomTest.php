@@ -2,13 +2,23 @@
 
 namespace Tests\Feature;
 
+use App\Events\GameEnded;
+use App\Events\GameStarted;
+use App\Events\GameStateChanged;
+use App\Events\HostNightActionUpdated;
+use App\Events\NightActionUpdated;
+use App\Events\PlayerJoined;
+use App\Events\PlayerKicked;
+use App\Events\PlayerLeft;
+use App\Events\RoomCancelled;
+use App\Events\VoteUpdated;
 use App\Models\Game;
 use App\Models\Room;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Tests\TestCase;
 use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\TestCase;
 
 class RoomTest extends TestCase
 {
@@ -272,7 +282,7 @@ class RoomTest extends TestCase
 
     public function test_game_started_event_is_broadcast_when_host_starts_room(): void
     {
-        Event::fake([\App\Events\GameStarted::class]);
+        Event::fake([GameStarted::class]);
 
         $game = $this->seedMafia();
         $host = User::factory()->create();
@@ -295,7 +305,7 @@ class RoomTest extends TestCase
 
         $this->actingAs($host)->post("/rooms/{$room->id}/start");
 
-        Event::assertDispatched(\App\Events\GameStarted::class, function ($event) use ($room) {
+        Event::assertDispatched(GameStarted::class, function ($event) use ($room) {
             return $event->room->id === $room->id;
         });
     }
@@ -327,7 +337,7 @@ class RoomTest extends TestCase
 
         $response->assertOk()
             ->assertInertia(
-                fn($page) => $page
+                fn ($page) => $page
                     ->component('Rooms/Show')
                     ->where('room.id', $room->id)
                     ->where('room.game.id', $game->id)
@@ -348,7 +358,7 @@ class RoomTest extends TestCase
 
         $response->assertOk()
             ->assertInertia(
-                fn($page) => $page
+                fn ($page) => $page
                     ->component('Index')
                     ->has('games', 1)
                     ->where('games.0.id', $game->id)
@@ -524,7 +534,7 @@ class RoomTest extends TestCase
 
     public function test_action_submission_broadcasts_to_both_mafia_and_host_channels(): void
     {
-        Event::fake([\App\Events\NightActionUpdated::class, \App\Events\HostNightActionUpdated::class]);
+        Event::fake([NightActionUpdated::class, HostNightActionUpdated::class]);
 
         $game = $this->seedMafia();
         $host = User::factory()->create();
@@ -555,7 +565,7 @@ class RoomTest extends TestCase
                 'phase' => 'night',
                 'round' => 1,
                 'roles' => $roles,
-                'alive' => collect($roles)->keys()->mapWithKeys(fn($id) => [$id => true])->all(),
+                'alive' => collect($roles)->keys()->mapWithKeys(fn ($id) => [$id => true])->all(),
                 'winner' => null,
                 'night_actions' => [
                     'mafia' => ['selections' => [], 'confirmed' => []],
@@ -575,8 +585,8 @@ class RoomTest extends TestCase
             'target_id' => $playerIds[1],
         ]);
 
-        Event::assertDispatched(\App\Events\NightActionUpdated::class);
-        Event::assertDispatched(\App\Events\HostNightActionUpdated::class);
+        Event::assertDispatched(NightActionUpdated::class);
+        Event::assertDispatched(HostNightActionUpdated::class);
     }
 
     public function test_cannot_submit_action_before_that_roles_turn(): void
@@ -610,7 +620,7 @@ class RoomTest extends TestCase
                 'phase' => 'night',
                 'round' => 1,
                 'roles' => $roles,
-                'alive' => collect($roles)->keys()->mapWithKeys(fn($id) => [$id => true])->all(),
+                'alive' => collect($roles)->keys()->mapWithKeys(fn ($id) => [$id => true])->all(),
                 'winner' => null,
                 'night_actions' => [
                     'mafia' => ['selections' => [], 'confirmed' => []],
@@ -634,7 +644,7 @@ class RoomTest extends TestCase
 
     public function test_room_status_becomes_finished_when_win_condition_is_met(): void
     {
-        Event::fake([\App\Events\GameEnded::class]);
+        Event::fake([GameEnded::class]);
 
         $game = $this->seedMafia();
         $host = User::factory()->create();
@@ -665,7 +675,7 @@ class RoomTest extends TestCase
                 'phase' => 'day',
                 'round' => 1,
                 'roles' => $roles,
-                'alive' => collect($roles)->keys()->mapWithKeys(fn($id) => [$id => true])->all(),
+                'alive' => collect($roles)->keys()->mapWithKeys(fn ($id) => [$id => true])->all(),
                 'winner' => null,
                 'night_actions' => [
                     'mafia' => ['selections' => [], 'confirmed' => []],
@@ -687,7 +697,7 @@ class RoomTest extends TestCase
         $this->assertEquals('finished', $room->status);
         $this->assertEquals('town', $room->game_state['winner']);
 
-        Event::assertDispatched(\App\Events\GameEnded::class);
+        Event::assertDispatched(GameEnded::class);
     }
 
     public function test_player_can_leave_a_waiting_room(): void
@@ -766,7 +776,7 @@ class RoomTest extends TestCase
 
     public function test_leaving_broadcasts_player_left_event(): void
     {
-        Event::fake([\App\Events\PlayerLeft::class]);
+        Event::fake([PlayerLeft::class]);
 
         $game = $this->seedMafia();
         $host = User::factory()->create();
@@ -785,7 +795,7 @@ class RoomTest extends TestCase
 
         $this->actingAs($player)->post("/rooms/{$room->id}/leave");
 
-        Event::assertDispatched(\App\Events\PlayerLeft::class, function ($event) use ($room, $player) {
+        Event::assertDispatched(PlayerLeft::class, function ($event) use ($room, $player) {
             return $event->room->id === $room->id && $event->player->id === $player->id;
         });
     }
@@ -821,7 +831,7 @@ class RoomTest extends TestCase
                 'phase' => 'night',
                 'round' => 1,
                 'roles' => $roles,
-                'alive' => collect($roles)->keys()->mapWithKeys(fn($id) => [$id => true])->all(),
+                'alive' => collect($roles)->keys()->mapWithKeys(fn ($id) => [$id => true])->all(),
                 'winner' => null,
                 'night_actions' => [
                     'mafia' => ['selections' => [], 'confirmed' => []],
@@ -839,7 +849,7 @@ class RoomTest extends TestCase
 
         $response->assertOk()
             ->assertInertia(
-                fn($page) => $page
+                fn ($page) => $page
                     ->component('Rooms/Show')
                     ->where('room.you.role', 'mafia')
                     ->where('room.you.alive', true)
@@ -870,7 +880,7 @@ class RoomTest extends TestCase
 
         $response->assertOk()
             ->assertInertia(
-                fn($page) => $page
+                fn ($page) => $page
                     ->component('Rooms/Show')
                     ->where('room.you', null)
             );
@@ -878,7 +888,7 @@ class RoomTest extends TestCase
 
     public function test_find_joins_the_user_and_redirects_to_the_room(): void
     {
-        Event::fake([\App\Events\PlayerJoined::class]);
+        Event::fake([PlayerJoined::class]);
 
         $game = $this->seedMafia();
         $host = User::factory()->create();
@@ -904,7 +914,7 @@ class RoomTest extends TestCase
             'user_id' => $seeker->id,
         ]);
 
-        Event::assertDispatched(\App\Events\PlayerJoined::class, function ($event) use ($room, $seeker) {
+        Event::assertDispatched(PlayerJoined::class, function ($event) use ($room, $seeker) {
             return $event->room->id === $room->id && $event->player->id === $seeker->id;
         });
     }
@@ -1346,7 +1356,7 @@ class RoomTest extends TestCase
 
     public function test_kick_broadcasts_player_kicked_event(): void
     {
-        Event::fake([\App\Events\PlayerKicked::class]);
+        Event::fake([PlayerKicked::class]);
 
         $game = $this->seedMafia();
         $host = User::factory()->create();
@@ -1365,7 +1375,7 @@ class RoomTest extends TestCase
 
         $this->actingAs($host)->post("/rooms/{$room->id}/kick/{$player->id}");
 
-        Event::assertDispatched(\App\Events\PlayerKicked::class, function ($event) use ($room, $player) {
+        Event::assertDispatched(PlayerKicked::class, function ($event) use ($room, $player) {
             return $event->room->id === $room->id && $event->player->id === $player->id;
         });
     }
@@ -1507,7 +1517,7 @@ class RoomTest extends TestCase
 
         $response->assertOk()
             ->assertInertia(
-                fn($page) => $page
+                fn ($page) => $page
                     ->component('Rooms/Mine')
                     ->where('active_room.id', $room->id)
                     ->where('active_room.is_host', true)
@@ -1534,7 +1544,7 @@ class RoomTest extends TestCase
 
         $response->assertOk()
             ->assertInertia(
-                fn($page) => $page
+                fn ($page) => $page
                     ->component('Rooms/Mine')
                     ->where('active_room.id', $room->id)
                     ->where('active_room.is_host', false)
@@ -1549,7 +1559,7 @@ class RoomTest extends TestCase
 
         $response->assertOk()
             ->assertInertia(
-                fn($page) => $page
+                fn ($page) => $page
                     ->component('Rooms/Mine')
                     ->where('active_room', null)
             );
@@ -1624,7 +1634,7 @@ class RoomTest extends TestCase
             Room::create([
                 'game_id' => $game->id,
                 'host_id' => $user->id,
-                'code' => 'HIS' . str_pad((string) $i, 3, '0', STR_PAD_LEFT),
+                'code' => 'HIS'.str_pad((string) $i, 3, '0', STR_PAD_LEFT),
                 'max_players' => 10,
                 'configuration' => [],
                 'status' => 'finished',
@@ -1752,7 +1762,7 @@ class RoomTest extends TestCase
 
     public function test_cancel_broadcasts_room_cancelled_event(): void
     {
-        Event::fake([\App\Events\RoomCancelled::class]);
+        Event::fake([RoomCancelled::class]);
 
         $game = $this->seedMafia();
         $host = User::factory()->create();
@@ -1770,7 +1780,7 @@ class RoomTest extends TestCase
             'confirmation' => 'confirm',
         ]);
 
-        Event::assertDispatched(\App\Events\RoomCancelled::class, function ($event) use ($room) {
+        Event::assertDispatched(RoomCancelled::class, function ($event) use ($room) {
             return $event->room->id === $room->id && $event->deleted === true;
         });
     }
@@ -1983,7 +1993,7 @@ class RoomTest extends TestCase
                 'phase' => 'night',
                 'round' => 1,
                 'roles' => $roles,
-                'alive' => collect($roles)->keys()->mapWithKeys(fn($id) => [$id => true])->all(),
+                'alive' => collect($roles)->keys()->mapWithKeys(fn ($id) => [$id => true])->all(),
                 'winner' => null,
             ],
         ]);
@@ -1992,9 +2002,9 @@ class RoomTest extends TestCase
 
         $response->assertOk()
             ->assertInertia(
-                fn($page) => $page
+                fn ($page) => $page
                     ->component('Rooms/Show')
-                    ->where('room.role_reveal.' . $playerIds[0], 'mafia')
+                    ->where('room.role_reveal.'.$playerIds[0], 'mafia')
             );
     }
 
@@ -2018,7 +2028,7 @@ class RoomTest extends TestCase
 
         $response->assertOk()
             ->assertInertia(
-                fn($page) => $page
+                fn ($page) => $page
                     ->component('Rooms/Mine')
                     ->where('active_room.player_count', 3)
             );
@@ -2082,7 +2092,7 @@ class RoomTest extends TestCase
         $this->actingAs($host)->get("/rooms/{$room->code}")
             ->assertOk()
             ->assertInertia(
-                fn($page) => $page
+                fn ($page) => $page
                     ->component('Rooms/Show')
                     ->where('room.game.slug', 'masrawy-deal')
                     ->where('room.you', null)
@@ -2102,7 +2112,7 @@ class RoomTest extends TestCase
             $this->actingAs($viewer)->get("/rooms/{$room->code}")
                 ->assertOk()
                 ->assertInertia(
-                    fn($page) => $page
+                    fn ($page) => $page
                         ->component('Rooms/Show')
                         ->where('room.status', 'in_progress')
                         ->where('room.you.hand', $state['hands'][$viewer->id])
@@ -2121,10 +2131,10 @@ class RoomTest extends TestCase
     public function test_a_masrawy_deal_action_goes_through_the_actions_endpoint_with_a_generic_broadcast(): void
     {
         Event::fake([
-            \App\Events\GameStateChanged::class,
-            \App\Events\NightActionUpdated::class,
-            \App\Events\HostNightActionUpdated::class,
-            \App\Events\VoteUpdated::class,
+            GameStateChanged::class,
+            NightActionUpdated::class,
+            HostNightActionUpdated::class,
+            VoteUpdated::class,
         ]);
 
         [$room, $host, $guest] = $this->startedMasrawyRoom();
@@ -2136,16 +2146,16 @@ class RoomTest extends TestCase
 
         $this->assertTrue($room->fresh()->game_state['has_drawn_this_turn']);
 
-        Event::assertDispatched(\App\Events\GameStateChanged::class);
+        Event::assertDispatched(GameStateChanged::class);
         // None of Mafia's events leak into another game's actions.
-        Event::assertNotDispatched(\App\Events\NightActionUpdated::class);
-        Event::assertNotDispatched(\App\Events\HostNightActionUpdated::class);
-        Event::assertNotDispatched(\App\Events\VoteUpdated::class);
+        Event::assertNotDispatched(NightActionUpdated::class);
+        Event::assertNotDispatched(HostNightActionUpdated::class);
+        Event::assertNotDispatched(VoteUpdated::class);
     }
 
     public function test_an_illegal_masrawy_deal_action_is_a_validation_error_and_changes_nothing(): void
     {
-        Event::fake([\App\Events\GameStateChanged::class]);
+        Event::fake([GameStateChanged::class]);
 
         [$room, $host, $guest] = $this->startedMasrawyRoom();
         $stateBefore = $room->game_state;
@@ -2156,12 +2166,12 @@ class RoomTest extends TestCase
             ->assertSessionHasErrors('action');
 
         $this->assertEquals($stateBefore, $room->fresh()->game_state);
-        Event::assertNotDispatched(\App\Events\GameStateChanged::class);
+        Event::assertNotDispatched(GameStateChanged::class);
     }
 
     public function test_a_masrawy_deal_action_that_wins_the_game_finishes_the_room(): void
     {
-        Event::fake([\App\Events\GameEnded::class, \App\Events\GameStateChanged::class]);
+        Event::fake([GameEnded::class, GameStateChanged::class]);
 
         [$room, $host, $guest] = $this->startedMasrawyRoom();
         $state = $room->game_state;
@@ -2185,7 +2195,7 @@ class RoomTest extends TestCase
 
         $this->assertEquals('finished', $room->status);
         $this->assertEquals((string) $currentId, $room->game_state['winner']);
-        Event::assertDispatched(\App\Events\GameEnded::class);
+        Event::assertDispatched(GameEnded::class);
 
         // Once it is over every hand is revealed to everyone.
         $other = $currentId === $host->id ? $guest : $host;
@@ -2193,7 +2203,7 @@ class RoomTest extends TestCase
         $this->actingAs($other)->get("/rooms/{$room->code}")
             ->assertOk()
             ->assertInertia(
-                fn($page) => $page
+                fn ($page) => $page
                     ->where('room.status', 'finished')
                     ->where('room.winner', (string) $currentId)
                     ->where('room.table.players.0.hand', $room->game_state['hands'][$room->game_state['turn_order'][0]])

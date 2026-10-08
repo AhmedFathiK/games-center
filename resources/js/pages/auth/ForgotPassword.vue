@@ -1,20 +1,20 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3'
-import AuthLayout from '@/layouts/AuthLayout.vue'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import AuthLayout from '@/layouts/AuthLayout.vue';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 
 defineProps<{
-    status?: string
-}>()
+    status?: string;
+}>();
 
 const form = useForm({
     email: '',
-})
-const { t } = useI18n()
+});
+const { t } = useI18n();
 
 const submit = () => {
-    form.post(route('password.email'))
-}
+    form.post(route('password.email'));
+};
 </script>
 
 <template>
@@ -26,15 +26,7 @@ const submit = () => {
         <form @submit.prevent="submit" class="au-form">
             <div class="au-field">
                 <label for="email" class="au-label">{{ t('Email address') }}</label>
-                <input
-                    id="email"
-                    v-model="form.email"
-                    type="email"
-                    autocomplete="off"
-                    autofocus
-                    class="au-input"
-                    placeholder="email@example.com"
-                />
+                <input id="email" v-model="form.email" type="email" autocomplete="off" autofocus class="au-input" placeholder="email@example.com" />
                 <p v-if="form.errors.email" role="alert" class="au-error">{{ form.errors.email }}</p>
             </div>
 

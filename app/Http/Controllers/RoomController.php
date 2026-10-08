@@ -2,6 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\GameEnded;
+use App\Events\GameStarted;
+use App\Events\PhaseChanged;
+use App\Events\PlayerExecuted;
+use App\Events\PlayerJoined;
+use App\Events\PlayerKicked;
+use App\Events\PlayerLeft;
+use App\Events\RoomCancelled;
 use App\Games\GameRegistry;
 use App\Models\Game;
 use App\Models\Room;
@@ -10,14 +18,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
-use App\Events\PlayerJoined;
-use App\Events\GameStarted;
-use App\Events\PhaseChanged;
-use App\Events\PlayerExecuted;
-use App\Events\PlayerKicked;
-use App\Events\RoomCancelled;
-use App\Events\GameEnded;
-use App\Events\PlayerLeft;
 
 class RoomController extends Controller
 {
@@ -120,7 +120,7 @@ class RoomController extends Controller
         array $configuration
     ): void {
         foreach ($schema as $key => $rules) {
-            if (!array_key_exists($key, $configuration)) {
+            if (! array_key_exists($key, $configuration)) {
                 // Booleans reasonably default to false when omitted (an
                 // unchecked toggle). Integers have no such safe absence —
                 // silently treating a missing required count as 0 is how
@@ -137,10 +137,9 @@ class RoomController extends Controller
             $value = $configuration[$key];
 
             if ($rules['type'] === 'integer') {
-                if (!is_int($value)) {
+                if (! is_int($value)) {
                     throw ValidationException::withMessages([
-                        "configuration.$key" =>
-                        "$key must be an integer.",
+                        "configuration.$key" => "$key must be an integer.",
                     ]);
                 }
 
@@ -149,8 +148,7 @@ class RoomController extends Controller
                     $value < $rules['min']
                 ) {
                     throw ValidationException::withMessages([
-                        "configuration.$key" =>
-                        "$key must be at least {$rules['min']}.",
+                        "configuration.$key" => "$key must be at least {$rules['min']}.",
                     ]);
                 }
 
@@ -159,19 +157,17 @@ class RoomController extends Controller
                     $value > $rules['max']
                 ) {
                     throw ValidationException::withMessages([
-                        "configuration.$key" =>
-                        "$key must not exceed {$rules['max']}.",
+                        "configuration.$key" => "$key must not exceed {$rules['max']}.",
                     ]);
                 }
             }
 
             if (
                 $rules['type'] === 'boolean' &&
-                !is_bool($value)
+                ! is_bool($value)
             ) {
                 throw ValidationException::withMessages([
-                    "configuration.$key" =>
-                    "$key must be true or false.",
+                    "configuration.$key" => "$key must be true or false.",
                 ]);
             }
         }
@@ -545,7 +541,7 @@ class RoomController extends Controller
                 'name' => $room->host->name,
             ],
 
-            'players' => $room->players->map(fn($player) => array_merge(
+            'players' => $room->players->map(fn ($player) => array_merge(
                 [
                     'id' => $player->id,
                     'name' => $player->name,
@@ -585,7 +581,7 @@ class RoomController extends Controller
 
             'history' => [
                 'data' => collect($history->items())
-                    ->map(fn(Room $room) => $this->roomSummary($room, $user->id))
+                    ->map(fn (Room $room) => $this->roomSummary($room, $user->id))
                     ->values(),
                 'current_page' => $history->currentPage(),
                 'last_page' => $history->lastPage(),

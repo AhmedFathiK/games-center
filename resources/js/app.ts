@@ -1,15 +1,15 @@
 import '../css/app.css';
 
 import { createInertiaApp } from '@inertiajs/vue3';
+import axios from 'axios';
+import Echo from 'laravel-echo';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
+import Pusher from 'pusher-js';
 import type { DefineComponent } from 'vue';
 import { createApp, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
-import Echo from 'laravel-echo'
-import Pusher from 'pusher-js'
-import axios from 'axios'
 
-window.Pusher = Pusher
+window.Pusher = Pusher;
 
 // Private/presence channel subscriptions (rooms.{id}, rooms.{id}.mafia,
 // rooms.{id}.host) authorize via a POST to /broadcasting/auth, which
@@ -37,11 +37,11 @@ window.Echo = new Echo({
                     socket_id: socketId,
                     channel_name: channel.name,
                 })
-                .then(response => callback(false, response.data))
-                .catch(error => callback(true, error))
+                .then((response) => callback(false, response.data))
+                .catch((error) => callback(true, error));
         },
     }),
-})
+});
 
 // Extend ImportMeta interface for Vite...
 declare module 'vite/client' {

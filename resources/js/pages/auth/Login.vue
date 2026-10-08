@@ -1,26 +1,26 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3'
-import AuthLayout from '@/layouts/AuthLayout.vue'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import AuthLayout from '@/layouts/AuthLayout.vue';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 
 defineProps<{
-    canResetPassword?: boolean
-    status?: string
-}>()
-const { t } = useI18n()
+    canResetPassword?: boolean;
+    status?: string;
+}>();
+const { t } = useI18n();
 
 const form = useForm({
     email: '',
     password: '',
     remember: false,
-})
+});
 
 function submit() {
     form.post(route('login'), {
         onFinish: () => {
-            form.reset('password')
+            form.reset('password');
         },
-    })
+    });
 }
 </script>
 
@@ -32,7 +32,7 @@ function submit() {
 
         <form @submit.prevent="submit" class="au-form">
             <div class="au-field">
-            <label for="email" class="au-label">{{ t('Email address') }}</label>
+                <label for="email" class="au-label">{{ t('Email address') }}</label>
                 <input
                     id="email"
                     v-model="form.email"
@@ -47,15 +47,8 @@ function submit() {
             </div>
 
             <div class="au-field">
-            <label for="password" class="au-label">{{ t('Password') }}</label>
-                <input
-                    id="password"
-                    v-model="form.password"
-                    type="password"
-                    autocomplete="current-password"
-                    class="au-input"
-                    required
-                />
+                <label for="password" class="au-label">{{ t('Password') }}</label>
+                <input id="password" v-model="form.password" type="password" autocomplete="current-password" class="au-input" required />
                 <p v-if="form.errors.password" role="alert" class="au-error">{{ form.errors.password }}</p>
             </div>
 

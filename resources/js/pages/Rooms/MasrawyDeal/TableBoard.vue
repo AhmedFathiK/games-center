@@ -16,209 +16,215 @@
  * corner, off the table; the discard pile's card art comes in through the
  * `discard` slot so card rendering stays in Table.vue.
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { MasrawyActivity, MasrawySeat, MasrawyTableState } from '@/types/room'
-import { useI18n } from '@/i18n'
-import MasrawyCard from './Card.vue'
+import { useI18n } from '@/i18n';
+import type { MasrawyActivity, MasrawySeat, MasrawyTableState } from '@/types/room';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import MasrawyCard from './Card.vue';
 
 const props = defineProps<{
-    table: MasrawyTableState
-    myId: number
-    isMyTurn: boolean
-    playsLeft: number
-    live: boolean
+    table: MasrawyTableState;
+    myId: number;
+    isMyTurn: boolean;
+    playsLeft: number;
+    live: boolean;
     // room.winner (a user id as a string) once the game has finished.
-    winnerId?: string | null
+    winnerId?: string | null;
     // Finished/cancelled rooms reveal every hand; plates then invite a tap.
-    revealHands?: boolean
+    revealHands?: boolean;
     // True while it's the viewer's turn and they still have to draw.
-    canDraw?: boolean
+    canDraw?: boolean;
     // Opponent ids that can be tapped as the target of the selected card, or null.
-    pickTargets?: number[] | null
-    pickedId?: number | null
-    playerName: (id: number | string) => string
+    pickTargets?: number[] | null;
+    pickedId?: number | null;
+    playerName: (id: number | string) => string;
     // One-line description of a move ("played X into Y"), shown as its caption.
-    describe?: (event: MasrawyActivity) => string
+    describe?: (event: MasrawyActivity) => string;
     // "Tap a player" prompt, drawn on the felt and never in the way of taps.
-    pickHint?: string | null
-    colorLabel: (color: string) => string
-}>()
+    pickHint?: string | null;
+    colorLabel: (color: string) => string;
+}>();
 
 const emit = defineEmits<{
-    (e: 'open-set', playerId: number, color: string): void
-    (e: 'open-player', playerId: number): void
-    (e: 'draw'): void
-    (e: 'pick-target', playerId: number): void
-}>()
+    (e: 'open-set', playerId: number, color: string): void;
+    (e: 'open-player', playerId: number): void;
+    (e: 'draw'): void;
+    (e: 'pick-target', playerId: number): void;
+}>();
 
-const { t } = useI18n()
+const { t } = useI18n();
 
-const SEAT_HUES = [200, 28, 52, 150, 280, 340, 175, 12, 235, 95]
+const SEAT_HUES = [200, 28, 52, 150, 280, 340, 175, 12, 235, 95];
 
 // Card geometry in board units (1u = 1% of the board width). 'sm' cards are
 // 108 × 165 px, so a column's scale is CARD_W·u / 108.
-const CARD_W = 4
-const SM_CARD_PX = 108
-const SM_RATIO = 165 / 108
-const CARD_OVERLAP = 0.27 // fraction of a card's height each next card is offset by
+const CARD_W = 4;
+const SM_CARD_PX = 108;
+const SM_RATIO = 165 / 108;
+const CARD_OVERLAP = 0.27; // fraction of a card's height each next card is offset by
 // Room one pod has for its columns, in u. A pod is one row that never wraps
 // upward into the neighbours: past four sets the columns overlap sideways.
-const POD_INNER = 15.6
+const POD_INNER = 15.6;
 
-const stageEl = ref<HTMLElement | null>(null)
+const stageEl = ref<HTMLElement | null>(null);
 // Board width / 100, in px. 5 is a sane first paint before we measure.
-const unit = ref(5)
-let observer: ResizeObserver | null = null
+const unit = ref(5);
+let observer: ResizeObserver | null = null;
 
 onMounted(() => {
-    const el = stageEl.value
-    if (!el) return
+    const el = stageEl.value;
+    if (!el) return;
 
     const measure = () => {
-        const width = el.getBoundingClientRect().width
-        if (width > 0) unit.value = Math.round((width / 100) * 100) / 100
-    }
+        const width = el.getBoundingClientRect().width;
+        if (width > 0) unit.value = Math.round((width / 100) * 100) / 100;
+    };
 
-    measure()
+    measure();
     if (typeof ResizeObserver !== 'undefined') {
-        observer = new ResizeObserver(measure)
-        observer.observe(el)
+        observer = new ResizeObserver(measure);
+        observer.observe(el);
     }
-})
+});
 
 onBeforeUnmount(() => {
-    observer?.disconnect()
-    disposed = true
-})
+    observer?.disconnect();
+    disposed = true;
+});
 
 // ---- Move layer: cards fly across the table ------------------------------
 // Every new entry in table.recent_activity (the same feed for all players)
 // is turned into one or more card flights between anchors on the board, and
 // played one event after another. Pure presentation: the table state is
 // already final when this runs, the flights just show where cards went.
-type Anchor = { kind: 'hand' | 'plate' | 'pod' | 'discard' | 'draw'; id?: number }
+type Anchor = { kind: 'hand' | 'plate' | 'pod' | 'discard' | 'draw'; id?: number };
 type Flight = {
-    key: number
-    cardId: string | null // null = a card back
-    activeColor?: string // which half a two-colour card shows (flipped or not)
-    from: { x: number; y: number }
-    to: { x: number; y: number }
-    delay: number
-    s0: number
-    s1: number
-}
+    key: number;
+    cardId: string | null; // null = a card back
+    activeColor?: string; // which half a two-colour card shows (flipped or not)
+    from: { x: number; y: number };
+    to: { x: number; y: number };
+    delay: number;
+    s0: number;
+    s1: number;
+};
 
-const FLIGHT_MS = 780
-const STAGGER_MS = 170
-const flights = ref<Flight[]>([])
-const caption = ref<string | null>(null)
-const captionName = ref('')
-const flashPlayerId = ref<number | null>(null)
-const queue: MasrawyActivity[] = []
-let pumping = false
-let disposed = false
-let flightKey = 0
-let seenActivityId = Math.max(0, ...props.table.recent_activity.map(event => event.id))
+const FLIGHT_MS = 780;
+const STAGGER_MS = 170;
+const flights = ref<Flight[]>([]);
+const caption = ref<string | null>(null);
+const captionName = ref('');
+const flashPlayerId = ref<number | null>(null);
+const queue: MasrawyActivity[] = [];
+let pumping = false;
+let disposed = false;
+let flightKey = 0;
+let seenActivityId = Math.max(0, ...props.table.recent_activity.map((event) => event.id));
 
-const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
-const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function center(rect: DOMRect) {
-    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
 function pointOf(anchor: Anchor): { x: number; y: number } | null {
-    const root = stageEl.value
-    if (!root) return null
+    const root = stageEl.value;
+    if (!root) return null;
 
     if (anchor.kind === 'draw') {
-        const el = root.querySelector('.tb-pile--draw .tb-card-back--1')
-        return el ? center(el.getBoundingClientRect()) : null
+        const el = root.querySelector('.tb-pile--draw .tb-card-back--1');
+        return el ? center(el.getBoundingClientRect()) : null;
     }
     if (anchor.kind === 'discard') {
-        const el = root.querySelector('.tb-pile--discard .tb-discard, .tb-pile--discard .tb-pile-empty')
-        return el ? center(el.getBoundingClientRect()) : null
+        const el = root.querySelector('.tb-pile--discard .tb-discard, .tb-pile--discard .tb-pile-empty');
+        return el ? center(el.getBoundingClientRect()) : null;
     }
 
-    const plate = root.querySelector(`[data-seat="${anchor.id}"] .tb-plate`)
-    const plateRect = plate?.getBoundingClientRect()
+    const plate = root.querySelector(`[data-seat="${anchor.id}"] .tb-plate`);
+    const plateRect = plate?.getBoundingClientRect();
 
     if (anchor.kind === 'pod') {
-        const pod = root.querySelector(`[data-pod="${anchor.id}"]`)?.getBoundingClientRect()
-        if (pod && pod.width > 0) return center(pod)
-        return plateRect ? center(plateRect) : null
+        const pod = root.querySelector(`[data-pod="${anchor.id}"]`)?.getBoundingClientRect();
+        if (pod && pod.width > 0) return center(pod);
+        return plateRect ? center(plateRect) : null;
     }
-    if (!plateRect) return null
-    if (anchor.kind === 'plate') return center(plateRect)
+    if (!plateRect) return null;
+    if (anchor.kind === 'plate') return center(plateRect);
 
     // 'hand': the viewer's own cards are the fan; everyone else's are just
     // off the table edge, behind their plate.
     if (anchor.id === props.myId) {
-        const fan = document.querySelector('.md-fan')?.getBoundingClientRect()
-        if (fan) return { x: fan.left + fan.width / 2, y: fan.top + Math.min(fan.height * 0.4, 60) }
+        const fan = document.querySelector('.md-fan')?.getBoundingClientRect();
+        if (fan) return { x: fan.left + fan.width / 2, y: fan.top + Math.min(fan.height * 0.4, 60) };
     }
-    const here = center(plateRect)
-    const stage = root.getBoundingClientRect()
-    const outward = here.y < stage.top + stage.height / 2 ? -1 : 1
-    return { x: here.x, y: here.y + outward * plateRect.height * 1.4 }
+    const here = center(plateRect);
+    const stage = root.getBoundingClientRect();
+    const outward = here.y < stage.top + stage.height / 2 ? -1 : 1;
+    return { x: here.x, y: here.y + outward * plateRect.height * 1.4 };
 }
 
-type Leg = { cardId: string | null; from: Anchor; to: Anchor }
+type Leg = { cardId: string | null; from: Anchor; to: Anchor };
 
 // What an event looks like on the table. Cards that are in play are shown
 // face up; the draw is shown as backs because other hands stay private.
 function legsFor(event: MasrawyActivity): Leg[] {
-    const me = event.player_id
-    const target = event.target_id
-    const card = event.card_id
-    const hand: Anchor = { kind: 'hand', id: me }
-    const discard: Anchor = { kind: 'discard' }
+    const me = event.player_id;
+    const target = event.target_id;
+    const card = event.card_id;
+    const hand: Anchor = { kind: 'hand', id: me };
+    const discard: Anchor = { kind: 'discard' };
 
     switch (event.type) {
         case 'draw':
-            return [0, 1].map(() => ({ cardId: null, from: { kind: 'draw' }, to: { kind: 'hand', id: me } }))
+            return [0, 1].map(() => ({ cardId: null, from: { kind: 'draw' }, to: { kind: 'hand', id: me } }));
         case 'play_money':
         case 'bank_card':
-            return card ? [{ cardId: card, from: hand, to: { kind: 'plate', id: me } }] : []
+            return card ? [{ cardId: card, from: hand, to: { kind: 'plate', id: me } }] : [];
         case 'play_property':
         case 'play_shisha':
         case 'play_wil3a':
         case 'move_wildcard':
-            return card ? [{ cardId: card, from: hand, to: { kind: 'pod', id: me } }] : []
+            return card ? [{ cardId: card, from: hand, to: { kind: 'pod', id: me } }] : [];
         case 'discard':
-            return card ? [{ cardId: card, from: hand, to: discard }] : []
+            return card ? [{ cardId: card, from: hand, to: discard }] : [];
         case 'play_pass_go':
             return [
                 ...(card ? [{ cardId: card, from: hand, to: discard }] : []),
                 ...[0, 1].map(() => ({ cardId: null, from: { kind: 'draw' } as Anchor, to: hand })),
-            ]
+            ];
         case 'play_sly_deal':
             return [
                 ...(card ? [{ cardId: card, from: hand, to: discard }] : []),
-                ...(event.target_card_id && target !== null ? [{ cardId: event.target_card_id, from: { kind: 'pod', id: target } as Anchor, to: { kind: 'pod', id: me } as Anchor }] : []),
-            ]
+                ...(event.target_card_id && target !== null
+                    ? [{ cardId: event.target_card_id, from: { kind: 'pod', id: target } as Anchor, to: { kind: 'pod', id: me } as Anchor }]
+                    : []),
+            ];
         case 'play_forced_deal':
             return [
                 ...(card ? [{ cardId: card, from: hand, to: discard }] : []),
-                ...(event.target_card_id && target !== null ? [{ cardId: event.target_card_id, from: { kind: 'pod', id: target } as Anchor, to: { kind: 'pod', id: me } as Anchor }] : []),
-                ...(event.give_card_id && target !== null ? [{ cardId: event.give_card_id, from: { kind: 'pod', id: me } as Anchor, to: { kind: 'pod', id: target } as Anchor }] : []),
-            ]
+                ...(event.target_card_id && target !== null
+                    ? [{ cardId: event.target_card_id, from: { kind: 'pod', id: target } as Anchor, to: { kind: 'pod', id: me } as Anchor }]
+                    : []),
+                ...(event.give_card_id && target !== null
+                    ? [{ cardId: event.give_card_id, from: { kind: 'pod', id: me } as Anchor, to: { kind: 'pod', id: target } as Anchor }]
+                    : []),
+            ];
         case 'play_deal_breaker':
             return [
                 ...(card ? [{ cardId: card, from: hand, to: discard }] : []),
                 ...(target !== null ? [{ cardId: null, from: { kind: 'pod', id: target } as Anchor, to: { kind: 'pod', id: me } as Anchor }] : []),
-            ]
+            ];
         case 'pay':
             return target !== null
-                ? event.card_ids.map(id => ({ cardId: id, from: { kind: 'plate', id: me } as Anchor, to: { kind: 'plate', id: target } as Anchor }))
-                : []
+                ? event.card_ids.map((id) => ({ cardId: id, from: { kind: 'plate', id: me } as Anchor, to: { kind: 'plate', id: target } as Anchor }))
+                : [];
         case 'play_debt_collector':
         case 'play_birthday':
         case 'play_rent':
         case 'respond_no':
-            return card ? [{ cardId: card, from: hand, to: discard }] : []
+            return card ? [{ cardId: card, from: hand, to: discard }] : [];
         default:
-            return []
+            return [];
     }
 }
 
@@ -226,77 +232,86 @@ function legsFor(event: MasrawyActivity): Leg[] {
 // rotated is drawn rotated in flight too: the colour chosen in the event for
 // the card that was played, otherwise the set it now sits in on the table.
 function colorFor(event: MasrawyActivity, cardId: string | null): string | undefined {
-    if (!cardId) return undefined
-    const type = props.table.catalog[cardId]?.type
-    if (type !== 'wildcard' && type !== 'rent') return undefined
-    if (cardId === event.card_id && event.color) return event.color
+    if (!cardId) return undefined;
+    const type = props.table.catalog[cardId]?.type;
+    if (type !== 'wildcard' && type !== 'rent') return undefined;
+    if (cardId === event.card_id && event.color) return event.color;
 
     for (const seat of props.table.players) {
         for (const [color, group] of Object.entries(seat.properties)) {
-            if (group.cards.includes(cardId)) return color
+            if (group.cards.includes(cardId)) return color;
         }
     }
-    return event.color ?? undefined
+    return event.color ?? undefined;
 }
 
 // Card width at rest on the table (px); flights end at about that size.
-const restScale = () => (CARD_W * unit.value) / SM_CARD_PX
+const restScale = () => (CARD_W * unit.value) / SM_CARD_PX;
 
 async function playEvent(event: MasrawyActivity) {
-    await nextTick()
-    const legs = legsFor(event)
-    const made: Flight[] = []
+    await nextTick();
+    const legs = legsFor(event);
+    const made: Flight[] = [];
 
     legs.forEach((leg, index) => {
-        const from = pointOf(leg.from)
-        const to = pointOf(leg.to)
-        if (!from || !to) return
-        const s1 = Math.max(0.2, restScale())
-        made.push({ key: ++flightKey, cardId: leg.cardId, activeColor: colorFor(event, leg.cardId), from, to, delay: index * STAGGER_MS, s0: s1 * 1.4, s1 })
-    })
+        const from = pointOf(leg.from);
+        const to = pointOf(leg.to);
+        if (!from || !to) return;
+        const s1 = Math.max(0.2, restScale());
+        made.push({
+            key: ++flightKey,
+            cardId: leg.cardId,
+            activeColor: colorFor(event, leg.cardId),
+            from,
+            to,
+            delay: index * STAGGER_MS,
+            s0: s1 * 1.4,
+            s1,
+        });
+    });
 
     if (props.describe) {
-        captionName.value = String(props.playerName(event.player_id))
-        caption.value = props.describe(event)
+        captionName.value = String(props.playerName(event.player_id));
+        caption.value = props.describe(event);
     }
-    flashPlayerId.value = event.player_id
+    flashPlayerId.value = event.player_id;
 
-    const total = made.length ? FLIGHT_MS + (made.length - 1) * STAGGER_MS : 0
-    if (made.length) flights.value = [...flights.value, ...made]
-    await sleep(Math.max(total, 600) + 250)
+    const total = made.length ? FLIGHT_MS + (made.length - 1) * STAGGER_MS : 0;
+    if (made.length) flights.value = [...flights.value, ...made];
+    await sleep(Math.max(total, 600) + 250);
 
-    const gone = new Set(made.map(flight => flight.key))
-    flights.value = flights.value.filter(flight => !gone.has(flight.key))
+    const gone = new Set(made.map((flight) => flight.key));
+    flights.value = flights.value.filter((flight) => !gone.has(flight.key));
     if (queue.length === 0) {
-        caption.value = null
-        flashPlayerId.value = null
+        caption.value = null;
+        flashPlayerId.value = null;
     }
 }
 
 async function pump() {
-    if (pumping) return
-    pumping = true
+    if (pumping) return;
+    pumping = true;
     while (queue.length && !disposed) {
-        const event = queue.shift()
-        if (event) await playEvent(event)
+        const event = queue.shift();
+        if (event) await playEvent(event);
     }
-    pumping = false
+    pumping = false;
 }
 
 watch(
-    () => props.table.recent_activity.map(event => event.id).join(','),
+    () => props.table.recent_activity.map((event) => event.id).join(','),
     () => {
-        const fresh = props.table.recent_activity.filter(event => event.id > seenActivityId)
-        if (!fresh.length) return
-        seenActivityId = Math.max(seenActivityId, ...fresh.map(event => event.id))
-        if (reducedMotion() || (typeof document !== 'undefined' && document.hidden)) return
+        const fresh = props.table.recent_activity.filter((event) => event.id > seenActivityId);
+        if (!fresh.length) return;
+        seenActivityId = Math.max(seenActivityId, ...fresh.map((event) => event.id));
+        if (reducedMotion() || (typeof document !== 'undefined' && document.hidden)) return;
 
-        queue.push(...fresh)
+        queue.push(...fresh);
         // Fell behind (a long background tab, a flurry of plays): show only the latest few.
-        if (queue.length > 5) queue.splice(0, queue.length - 5)
-        void pump()
+        if (queue.length > 5) queue.splice(0, queue.length - 5);
+        void pump();
     },
-)
+);
 
 function flightStyle(flight: Flight): Record<string, string | number> {
     return {
@@ -309,46 +324,46 @@ function flightStyle(flight: Flight): Record<string, string | number> {
         '--peak': Math.max(flight.s1 * 2.1, 0.5),
         animationDelay: `${flight.delay}ms`,
         animationDuration: `${FLIGHT_MS}ms`,
-    }
+    };
 }
 
 function bankTotal(seat: MasrawySeat): number {
-    return seat.bank.reduce((total, cardId) => total + (props.table.catalog[cardId]?.value ?? 0), 0)
+    return seat.bank.reduce((total, cardId) => total + (props.table.catalog[cardId]?.value ?? 0), 0);
 }
 
 function isCompleteSet(seat: MasrawySeat, color: string): boolean {
-    const group = seat.properties[color]
-    if (!group) return false
+    const group = seat.properties[color];
+    if (!group) return false;
 
-    const needed = props.table.set_size[color] ?? Number.POSITIVE_INFINITY
+    const needed = props.table.set_size[color] ?? Number.POSITIVE_INFINITY;
     // An all-EL-BOB group can't complete a set on its own (official rule).
-    const hasRealCard = group.cards.some(cardId => !props.table.catalog[cardId]?.any_color)
+    const hasRealCard = group.cards.some((cardId) => !props.table.catalog[cardId]?.any_color);
 
-    return group.cards.length >= needed && hasRealCard
+    return group.cards.length >= needed && hasRealCard;
 }
 
-type Side = 'top' | 'bottom'
+type Side = 'top' | 'bottom';
 // y / podY are CSS lengths from the plane's top: the rows hug the plane's two
 // edges, so a taller table just gains felt between them.
-type Slot = { side: Side; x: number; y: string; podX: number; podY: string }
+type Slot = { side: Side; x: number; y: string; podX: number; podY: string };
 
 // A long table: two rows of five seats, the viewer at the bottom centre. Plates
 // stand outside the rim (above the top row, below the bottom row); each
 // player's sets lie on the felt beside their plate. Coordinates are percentages
 // of the plane (89u wide, ~24u tall on screen); pods anchor at their bottom edge.
-const COLS = [11.5, 30.7, 50, 69.3, 88.5]
-const TOP_POD_Y = 'calc(var(--u) * 14.4)'
-const BOTTOM_POD_Y = 'calc(100% - var(--u) * 0.3)'
-const ABOVE = '0px'
-const BELOW = 'calc(100% + var(--u) * 7.5)'
+const COLS = [11.5, 30.7, 50, 69.3, 88.5];
+const TOP_POD_Y = 'calc(var(--u) * 14.4)';
+const BOTTOM_POD_Y = 'calc(100% - var(--u) * 0.3)';
+const ABOVE = '0px';
+const BELOW = 'calc(100% + var(--u) * 7.5)';
 
-const top = (i: number): Slot => ({ side: 'top', x: COLS[i], y: ABOVE, podX: COLS[i], podY: TOP_POD_Y })
-const bottom = (i: number): Slot => ({ side: 'bottom', x: COLS[i], y: BELOW, podX: COLS[i], podY: BOTTOM_POD_Y })
+const top = (i: number): Slot => ({ side: 'top', x: COLS[i], y: ABOVE, podX: COLS[i], podY: TOP_POD_Y });
+const bottom = (i: number): Slot => ({ side: 'bottom', x: COLS[i], y: BELOW, podX: COLS[i], podY: BOTTOM_POD_Y });
 
 // The nine slots for the other players, clockwise from the viewer's left:
 // along the bottom row to the left, across the top row, back down the right.
-const SLOTS: Slot[] = [bottom(1), bottom(0), top(0), top(1), top(2), top(3), top(4), bottom(4), bottom(3)]
-const ME_SLOT: Slot = bottom(2)
+const SLOTS: Slot[] = [bottom(1), bottom(0), top(0), top(1), top(2), top(3), top(4), bottom(4), bottom(3)];
+const ME_SLOT: Slot = bottom(2);
 
 // Which slots a table of N players uses (index = other players). Mirror-
 // symmetric, so a small table still looks seated, never lopsided.
@@ -362,13 +377,16 @@ const SUBSETS: Record<number, number[]> = {
     7: [0, 2, 3, 4, 5, 6, 8],
     8: [0, 1, 2, 3, 5, 6, 7, 8],
     9: [0, 1, 2, 3, 4, 5, 6, 7, 8],
-}
+};
 
 const seats = computed(() => {
-    const players = props.table.players
-    const count = players.length
-    const myIndex = Math.max(0, players.findIndex(seat => seat.id === props.myId))
-    const subset = SUBSETS[Math.min(9, Math.max(1, count - 1))] ?? SUBSETS[9]
+    const players = props.table.players;
+    const count = players.length;
+    const myIndex = Math.max(
+        0,
+        players.findIndex((seat) => seat.id === props.myId),
+    );
+    const subset = SUBSETS[Math.min(9, Math.max(1, count - 1))] ?? SUBSETS[9];
 
     return players.map((seat, index) => {
         const sets = Object.entries(seat.properties).map(([color, group]) => ({
@@ -377,9 +395,9 @@ const seats = computed(() => {
             complete: isCompleteSet(seat, color),
             house: Boolean(group.house),
             hotel: Boolean(group.hotel),
-        }))
-        const offset = (index - myIndex + count) % count
-        const slot = offset === 0 ? ME_SLOT : SLOTS[subset[offset - 1] ?? 4]
+        }));
+        const offset = (index - myIndex + count) % count;
+        const slot = offset === 0 ? ME_SLOT : SLOTS[subset[offset - 1] ?? 4];
 
         return {
             seat,
@@ -393,9 +411,9 @@ const seats = computed(() => {
             sets,
             // Extra space between columns, in u (negative = overlap).
             gap: sets.length > 1 ? Math.min(0.3, (POD_INNER - CARD_W) / (sets.length - 1) - CARD_W) : 0,
-        }
-    })
-})
+        };
+    });
+});
 
 const stageStyle = computed(() => ({
     '--u': `${unit.value}px`,
@@ -405,25 +423,25 @@ const stageStyle = computed(() => ({
     '--cs': (CARD_W * unit.value) / SM_CARD_PX,
     // Discard art is laid out at 114px wide; scale it to the pile's 6.6u.
     '--ds': (6.6 * unit.value) / 114,
-}))
+}));
 
 function columnHeight(count: number): string {
-    return `calc(var(--u) * (var(--ch) + ${Math.max(0, count - 1)} * var(--co)))`
+    return `calc(var(--u) * (var(--ch) + ${Math.max(0, count - 1)} * var(--co)))`;
 }
 
 function isPickable(playerId: number): boolean {
-    return props.pickTargets?.includes(playerId) ?? false
+    return props.pickTargets?.includes(playerId) ?? false;
 }
 
 // With a targeting card selected a tap on a plate chooses that player;
 // otherwise it opens their details.
 function openPlayer(playerId: number) {
-    if (isPickable(playerId)) emit('pick-target', playerId)
-    else emit('open-player', playerId)
+    if (isPickable(playerId)) emit('pick-target', playerId);
+    else emit('open-player', playerId);
 }
 
 function openSet(playerId: number, color: string) {
-    emit('open-set', playerId, color)
+    emit('open-set', playerId, color);
 }
 
 function seatLabel(entry: (typeof seats.value)[number]): string {
@@ -431,7 +449,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
         count: entry.seat.hand_count,
         bank: entry.bank,
         groups: entry.sets.length,
-    })
+    });
 }
 </script>
 
@@ -506,7 +524,17 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
                 :key="entry.seat.id"
                 class="tb-seat"
                 :data-seat="entry.seat.id"
-                :class="[`tb-seat--${entry.side}`, { 'tb-seat--flash': flashPlayerId === entry.seat.id, 'tb-seat--me': entry.isMe, 'tb-seat--turn': entry.isTurn, 'tb-seat--winner': entry.isWinner, 'tb-seat--pick': isPickable(entry.seat.id), 'tb-seat--picked': pickedId === entry.seat.id }]"
+                :class="[
+                    `tb-seat--${entry.side}`,
+                    {
+                        'tb-seat--flash': flashPlayerId === entry.seat.id,
+                        'tb-seat--me': entry.isMe,
+                        'tb-seat--turn': entry.isTurn,
+                        'tb-seat--winner': entry.isWinner,
+                        'tb-seat--pick': isPickable(entry.seat.id),
+                        'tb-seat--picked': pickedId === entry.seat.id,
+                    },
+                ]"
                 :style="{ left: `${entry.x}%`, top: entry.y, '--seat-hue': entry.hue }"
             >
                 <!-- The badges live beside the button, not in it: a <button> clips what pokes out of its box. -->
@@ -537,10 +565,16 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 
         <!-- Move captions + flying cards. Teleported: the stage's perspective would turn position:fixed into position:absolute. -->
         <Teleport to="body">
-            <div v-if="caption" class="tb-caption" role="status" aria-live="polite"><bdi>{{ captionName }}</bdi> {{ caption }}</div>
+            <div v-if="caption" class="tb-caption" role="status" aria-live="polite">
+                <bdi>{{ captionName }}</bdi> {{ caption }}
+            </div>
             <div class="tb-flights" aria-hidden="true">
                 <div v-for="flight in flights" :key="flight.key" class="tb-fly" :style="flightStyle(flight)">
-                    <MasrawyCard v-if="flight.cardId && table.catalog[flight.cardId]" :entry="table.catalog[flight.cardId]" :active-color="flight.activeColor" />
+                    <MasrawyCard
+                        v-if="flight.cardId && table.catalog[flight.cardId]"
+                        :entry="table.catalog[flight.cardId]"
+                        :active-color="flight.activeColor"
+                    />
                     <span v-else class="tb-fly-back"></span>
                 </div>
             </div>
@@ -708,7 +742,9 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 }
 
 .tb-col--complete {
-    box-shadow: 0 0 0 max(1.5px, calc(var(--u) * 0.3)) #fde047, 0 0 calc(var(--u) * 1.2) rgb(253 224 71 / 55%);
+    box-shadow:
+        0 0 0 max(1.5px, calc(var(--u) * 0.3)) #fde047,
+        0 0 calc(var(--u) * 1.2) rgb(253 224 71 / 55%);
 }
 
 .tb-col-mark {
@@ -762,13 +798,17 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 
 .tb-seat--turn .tb-plate {
     border-color: var(--rc-primary, #f59e0b);
-    box-shadow: 0 0 0 calc(var(--u) * 0.4) rgb(245 158 11 / 45%), 0 calc(var(--u) * 0.6) calc(var(--u) * 1.8) rgb(0 0 0 / 55%);
+    box-shadow:
+        0 0 0 calc(var(--u) * 0.4) rgb(245 158 11 / 45%),
+        0 calc(var(--u) * 0.6) calc(var(--u) * 1.8) rgb(0 0 0 / 55%);
     animation: tb-turn-pulse 1.8s ease-in-out infinite;
 }
 
 @keyframes tb-turn-pulse {
     50% {
-        box-shadow: 0 0 0 calc(var(--u) * 0.9) rgb(245 158 11 / 15%), 0 calc(var(--u) * 0.6) calc(var(--u) * 1.8) rgb(0 0 0 / 55%);
+        box-shadow:
+            0 0 0 calc(var(--u) * 0.9) rgb(245 158 11 / 15%),
+            0 calc(var(--u) * 0.6) calc(var(--u) * 1.8) rgb(0 0 0 / 55%);
     }
 }
 
@@ -791,7 +831,9 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 
 .tb-seat--winner .tb-plate {
     border-color: #fde047;
-    box-shadow: 0 0 0 calc(var(--u) * 0.4) rgb(253 224 71 / 45%), 0 calc(var(--u) * 0.6) calc(var(--u) * 1.8) rgb(0 0 0 / 55%);
+    box-shadow:
+        0 0 0 calc(var(--u) * 0.4) rgb(253 224 71 / 45%),
+        0 calc(var(--u) * 0.6) calc(var(--u) * 1.8) rgb(0 0 0 / 55%);
 }
 
 .tb-id {
@@ -885,7 +927,9 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 
 @keyframes tb-draw-ready {
     50% {
-        box-shadow: 0 0 0 calc(var(--u) * 0.8) rgb(245 158 11 / 55%), 0 2px 4px rgb(0 0 0 / 40%);
+        box-shadow:
+            0 0 0 calc(var(--u) * 0.8) rgb(245 158 11 / 55%),
+            0 2px 4px rgb(0 0 0 / 40%);
     }
 }
 
@@ -903,7 +947,9 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 
 @keyframes tb-pick {
     50% {
-        box-shadow: 0 0 0 calc(var(--u) * 0.9) rgb(253 224 71 / 40%), 0 calc(var(--u) * 0.6) calc(var(--u) * 1.8) rgb(0 0 0 / 55%);
+        box-shadow:
+            0 0 0 calc(var(--u) * 0.9) rgb(253 224 71 / 40%),
+            0 calc(var(--u) * 0.6) calc(var(--u) * 1.8) rgb(0 0 0 / 55%);
     }
 }
 
@@ -1023,7 +1069,9 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 }
 
 .tb-seat--flash .tb-plate {
-    box-shadow: 0 0 0 calc(var(--u) * 0.5) rgb(255 255 255 / 55%), 0 calc(var(--u) * 0.6) calc(var(--u) * 1.8) rgb(0 0 0 / 55%);
+    box-shadow:
+        0 0 0 calc(var(--u) * 0.5) rgb(255 255 255 / 55%),
+        0 calc(var(--u) * 0.6) calc(var(--u) * 1.8) rgb(0 0 0 / 55%);
 }
 
 .tb-fly {

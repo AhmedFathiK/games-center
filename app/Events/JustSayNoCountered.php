@@ -18,7 +18,7 @@ class JustSayNoCountered implements ShouldBroadcastNow
 
     public function broadcastOn(): array
     {
-        return [new PrivateChannel('App.Models.User.' . $this->recipientId)];
+        return [new PrivateChannel('App.Models.User.'.$this->recipientId)];
     }
 
     public function broadcastAs(): string

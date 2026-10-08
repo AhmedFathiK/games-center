@@ -110,7 +110,7 @@ class MafiaGame extends AbstractGame
             'phase' => 'night',
             'round' => 1,
             'roles' => $roles,
-            'alive' => collect($roles)->keys()->mapWithKeys(fn($id) => [$id => true])->all(),
+            'alive' => collect($roles)->keys()->mapWithKeys(fn ($id) => [$id => true])->all(),
             'winner' => null,
             'night_actions' => $this->freshNightActions(),
             'day_votes' => $this->freshDayVotes(),
@@ -233,10 +233,10 @@ class MafiaGame extends AbstractGame
         $mafia = $state['night_actions']['mafia'] ?? ['selections' => [], 'confirmed' => []];
         $doctor = $state['night_actions']['doctor'] ?? ['selections' => [], 'confirmed' => []];
 
-        $mafiaIds = collect($state['roles'])->filter(fn($role) => $role === 'mafia')->keys();
+        $mafiaIds = collect($state['roles'])->filter(fn ($role) => $role === 'mafia')->keys();
 
         $allMafiaConfirmed = $mafiaIds->isNotEmpty()
-            && $mafiaIds->every(fn($id) => $mafia['confirmed'][$id] ?? false);
+            && $mafiaIds->every(fn ($id) => $mafia['confirmed'][$id] ?? false);
 
         $distinctTargets = collect($mafia['selections'])
             ->only($mafiaIds->all())
@@ -245,7 +245,7 @@ class MafiaGame extends AbstractGame
         if ($allMafiaConfirmed && $distinctTargets->count() === 1) {
             $victimId = $distinctTargets->first();
 
-            $doctorIds = collect($state['roles'])->filter(fn($role) => $role === 'doctor')->keys();
+            $doctorIds = collect($state['roles'])->filter(fn ($role) => $role === 'doctor')->keys();
             $savedId = null;
 
             foreach ($doctorIds as $doctorId) {
@@ -494,12 +494,12 @@ class MafiaGame extends AbstractGame
 
         if ($role === 'mafia') {
             $teammateIds = collect($state['roles'])
-                ->filter(fn($r, $id) => $r === 'mafia' && (int) $id !== (int) $viewer->id)
+                ->filter(fn ($r, $id) => $r === 'mafia' && (int) $id !== (int) $viewer->id)
                 ->keys();
 
             $mafiaTeam = $room->players
                 ->whereIn('id', $teammateIds)
-                ->map(fn($player) => [
+                ->map(fn ($player) => [
                     'id' => $player->id,
                     'name' => $player->name,
                 ])
@@ -537,12 +537,12 @@ class MafiaGame extends AbstractGame
         }
 
         $aliveRoles = collect($state['alive'])
-            ->filter(fn($alive) => $alive)
+            ->filter(fn ($alive) => $alive)
             ->keys()
-            ->map(fn($id) => $state['roles'][$id] ?? null);
+            ->map(fn ($id) => $state['roles'][$id] ?? null);
 
-        $mafiaAlive = $aliveRoles->filter(fn($role) => $role === 'mafia')->count();
-        $townAlive = $aliveRoles->filter(fn($role) => $role !== 'mafia')->count();
+        $mafiaAlive = $aliveRoles->filter(fn ($role) => $role === 'mafia')->count();
+        $townAlive = $aliveRoles->filter(fn ($role) => $role !== 'mafia')->count();
 
         if ($mafiaAlive === 0) {
             $state['winner'] = 'town';

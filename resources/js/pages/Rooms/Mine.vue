@@ -1,57 +1,57 @@
 <script setup lang="ts">
-import { router } from '@inertiajs/vue3'
-import AppLayout from '@/layouts/AppLayout.vue'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import AppLayout from '@/layouts/AppLayout.vue';
+import { router } from '@inertiajs/vue3';
 
-defineOptions({ layout: AppLayout })
-const { t, gameName } = useI18n()
+defineOptions({ layout: AppLayout });
+const { t, gameName } = useI18n();
 
 interface RoomSummary {
-    id: number
-    code: string
-    status: string
+    id: number;
+    code: string;
+    status: string;
     game: {
-        name: string
-        slug: string
-    }
+        name: string;
+        slug: string;
+    };
     host: {
-        id: number
-        name: string
-    }
-    is_host: boolean
-    updated_at: string | null
+        id: number;
+        name: string;
+    };
+    is_host: boolean;
+    updated_at: string | null;
 }
 
 interface HistoryPage {
-    data: RoomSummary[]
-    current_page: number
-    last_page: number
-    prev_page_url: string | null
-    next_page_url: string | null
-    total: number
+    data: RoomSummary[];
+    current_page: number;
+    last_page: number;
+    prev_page_url: string | null;
+    next_page_url: string | null;
+    total: number;
 }
 
 const props = defineProps<{
-    active_room: RoomSummary | null
-    history: HistoryPage
-}>()
+    active_room: RoomSummary | null;
+    history: HistoryPage;
+}>();
 
 function goToRoom(code: string) {
-    router.get(route('rooms.show', code))
+    router.get(route('rooms.show', code));
 }
 
 function goToPage(url: string | null) {
-    if (!url) return
-    router.get(url, {}, { preserveScroll: true })
+    if (!url) return;
+    router.get(url, {}, { preserveScroll: true });
 }
 
 function formatDate(iso: string | null) {
-    if (!iso) return '—'
+    if (!iso) return '—';
     return new Date(iso).toLocaleDateString(undefined, {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
-    })
+    });
 }
 
 // Backend statuses are underscore-separated (e.g. "in_progress"). CSS
@@ -59,7 +59,7 @@ function formatDate(iso: string | null) {
 // its own, so the space swap happens here — same fix as Rooms/Show.vue's
 // `formattedStatus`, applied to both badges rendered on this page.
 function formatStatus(status: string) {
-    return t(status.replace(/_/g, ' '))
+    return t(status.replace(/_/g, ' '));
 }
 </script>
 
@@ -105,12 +105,7 @@ function formatStatus(status: string) {
                 </div>
 
                 <div v-if="props.history.data.length > 0" class="mr-history-list">
-                    <div
-                        v-for="room in props.history.data"
-                        :key="room.id"
-                        class="mr-history-row"
-                        @click="goToRoom(room.code)"
-                    >
+                    <div v-for="room in props.history.data" :key="room.id" class="mr-history-row" @click="goToRoom(room.code)">
                         <div class="mr-history-info">
                             <p class="mr-history-game">{{ gameName(room.game.slug, room.game.name) }}</p>
                             <p class="mr-mono mr-history-meta">
@@ -128,25 +123,13 @@ function formatStatus(status: string) {
                 <p v-else class="mr-empty">{{ t('No finished rooms yet.') }}</p>
 
                 <div v-if="props.history.last_page > 1" class="mr-pagination">
-                    <button
-                        type="button"
-                        class="mr-page-btn"
-                        :disabled="!props.history.prev_page_url"
-                        @click="goToPage(props.history.prev_page_url)"
-                    >
+                    <button type="button" class="mr-page-btn" :disabled="!props.history.prev_page_url" @click="goToPage(props.history.prev_page_url)">
                         ← Prev
                     </button>
 
-                    <span class="mr-mono mr-page-indicator">
-                        Page {{ props.history.current_page }} of {{ props.history.last_page }}
-                    </span>
+                    <span class="mr-mono mr-page-indicator"> Page {{ props.history.current_page }} of {{ props.history.last_page }} </span>
 
-                    <button
-                        type="button"
-                        class="mr-page-btn"
-                        :disabled="!props.history.next_page_url"
-                        @click="goToPage(props.history.next_page_url)"
-                    >
+                    <button type="button" class="mr-page-btn" :disabled="!props.history.next_page_url" @click="goToPage(props.history.next_page_url)">
                         Next →
                     </button>
                 </div>
@@ -156,7 +139,6 @@ function formatStatus(status: string) {
 </template>
 
 <style scoped>
-
 .mr-page {
     --mr-ink: #0f1613;
     --mr-surface: #16201c;

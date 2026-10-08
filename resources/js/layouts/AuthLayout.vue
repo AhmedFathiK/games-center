@@ -1,22 +1,20 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3'
-import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
-import { useI18n } from '@/i18n'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
+import { useI18n } from '@/i18n';
+import { Link } from '@inertiajs/vue3';
 
 const props = defineProps<{
-    title?: string
-    description?: string
-}>()
-const { t } = useI18n()
+    title?: string;
+    description?: string;
+}>();
+const { t } = useI18n();
 </script>
 
 <template>
     <div class="au-page">
         <div class="au-card">
             <div class="au-language"><LanguageSwitcher /></div>
-            <Link :href="route('home')" class="au-brand">
-                Games Center
-            </Link>
+            <Link :href="route('home')" class="au-brand"> Games Center </Link>
 
             <div class="au-heading">
                 <h1 v-if="props.title" class="au-title">{{ t(props.title) }}</h1>
@@ -29,7 +27,6 @@ const { t } = useI18n()
 </template>
 
 <style scoped>
-
 .au-page {
     --au-ink: #0f1613;
     --au-surface: #16201c;

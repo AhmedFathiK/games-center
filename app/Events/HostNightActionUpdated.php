@@ -19,7 +19,7 @@ class HostNightActionUpdated implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('rooms.' . $this->room->id . '.host'),
+            new PrivateChannel('rooms.'.$this->room->id.'.host'),
         ];
     }
 

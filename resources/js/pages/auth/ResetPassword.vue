@@ -1,30 +1,30 @@
 <script setup lang="ts">
-import { Head, useForm } from '@inertiajs/vue3'
-import AuthLayout from '@/layouts/AuthLayout.vue'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import AuthLayout from '@/layouts/AuthLayout.vue';
+import { Head, useForm } from '@inertiajs/vue3';
 
 interface Props {
-    token: string
-    email: string
+    token: string;
+    email: string;
 }
 
-const props = defineProps<Props>()
+const props = defineProps<Props>();
 
 const form = useForm({
     token: props.token,
     email: props.email,
     password: '',
     password_confirmation: '',
-})
-const { t } = useI18n()
+});
+const { t } = useI18n();
 
 const submit = () => {
     form.post(route('password.store'), {
         onFinish: () => {
-            form.reset('password', 'password_confirmation')
+            form.reset('password', 'password_confirmation');
         },
-    })
-}
+    });
+};
 </script>
 
 <template>

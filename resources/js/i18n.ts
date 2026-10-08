@@ -1,4 +1,4 @@
-import { usePage } from '@inertiajs/vue3'
+import { usePage } from '@inertiajs/vue3';
 
 const ar: Record<string, string> = {
     Games: 'الألعاب',
@@ -15,7 +15,7 @@ const ar: Record<string, string> = {
     'Want to host?': 'هل تريد استضافة لعبة؟',
     'Create a New Room': 'أنشئ غرفة جديدة',
     'No games are available right now.': 'لا توجد ألعاب متاحة حاليًا.',
-    'players': 'لاعبين',
+    players: 'لاعبين',
     'Welcome back! Please enter your details.': 'مرحبًا بعودتك! أدخل بياناتك للمتابعة.',
     'Email address': 'البريد الإلكتروني',
     Password: 'كلمة المرور',
@@ -24,7 +24,7 @@ const ar: Record<string, string> = {
     'Logging in…': 'جارٍ تسجيل الدخول…',
     "Don't have an account?": 'ليس لديك حساب؟',
     'Sign up': 'إنشاء حساب',
-    'Language': 'اللغة',
+    Language: 'اللغة',
     English: 'الإنجليزية',
     Arabic: 'العربية',
     'Host plays too': 'المضيف يشارك في اللعب',
@@ -51,9 +51,11 @@ const ar: Record<string, string> = {
     'Your email address is unverified.': 'لم يتم تأكيد بريدك الإلكتروني.',
     'Click here to re-send the verification email.': 'اضغط هنا لإعادة إرسال رسالة تأكيد البريد الإلكتروني.',
     'A new verification link has been sent to your email address.': 'أُرسل رابط تأكيد جديد إلى بريدك الإلكتروني.',
-    'Choose the language used throughout Games Center. Your selection is applied after saving.': 'اختر اللغة المستخدمة في مركز الألعاب. سيُطبّق اختيارك بعد الحفظ.',
+    'Choose the language used throughout Games Center. Your selection is applied after saving.':
+        'اختر اللغة المستخدمة في مركز الألعاب. سيُطبّق اختيارك بعد الحفظ.',
     'Saving…': 'جارٍ الحفظ…',
-    'Once your account is deleted, all of its resources and data will also be permanently deleted. Please enter your password to confirm.': 'سيؤدي حذف حسابك إلى حذف جميع موارده وبياناته نهائيًا. أدخل كلمة المرور للتأكيد.',
+    'Once your account is deleted, all of its resources and data will also be permanently deleted. Please enter your password to confirm.':
+        'سيؤدي حذف حسابك إلى حذف جميع موارده وبياناته نهائيًا. أدخل كلمة المرور للتأكيد.',
     'The selected locale is invalid.': 'اللغة المختارة غير مدعومة.',
     'The name field is required.': 'حقل الاسم مطلوب.',
     'The email field is required.': 'حقل البريد الإلكتروني مطلوب.',
@@ -112,12 +114,13 @@ const ar: Record<string, string> = {
     'Copy Link': 'انسخ الرابط',
     'Cancel this room?': 'هل تريد إلغاء هذه الغرفة؟',
     'This cannot be undone. Type confirm below to proceed.': 'لا يمكن التراجع عن هذا الإجراء. اكتب confirm أدناه للمتابعة.',
-    'The host appears to be gone. This cannot be undone. Type confirm below to proceed.': 'يبدو أن المضيف غير متصل. لا يمكن التراجع عن هذا الإجراء. اكتب confirm أدناه للمتابعة.',
+    'The host appears to be gone. This cannot be undone. Type confirm below to proceed.':
+        'يبدو أن المضيف غير متصل. لا يمكن التراجع عن هذا الإجراء. اكتب confirm أدناه للمتابعة.',
     "The host hasn't been active in a while.": 'لم يكن المضيف نشطًا منذ فترة.',
     'Host · You': 'المضيف · أنت',
     Host: 'المضيف',
     'Starting…': 'جارٍ البدء…',
-    'Need': 'ينقصك',
+    Need: 'ينقصك',
     player: 'لاعب',
     'Removing…': 'جارٍ الطرد…',
     Kick: 'طرد',
@@ -134,7 +137,7 @@ const ar: Record<string, string> = {
     'The host has removed you from this room.': 'أزالك المضيف من هذه الغرفة.',
     'Room Cancelled': 'تم إلغاء الغرفة',
     'The host has cancelled this room.': 'ألغى المضيف هذه الغرفة.',
-    'Type': 'اكتب',
+    Type: 'اكتب',
     'to continue': 'للمتابعة',
     'Cancelling…': 'جارٍ الإلغاء…',
     'Cancel Room': 'إلغاء الغرفة',
@@ -199,7 +202,8 @@ const ar: Record<string, string> = {
     'Pay :cardName: :color from :source': 'ادفع :cardName: :color من :source',
     'You owe :amount M. Selected: :selected M.': 'عليك :amount مليون. اخترت: :selected مليون.',
     'Collapse payment window': 'طي نافذة الدفع',
-    'You only have :amount M available. Select all your payable cards to pay what you can.': 'لديك :amount مليون فقط. اختر كل أوراق الدفع المتاحة لتسديد ما تستطيع.',
+    'You only have :amount M available. Select all your payable cards to pay what you can.':
+        'لديك :amount مليون فقط. اختر كل أوراق الدفع المتاحة لتسديد ما تستطيع.',
     'Select at least :amount M more to cover what you owe.': 'اختر أوراقًا بقيمة :amount مليون إضافية لتغطية المبلغ المستحق.',
     Property: 'عقار',
     'You have no cards available to pay with.': 'ليس لديك أوراق متاحة للدفع.',
@@ -212,7 +216,7 @@ const ar: Record<string, string> = {
     'Card you would give': 'البطاقة التي ستعطيها',
     'Do you want to cancel the action or pay the charge?': 'هل تريد إلغاء الحركة أم دفع المبلغ؟',
     'Do you want to cancel this action or let it happen?': 'هل تريد إلغاء هذه الحركة أم السماح بتنفيذها؟',
-    'EDFA3': 'ادفع',
+    EDFA3: 'ادفع',
     'Let it happen': 'اسمح بتنفيذها',
     'Respond to :card': 'الرد على :card',
     'Close notification': 'إغلاق الإشعار',
@@ -223,9 +227,10 @@ const ar: Record<string, string> = {
     'Done sorting': 'إنهاء الترتيب',
     'Sort hand': 'ترتيب الأوراق',
     'End Turn': 'إنهاء الدور',
-    'Press and hold a card, then drag it to reorder. Your order is saved on this device.': 'اضغط مطولًا على البطاقة واسحبها لإعادة الترتيب. يُحفظ الترتيب على هذا الجهاز.',
+    'Press and hold a card, then drag it to reorder. Your order is saved on this device.':
+        'اضغط مطولًا على البطاقة واسحبها لإعادة الترتيب. يُحفظ الترتيب على هذا الجهاز.',
     'Discard down to 7 cards before ending your turn.': 'تخلّص من الأوراق الزائدة حتى يبقى معك 7 قبل إنهاء دورك.',
-    'Reorder': 'إعادة الترتيب',
+    Reorder: 'إعادة الترتيب',
     Select: 'اختيار',
     'Close card options': 'إغلاق خيارات البطاقة',
     'Waiting on a pending action.': 'بانتظار اكتمال الحركة الحالية.',
@@ -253,13 +258,15 @@ const ar: Record<string, string> = {
     'ELBIS X 2 (optional, doubles the rent, each costs a play)': 'إلبس × 2 (اختياري، يضاعف الإيجار، وكل بطاقة تستهلك حركة)',
     'Play Rent': 'العب بطاقة إيجار',
     'Choose whose property to take': 'اختر لاعبًا لأخذ عقار منه',
-    'That player has no available properties to take; complete Manati2 can’t be taken.': 'لا يملك هذا اللاعب عقارات متاحة للأخذ؛ لا يمكن أخذ منطقة مكتملة.',
+    'That player has no available properties to take; complete Manati2 can’t be taken.':
+        'لا يملك هذا اللاعب عقارات متاحة للأخذ؛ لا يمكن أخذ منطقة مكتملة.',
     'Choose a property to take': 'اختر عقارًا لأخذه',
     'Take :card from :player': 'خذ :card من :player',
     'Choose the taken wildcard’s new color': 'اختر اللون الجديد للبطاقة متعددة الألوان',
     'Take Property': 'خذ العقار',
     'Choose whose property to take and replace': 'اختر لاعبًا لمبادلة أحد عقاراته',
-    'That player has no available properties to swap; complete Manati2 can’t be taken.': 'لا يملك هذا اللاعب عقارات متاحة للمبادلة؛ لا يمكن أخذ منطقة مكتملة.',
+    'That player has no available properties to swap; complete Manati2 can’t be taken.':
+        'لا يملك هذا اللاعب عقارات متاحة للمبادلة؛ لا يمكن أخذ منطقة مكتملة.',
     'Choose their property to take': 'اختر عقارًا لأخذه منه',
     'Choose one of your properties to give': 'اختر عقارًا من عندك لتعطيه',
     'You have no properties available to swap; complete Manati2 can’t be given.': 'ليس لديك عقارات متاحة للمبادلة؛ لا يمكن التنازل عن منطقة مكتملة.',
@@ -284,7 +291,7 @@ const ar: Record<string, string> = {
     'My properties': 'ممتلكاتي',
     'Use this color': 'استخدم هذا اللون',
     'Keep current color': 'احتفظ باللون الحالي',
-    'Manati2': 'منطقة مكتملة',
+    Manati2: 'منطقة مكتملة',
     'Rotate 180°': 'اقلب 180°',
     'This uses a play and permanently gives up this card’s effect.': 'تستهلك هذه الحركة دورًا وتتخلى نهائيًا عن تأثير البطاقة.',
     'Play as Money (:amount M)': 'العبها كمال (:amount مليون)',
@@ -309,9 +316,9 @@ const ar: Record<string, string> = {
     'Tap a player to see their final hand.': 'اضغط على لاعب لرؤية أوراقه النهائية.',
     'Room cancelled.': 'أُلغيت الغرفة.',
     'Tap a player to see their hand.': 'اضغط على لاعب لرؤية أوراقه.',
-    'Winner': 'الفائز',
+    Winner: 'الفائز',
     'Remove :name from the game?': 'هل تريد إزالة :name من اللعبة؟',
-    'Remove': 'إزالة',
+    Remove: 'إزالة',
     'Keep player': 'إبقاء اللاعب',
     'Rotate your phone': 'أدر هاتفك',
     'More options': 'خيارات أخرى',
@@ -319,9 +326,10 @@ const ar: Record<string, string> = {
     'Draw before playing a card. Tap the draw pile in the corner.': 'اسحب قبل لعب ورقة. اضغط على كومة السحب في الركن.',
     'Masrawy Deal is played sideways so the whole table fits on screen.': 'تُلعب مصراوي ديل بشكل أفقي حتى تظهر الطاولة كاملة على الشاشة.',
     'Lock landscape': 'قفل الوضع الأفقي',
-    'This browser can’t lock rotation. Turn off your phone’s rotation lock and turn it sideways.': 'لا يدعم هذا المتصفح قفل الدوران. أوقف قفل التدوير في هاتفك ثم أدره أفقيًا.',
+    'This browser can’t lock rotation. Turn off your phone’s rotation lock and turn it sideways.':
+        'لا يدعم هذا المتصفح قفل الدوران. أوقف قفل التدوير في هاتفك ثم أدره أفقيًا.',
     'Exit fullscreen': 'إنهاء ملء الشاشة',
-    'Fullscreen': 'ملء الشاشة',
+    Fullscreen: 'ملء الشاشة',
     'Draw pile:': 'كومة السحب:',
     'Discard pile:': 'كومة الأوراق المستبعدة:',
     'Recent plays': 'آخر الحركات',
@@ -363,33 +371,30 @@ const ar: Record<string, string> = {
     'paid :cards': 'دفع :cards',
     'drew cards': 'سحب أوراقًا',
     'made a move': 'نفّذ حركة',
-}
+};
 
 export function useI18n() {
-    const page = usePage()
-    const locale = () => (page.props.locale as string | undefined) ?? 'en'
+    const page = usePage();
+    const locale = () => (page.props.locale as string | undefined) ?? 'en';
 
     function t(message: string, replacements: Record<string, string | number> = {}): string {
-        const translation = locale() === 'ar' ? ar[message] ?? message : message
+        const translation = locale() === 'ar' ? (ar[message] ?? message) : message;
 
-        return Object.entries(replacements).reduce(
-            (result, [key, value]) => result.replaceAll(`:${key}`, String(value)),
-            translation,
-        )
+        return Object.entries(replacements).reduce((result, [key, value]) => result.replaceAll(`:${key}`, String(value)), translation);
     }
 
     function gameName(slug: string, fallback: string): string {
         if (locale() !== 'ar') {
-            return fallback
+            return fallback;
         }
 
         const names: Record<string, string> = {
             'masrawy-deal': 'مصراوي ديل',
             mafia: 'مافيا',
-        }
+        };
 
-        return names[slug] ?? fallback
+        return names[slug] ?? fallback;
     }
 
-    return { t, locale, gameName }
+    return { t, locale, gameName };
 }

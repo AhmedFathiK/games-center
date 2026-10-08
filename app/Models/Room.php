@@ -83,7 +83,7 @@ class Room extends Model
     {
         return $query->where(function (Builder $q) use ($userId) {
             $q->where('host_id', $userId)
-                ->orWhereHas('players', fn(Builder $p) => $p->where('users.id', $userId));
+                ->orWhereHas('players', fn (Builder $p) => $p->where('users.id', $userId));
         });
     }
 

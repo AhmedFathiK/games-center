@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import { Link } from '@inertiajs/vue3';
 
-const { t } = useI18n()
+const { t } = useI18n();
 
 const tabs = [
     { label: 'Profile', routeName: 'profile.edit' },
     { label: 'Password', routeName: 'password.edit' },
     { label: 'Language', routeName: 'language.edit' },
-] as const
+] as const;
 </script>
 
 <template>
@@ -40,7 +40,9 @@ const tabs = [
     text-decoration: none;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
-    transition: color 0.15s ease, border-color 0.15s ease;
+    transition:
+        color 0.15s ease,
+        border-color 0.15s ease;
 }
 
 .sn-tab:hover {

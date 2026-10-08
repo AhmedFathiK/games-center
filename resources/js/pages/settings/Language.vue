@@ -1,27 +1,27 @@
 <script setup lang="ts">
-import { Head, useForm, usePage } from '@inertiajs/vue3'
-import { ref } from 'vue'
-import AppLayout from '@/layouts/AppLayout.vue'
-import SettingsNav from '@/components/SettingsNav.vue'
-import { useI18n } from '@/i18n'
-import type { SharedData } from '@/types'
+import SettingsNav from '@/components/SettingsNav.vue';
+import { useI18n } from '@/i18n';
+import AppLayout from '@/layouts/AppLayout.vue';
+import type { SharedData } from '@/types';
+import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { ref } from 'vue';
 
-defineOptions({ layout: AppLayout })
+defineOptions({ layout: AppLayout });
 
-const page = usePage<SharedData>()
-const { t } = useI18n()
-const form = useForm({ locale: page.props.auth.user.locale ?? page.props.locale ?? 'en' })
-const showSaved = ref(false)
+const page = usePage<SharedData>();
+const { t } = useI18n();
+const form = useForm({ locale: page.props.auth.user.locale ?? page.props.locale ?? 'en' });
+const showSaved = ref(false);
 
 function saveLanguage() {
-    showSaved.value = false
+    showSaved.value = false;
     form.post(route('locale.update'), {
         preserveScroll: true,
         onSuccess: () => {
-            showSaved.value = true
-            setTimeout(() => (showSaved.value = false), 2500)
+            showSaved.value = true;
+            setTimeout(() => (showSaved.value = false), 2500);
         },
-    })
+    });
 }
 </script>
 

@@ -46,10 +46,10 @@ class MafiaGameTest extends TestCase
             'detective' => false,
         ], 6);
 
-        $state = (new MafiaGame())->initializeState($room);
+        $state = (new MafiaGame)->initializeState($room);
 
         $mafiaCount = collect($state['roles'])
-            ->filter(fn($role) => $role === 'mafia')
+            ->filter(fn ($role) => $role === 'mafia')
             ->count();
 
         $this->assertEquals(2, $mafiaCount);
@@ -63,7 +63,7 @@ class MafiaGameTest extends TestCase
             'detective' => true,
         ], 6);
 
-        $state = (new MafiaGame())->initializeState($room);
+        $state = (new MafiaGame)->initializeState($room);
         $roles = array_values($state['roles']);
 
         $this->assertContains('doctor', $roles);
@@ -78,10 +78,10 @@ class MafiaGameTest extends TestCase
             'detective' => false,
         ], 6);
 
-        $state = (new MafiaGame())->initializeState($room);
+        $state = (new MafiaGame)->initializeState($room);
 
         $civilianCount = collect($state['roles'])
-            ->filter(fn($role) => $role === 'civilian')
+            ->filter(fn ($role) => $role === 'civilian')
             ->count();
 
         // 6 players - 1 mafia - 1 doctor = 4 civilians
@@ -96,10 +96,10 @@ class MafiaGameTest extends TestCase
             'detective' => false,
         ], 5);
 
-        $state = (new MafiaGame())->initializeState($room);
+        $state = (new MafiaGame)->initializeState($room);
 
         $this->assertCount(5, $state['alive']);
-        $this->assertTrue(collect($state['alive'])->every(fn($alive) => $alive === true));
+        $this->assertTrue(collect($state['alive'])->every(fn ($alive) => $alive === true));
     }
 
     public function test_initial_phase_round_and_night_step(): void
@@ -110,7 +110,7 @@ class MafiaGameTest extends TestCase
             'detective' => false,
         ], 5);
 
-        $state = (new MafiaGame())->initializeState($room);
+        $state = (new MafiaGame)->initializeState($room);
 
         $this->assertEquals('night', $state['phase']);
         $this->assertEquals(1, $state['round']);
@@ -126,7 +126,7 @@ class MafiaGameTest extends TestCase
             'detective' => false,
         ], 5);
 
-        $errors = (new MafiaGame())->validateStart($room);
+        $errors = (new MafiaGame)->validateStart($room);
 
         $this->assertNotEmpty($errors);
     }
@@ -139,7 +139,7 @@ class MafiaGameTest extends TestCase
             'detective' => false,
         ], 5);
 
-        $errors = (new MafiaGame())->validateStart($room);
+        $errors = (new MafiaGame)->validateStart($room);
 
         $this->assertNotEmpty($errors);
     }
@@ -154,7 +154,7 @@ class MafiaGameTest extends TestCase
 
         // 3 mafia vs 3 town — mafia is not outnumbered, must be rejected
         // even though it technically leaves "room" for non-mafia players.
-        $errors = (new MafiaGame())->validateStart($room);
+        $errors = (new MafiaGame)->validateStart($room);
 
         $this->assertNotEmpty($errors);
     }
@@ -167,14 +167,14 @@ class MafiaGameTest extends TestCase
             'detective' => true,
         ], 6);
 
-        $errors = (new MafiaGame())->validateStart($room);
+        $errors = (new MafiaGame)->validateStart($room);
 
         $this->assertEmpty($errors);
     }
 
     public function test_validate_room_configuration_rejects_mafia_not_outnumbered(): void
     {
-        $errors = (new MafiaGame())->validateRoomConfiguration([
+        $errors = (new MafiaGame)->validateRoomConfiguration([
             'mafia_count' => 16,
             'doctor' => false,
             'detective' => false,
@@ -185,7 +185,7 @@ class MafiaGameTest extends TestCase
 
     public function test_validate_room_configuration_passes_for_valid_configuration(): void
     {
-        $errors = (new MafiaGame())->validateRoomConfiguration([
+        $errors = (new MafiaGame)->validateRoomConfiguration([
             'mafia_count' => 2,
             'doctor' => true,
             'detective' => true,
@@ -214,7 +214,7 @@ class MafiaGameTest extends TestCase
             ],
         ]);
 
-        $newState = (new MafiaGame())->advancePhase($room->fresh());
+        $newState = (new MafiaGame)->advancePhase($room->fresh());
 
         $this->assertEquals('day', $newState['phase']);
         $this->assertEquals(1, $newState['round']);
@@ -234,7 +234,7 @@ class MafiaGameTest extends TestCase
             'game_state' => ['phase' => 'day', 'round' => 1, 'roles' => [], 'alive' => [], 'winner' => null],
         ]);
 
-        $newState = (new MafiaGame())->advancePhase($room->fresh());
+        $newState = (new MafiaGame)->advancePhase($room->fresh());
 
         $this->assertEquals('night', $newState['phase']);
         $this->assertEquals(2, $newState['round']);
@@ -261,7 +261,7 @@ class MafiaGameTest extends TestCase
             ],
         ]);
 
-        $newState = (new MafiaGame())->advancePhase($room->fresh());
+        $newState = (new MafiaGame)->advancePhase($room->fresh());
 
         // Doctor is enabled, so the night is not resolved yet — the turn
         // simply passes to the doctor.
@@ -289,7 +289,7 @@ class MafiaGameTest extends TestCase
             ],
         ]);
 
-        $newState = (new MafiaGame())->advancePhase($room->fresh());
+        $newState = (new MafiaGame)->advancePhase($room->fresh());
 
         // Doctor is disabled, so mafia's turn skips straight to detective.
         $this->assertEquals('night', $newState['phase']);
@@ -316,7 +316,7 @@ class MafiaGameTest extends TestCase
             ],
         ]);
 
-        $newState = (new MafiaGame())->advancePhase($room->fresh());
+        $newState = (new MafiaGame)->advancePhase($room->fresh());
 
         // Doctor was the last enabled role — night resolves, moves to day.
         $this->assertEquals('day', $newState['phase']);
@@ -326,13 +326,13 @@ class MafiaGameTest extends TestCase
     protected function makeInProgressRoom(array $roles): Room
     {
         $room = $this->makeRoom([
-            'mafia_count' => collect($roles)->filter(fn($r) => $r === 'mafia')->count(),
+            'mafia_count' => collect($roles)->filter(fn ($r) => $r === 'mafia')->count(),
             'doctor' => in_array('doctor', $roles, true),
             'detective' => in_array('detective', $roles, true),
         ], count($roles));
 
         $playerIds = $room->players()->pluck('users.id')->values();
-        $rolesById = $playerIds->mapWithKeys(fn($id, $i) => [$id => array_values($roles)[$i]])->all();
+        $rolesById = $playerIds->mapWithKeys(fn ($id, $i) => [$id => array_values($roles)[$i]])->all();
 
         $room->update([
             'status' => 'in_progress',
@@ -340,7 +340,7 @@ class MafiaGameTest extends TestCase
                 'phase' => 'night',
                 'round' => 1,
                 'roles' => $rolesById,
-                'alive' => collect($rolesById)->keys()->mapWithKeys(fn($id) => [$id => true])->all(),
+                'alive' => collect($rolesById)->keys()->mapWithKeys(fn ($id) => [$id => true])->all(),
                 'winner' => null,
                 'night_actions' => ['mafia' => ['selections' => [], 'confirmed' => []]],
                 'night_step' => 'mafia',
@@ -367,10 +367,10 @@ class MafiaGameTest extends TestCase
     public function test_kill_applies_when_all_mafia_confirm_the_same_target(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'mafia', 'civilian', 'civilian', 'civilian']);
-        $mafiaIds = collect($room->game_state['roles'])->filter(fn($r) => $r === 'mafia')->keys();
-        $victimId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'civilian')->keys()->first();
+        $mafiaIds = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'mafia')->keys();
+        $victimId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'civilian')->keys()->first();
 
-        $game = new MafiaGame();
+        $game = new MafiaGame;
         $state = $room->game_state;
 
         foreach ($mafiaIds as $mafiaId) {
@@ -393,10 +393,10 @@ class MafiaGameTest extends TestCase
     public function test_kill_does_not_apply_when_mafia_disagree(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'mafia', 'civilian', 'civilian', 'civilian']);
-        $mafiaIds = collect($room->game_state['roles'])->filter(fn($r) => $r === 'mafia')->keys()->values();
-        $civilianIds = collect($room->game_state['roles'])->filter(fn($r) => $r === 'civilian')->keys()->values();
+        $mafiaIds = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'mafia')->keys()->values();
+        $civilianIds = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'civilian')->keys()->values();
 
-        $game = new MafiaGame();
+        $game = new MafiaGame;
 
         $state = $game->submitAction($room, User::find($mafiaIds[0]), ['type' => 'mafia_select', 'target_id' => $civilianIds[0]]);
         $room->update(['game_state' => $state]);
@@ -421,10 +421,10 @@ class MafiaGameTest extends TestCase
     public function test_kill_does_not_apply_when_not_all_mafia_confirmed(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'mafia', 'civilian', 'civilian', 'civilian']);
-        $mafiaIds = collect($room->game_state['roles'])->filter(fn($r) => $r === 'mafia')->keys()->values();
-        $victimId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'civilian')->keys()->first();
+        $mafiaIds = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'mafia')->keys()->values();
+        $victimId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'civilian')->keys()->first();
 
-        $game = new MafiaGame();
+        $game = new MafiaGame;
 
         $state = $game->submitAction($room, User::find($mafiaIds[0]), ['type' => 'mafia_select', 'target_id' => $victimId]);
         $room->update(['game_state' => $state]);
@@ -446,10 +446,10 @@ class MafiaGameTest extends TestCase
     public function test_cannot_change_selection_after_confirming(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'civilian', 'civilian', 'civilian', 'civilian']);
-        $mafiaId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'mafia')->keys()->first();
-        $civilianIds = collect($room->game_state['roles'])->filter(fn($r) => $r === 'civilian')->keys()->values();
+        $mafiaId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'mafia')->keys()->first();
+        $civilianIds = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'civilian')->keys()->values();
 
-        $game = new MafiaGame();
+        $game = new MafiaGame;
 
         $state = $game->submitAction($room, User::find($mafiaId), ['type' => 'mafia_select', 'target_id' => $civilianIds[0]]);
         $room->update(['game_state' => $state]);
@@ -467,11 +467,11 @@ class MafiaGameTest extends TestCase
     public function test_non_mafia_cannot_select_a_target(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'civilian', 'civilian', 'civilian', 'civilian']);
-        $civilianId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'civilian')->keys()->first();
+        $civilianId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'civilian')->keys()->first();
 
         $this->expectException(\InvalidArgumentException::class);
 
-        (new MafiaGame())->submitAction($room, User::find($civilianId), [
+        (new MafiaGame)->submitAction($room, User::find($civilianId), [
             'type' => 'mafia_select',
             'target_id' => $civilianId,
         ]);
@@ -480,7 +480,7 @@ class MafiaGameTest extends TestCase
     public function test_dead_mafia_cannot_act(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'civilian', 'civilian', 'civilian', 'civilian']);
-        $mafiaId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'mafia')->keys()->first();
+        $mafiaId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'mafia')->keys()->first();
 
         $state = $room->game_state;
         $state['alive'][$mafiaId] = false;
@@ -489,7 +489,7 @@ class MafiaGameTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
-        (new MafiaGame())->submitAction($room, User::find($mafiaId), [
+        (new MafiaGame)->submitAction($room, User::find($mafiaId), [
             'type' => 'mafia_select',
             'target_id' => $mafiaId,
         ]);
@@ -498,12 +498,12 @@ class MafiaGameTest extends TestCase
     public function test_cannot_submit_doctor_action_before_doctor_turn(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'doctor', 'civilian', 'civilian', 'civilian']);
-        $doctorId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'doctor')->keys()->first();
+        $doctorId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'doctor')->keys()->first();
 
         // Room is still on the mafia turn (default from the fixture).
         $this->expectException(\InvalidArgumentException::class);
 
-        (new MafiaGame())->submitAction($room, User::find($doctorId), [
+        (new MafiaGame)->submitAction($room, User::find($doctorId), [
             'type' => 'doctor_select',
             'target_id' => $doctorId,
         ]);
@@ -512,11 +512,11 @@ class MafiaGameTest extends TestCase
     public function test_doctor_save_prevents_mafia_kill_when_confirmed(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'doctor', 'civilian', 'civilian', 'civilian']);
-        $mafiaId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'mafia')->keys()->first();
-        $doctorId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'doctor')->keys()->first();
-        $victimId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'civilian')->keys()->first();
+        $mafiaId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'mafia')->keys()->first();
+        $doctorId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'doctor')->keys()->first();
+        $victimId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'civilian')->keys()->first();
 
-        $game = new MafiaGame();
+        $game = new MafiaGame;
 
         $state = $game->submitAction($room, User::find($mafiaId), ['type' => 'mafia_select', 'target_id' => $victimId]);
         $room->update(['game_state' => $state]);
@@ -543,11 +543,11 @@ class MafiaGameTest extends TestCase
     public function test_doctor_can_save_self(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'doctor', 'civilian', 'civilian', 'civilian']);
-        $doctorId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'doctor')->keys()->first();
+        $doctorId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'doctor')->keys()->first();
 
         $room = $this->setNightStep($room, 'doctor');
 
-        $state = (new MafiaGame())->submitAction($room, User::find($doctorId), [
+        $state = (new MafiaGame)->submitAction($room, User::find($doctorId), [
             'type' => 'doctor_select',
             'target_id' => $doctorId,
         ]);
@@ -558,11 +558,11 @@ class MafiaGameTest extends TestCase
     public function test_unconfirmed_doctor_save_does_not_prevent_kill(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'doctor', 'civilian', 'civilian', 'civilian']);
-        $mafiaId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'mafia')->keys()->first();
-        $doctorId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'doctor')->keys()->first();
-        $victimId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'civilian')->keys()->first();
+        $mafiaId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'mafia')->keys()->first();
+        $doctorId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'doctor')->keys()->first();
+        $victimId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'civilian')->keys()->first();
 
-        $game = new MafiaGame();
+        $game = new MafiaGame;
 
         $state = $game->submitAction($room, User::find($mafiaId), ['type' => 'mafia_select', 'target_id' => $victimId]);
         $room->update(['game_state' => $state]);
@@ -586,12 +586,12 @@ class MafiaGameTest extends TestCase
     public function test_detective_check_reveals_mafia_membership(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'detective', 'civilian', 'civilian', 'civilian']);
-        $mafiaId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'mafia')->keys()->first();
-        $detectiveId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'detective')->keys()->first();
+        $mafiaId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'mafia')->keys()->first();
+        $detectiveId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'detective')->keys()->first();
 
         $room = $this->setNightStep($room, 'detective');
 
-        $game = new MafiaGame();
+        $game = new MafiaGame;
 
         $state = $game->submitAction($room, User::find($detectiveId), ['type' => 'detective_select', 'target_id' => $mafiaId]);
         $room->update(['game_state' => $state]);
@@ -604,12 +604,12 @@ class MafiaGameTest extends TestCase
     public function test_detective_check_on_non_mafia_returns_false(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'detective', 'civilian', 'civilian', 'civilian']);
-        $detectiveId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'detective')->keys()->first();
-        $civilianId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'civilian')->keys()->first();
+        $detectiveId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'detective')->keys()->first();
+        $civilianId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'civilian')->keys()->first();
 
         $room = $this->setNightStep($room, 'detective');
 
-        $game = new MafiaGame();
+        $game = new MafiaGame;
 
         $state = $game->submitAction($room, User::find($detectiveId), ['type' => 'detective_select', 'target_id' => $civilianId]);
         $room->update(['game_state' => $state]);
@@ -622,12 +622,12 @@ class MafiaGameTest extends TestCase
     public function test_cannot_change_doctor_selection_after_confirming(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'doctor', 'civilian', 'civilian', 'civilian']);
-        $doctorId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'doctor')->keys()->first();
-        $civilianIds = collect($room->game_state['roles'])->filter(fn($r) => $r === 'civilian')->keys()->values();
+        $doctorId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'doctor')->keys()->first();
+        $civilianIds = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'civilian')->keys()->values();
 
         $room = $this->setNightStep($room, 'doctor');
 
-        $game = new MafiaGame();
+        $game = new MafiaGame;
 
         $state = $game->submitAction($room, User::find($doctorId), ['type' => 'doctor_select', 'target_id' => $civilianIds[0]]);
         $room->update(['game_state' => $state]);
@@ -644,13 +644,13 @@ class MafiaGameTest extends TestCase
     public function test_non_detective_cannot_submit_detective_action(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'detective', 'civilian', 'civilian', 'civilian']);
-        $civilianId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'civilian')->keys()->first();
+        $civilianId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'civilian')->keys()->first();
 
         $room = $this->setNightStep($room, 'detective');
 
         $this->expectException(\InvalidArgumentException::class);
 
-        (new MafiaGame())->submitAction($room, User::find($civilianId), [
+        (new MafiaGame)->submitAction($room, User::find($civilianId), [
             'type' => 'detective_select',
             'target_id' => $civilianId,
         ]);
@@ -664,7 +664,7 @@ class MafiaGameTest extends TestCase
         $room->update(['game_state' => array_merge($room->game_state, ['phase' => 'day'])]);
         $room->refresh();
 
-        $state = (new MafiaGame())->submitAction($room, User::find($ids[0]), [
+        $state = (new MafiaGame)->submitAction($room, User::find($ids[0]), [
             'type' => 'vote_select',
             'target_id' => $ids[1],
         ]);
@@ -680,7 +680,7 @@ class MafiaGameTest extends TestCase
         $room->update(['game_state' => array_merge($room->game_state, ['phase' => 'day'])]);
         $room->refresh();
 
-        $game = new MafiaGame();
+        $game = new MafiaGame;
         $state = $game->submitAction($room, User::find($ids[0]), ['type' => 'vote_select', 'target_id' => $ids[1]]);
         $room->update(['game_state' => $state]);
         $room->refresh();
@@ -700,7 +700,7 @@ class MafiaGameTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
-        (new MafiaGame())->submitAction($room, User::find($ids[0]), [
+        (new MafiaGame)->submitAction($room, User::find($ids[0]), [
             'type' => 'vote_select',
             'target_id' => $ids[1],
         ]);
@@ -714,7 +714,7 @@ class MafiaGameTest extends TestCase
         $room->update(['game_state' => array_merge($room->game_state, ['phase' => 'day'])]);
         $room->refresh();
 
-        $newState = (new MafiaGame())->executePlayer($room, $ids[3]);
+        $newState = (new MafiaGame)->executePlayer($room, $ids[3]);
 
         $this->assertFalse($newState['alive'][$ids[3]]);
     }
@@ -725,9 +725,9 @@ class MafiaGameTest extends TestCase
         $room->update(['game_state' => array_merge($room->game_state, ['phase' => 'day'])]);
         $room->refresh();
 
-        $newState = (new MafiaGame())->executePlayer($room, null);
+        $newState = (new MafiaGame)->executePlayer($room, null);
 
-        $this->assertTrue(collect($newState['alive'])->every(fn($alive) => $alive === true));
+        $this->assertTrue(collect($newState['alive'])->every(fn ($alive) => $alive === true));
     }
 
     public function test_day_votes_reset_when_new_day_begins(): void
@@ -740,7 +740,7 @@ class MafiaGameTest extends TestCase
         $room->update(['game_state' => $state]);
         $room->refresh();
 
-        $newState = (new MafiaGame())->advancePhase($room);
+        $newState = (new MafiaGame)->advancePhase($room);
 
         $this->assertEmpty($newState['day_votes']['selections']);
     }
@@ -748,12 +748,12 @@ class MafiaGameTest extends TestCase
     public function test_town_wins_when_last_mafia_is_executed(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'civilian', 'civilian', 'civilian', 'civilian']);
-        $mafiaId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'mafia')->keys()->first();
+        $mafiaId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'mafia')->keys()->first();
 
         $room->update(['game_state' => array_merge($room->game_state, ['phase' => 'day'])]);
         $room->refresh();
 
-        $newState = (new MafiaGame())->executePlayer($room, $mafiaId);
+        $newState = (new MafiaGame)->executePlayer($room, $mafiaId);
 
         $this->assertEquals('town', $newState['winner']);
     }
@@ -761,7 +761,7 @@ class MafiaGameTest extends TestCase
     public function test_mafia_wins_when_mafia_count_reaches_town_count(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'mafia', 'civilian', 'civilian']);
-        $civilianIds = collect($room->game_state['roles'])->filter(fn($r) => $r === 'civilian')->keys()->values();
+        $civilianIds = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'civilian')->keys()->values();
 
         $state = $room->game_state;
         $state['alive'][$civilianIds[0]] = false;
@@ -770,7 +770,7 @@ class MafiaGameTest extends TestCase
         $room->refresh();
 
         // triggers checkWinCondition without changing alive further
-        $newState = (new MafiaGame())->executePlayer($room, null);
+        $newState = (new MafiaGame)->executePlayer($room, null);
 
         $this->assertEquals('mafia', $newState['winner']);
     }
@@ -778,7 +778,7 @@ class MafiaGameTest extends TestCase
     public function test_cannot_submit_action_after_game_has_ended(): void
     {
         $room = $this->makeInProgressRoom(['mafia', 'civilian', 'civilian', 'civilian', 'civilian']);
-        $mafiaId = collect($room->game_state['roles'])->filter(fn($r) => $r === 'mafia')->keys()->first();
+        $mafiaId = collect($room->game_state['roles'])->filter(fn ($r) => $r === 'mafia')->keys()->first();
 
         $state = $room->game_state;
         $state['winner'] = 'town';
@@ -787,7 +787,7 @@ class MafiaGameTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
-        (new MafiaGame())->submitAction($room, User::find($mafiaId), [
+        (new MafiaGame)->submitAction($room, User::find($mafiaId), [
             'type' => 'mafia_select',
             'target_id' => $mafiaId,
         ]);
@@ -804,7 +804,7 @@ class MafiaGameTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
-        (new MafiaGame())->advancePhase($room);
+        (new MafiaGame)->advancePhase($room);
     }
 
     public function test_cannot_execute_after_game_has_ended(): void
@@ -819,6 +819,6 @@ class MafiaGameTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
-        (new MafiaGame())->executePlayer($room, null);
+        (new MafiaGame)->executePlayer($room, null);
     }
 }

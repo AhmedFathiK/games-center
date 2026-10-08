@@ -1,41 +1,30 @@
 <script setup lang="ts">
-import { Head, useForm } from '@inertiajs/vue3'
-import AuthLayout from '@/layouts/AuthLayout.vue'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import AuthLayout from '@/layouts/AuthLayout.vue';
+import { Head, useForm } from '@inertiajs/vue3';
 
 const form = useForm({
     password: '',
-})
-const { t } = useI18n()
+});
+const { t } = useI18n();
 
 const submit = () => {
     form.post(route('password.confirm'), {
         onFinish: () => {
-            form.reset()
+            form.reset();
         },
-    })
-}
+    });
+};
 </script>
 
 <template>
-    <AuthLayout
-        title="Confirm your password"
-        description="This is a secure area of the application. Please confirm your password before continuing."
-    >
+    <AuthLayout title="Confirm your password" description="This is a secure area of the application. Please confirm your password before continuing.">
         <Head title="Confirm password" />
 
         <form @submit.prevent="submit" class="au-form">
             <div class="au-field">
                 <label for="password" class="au-label">{{ t('Password') }}</label>
-                <input
-                    id="password"
-                    v-model="form.password"
-                    type="password"
-                    required
-                    autocomplete="current-password"
-                    autofocus
-                    class="au-input"
-                />
+                <input id="password" v-model="form.password" type="password" required autocomplete="current-password" autofocus class="au-input" />
                 <p v-if="form.errors.password" role="alert" class="au-error">{{ form.errors.password }}</p>
             </div>
 

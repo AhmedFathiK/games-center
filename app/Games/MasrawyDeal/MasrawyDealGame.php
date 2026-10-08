@@ -2,9 +2,9 @@
 
 namespace App\Games\MasrawyDeal;
 
-use App\Games\AbstractGame;
 use App\Events\BirthdayPlayed;
 use App\Events\JustSayNoCountered;
+use App\Games\AbstractGame;
 use App\Models\Room;
 use App\Models\User;
 

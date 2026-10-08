@@ -13,44 +13,44 @@
  */
 
 export interface GameTheme {
-    slug: string
+    slug: string;
 
     colors: {
-        background: string // page background
-        surface: string // primary card/panel surface
-        surfaceAlt: string // secondary surface (nested panels, rows)
-        border: string // hairline/divider color
-        primary: string // danger / kill / "team A" accent
-        secondary: string // host / management accent
-        success: string // alive / safe / "team B" accent
-        textOnBackground: string
-        textOnSurface: string
-        textMuted: string
-    }
+        background: string; // page background
+        surface: string; // primary card/panel surface
+        surfaceAlt: string; // secondary surface (nested panels, rows)
+        border: string; // hairline/divider color
+        primary: string; // danger / kill / "team A" accent
+        secondary: string; // host / management accent
+        success: string; // alive / safe / "team B" accent
+        textOnBackground: string;
+        textOnSurface: string;
+        textMuted: string;
+    };
 
     fonts: {
-        display: string // headers, stamps, badges — used sparingly
-        body: string
-        mono: string // codes, counts, index numbers, any "data"
-    }
+        display: string; // headers, stamps, badges — used sparingly
+        body: string;
+        mono: string; // codes, counts, index numbers, any "data"
+    };
 
     motifs: {
         /** Card surfaces read as a physical object (folder) vs a plain panel. */
-        surfaceStyle: 'folder' | 'plain'
+        surfaceStyle: 'folder' | 'plain';
         /** Section dividers use a dashed "perforation" vs a plain rule. */
-        dividerStyle: 'perforated' | 'plain'
+        dividerStyle: 'perforated' | 'plain';
         /** Status/role indicators render as a rotated ink stamp vs a plain pill. */
-        badgeStyle: 'stamp' | 'pill'
+        badgeStyle: 'stamp' | 'pill';
         /** Roster/log entries get sequential index numbers (N°01...), since order is real information. */
-        useIndexNumbers: boolean
-    }
+        useIndexNumbers: boolean;
+    };
 
     /** Copy overrides. Functional meaning must stay identical across themes — only flavor changes. */
     labels: {
-        hostSectionTitle: string
-        rosterSectionTitle: string
-        settingsSectionTitle: string
-    }
+        hostSectionTitle: string;
+        rosterSectionTitle: string;
+        settingsSectionTitle: string;
+    };
 }
 
 export const defaultTheme: GameTheme = {
@@ -83,7 +83,7 @@ export const defaultTheme: GameTheme = {
         rosterSectionTitle: 'Players',
         settingsSectionTitle: 'Game Settings',
     },
-}
+};
 
 export const mafiaTheme: GameTheme = {
     slug: 'mafia',
@@ -115,7 +115,7 @@ export const mafiaTheme: GameTheme = {
         rosterSectionTitle: 'Witness Log',
         settingsSectionTitle: 'Case Parameters',
     },
-}
+};
 
 // Palette/fonts pulled straight from Ahmed's card-studio export (dark
 // slate page, amber accent, Montserrat/EB Garamond/Cinzel) — see
@@ -157,13 +157,13 @@ export const masrawyDealTheme: GameTheme = {
         rosterSectionTitle: 'Players',
         settingsSectionTitle: 'Game Settings',
     },
-}
+};
 
 const themes: Record<string, GameTheme> = {
     mafia: mafiaTheme,
     'masrawy-deal': masrawyDealTheme,
-}
+};
 
 export function themeForGame(slug: string): GameTheme {
-    return themes[slug] ?? defaultTheme
+    return themes[slug] ?? defaultTheme;
 }

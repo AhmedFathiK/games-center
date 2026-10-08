@@ -263,7 +263,7 @@ class MasrawyDealGameTest extends TestCase
         array $expectedTitles,
     ): void {
         foreach ($expectedTitles as $i => $expectedTitle) {
-            $card = CardCatalog::get('prop_' . $color . '_' . ($i + 1));
+            $card = CardCatalog::get('prop_'.$color.'_'.($i + 1));
 
             $this->assertEquals($expectedTitle, $card['label']);
         }
@@ -276,7 +276,7 @@ class MasrawyDealGameTest extends TestCase
         // have individual titles, wildcards are named EL BOB / Cart
         // Karbaga, kept only for defensive future use).
         foreach (CardCatalog::SET_SIZE as $color => $count) {
-            $card = CardCatalog::get('prop_' . $color . '_1');
+            $card = CardCatalog::get('prop_'.$color.'_1');
 
             $this->assertNotEquals(CardCatalog::colorLabel($color), $card['label']);
         }
@@ -365,12 +365,12 @@ class MasrawyDealGameTest extends TestCase
 
     public function test_host_is_a_player(): void
     {
-        $this->assertTrue((new MasrawyDealGame())->hostIsPlayer());
+        $this->assertTrue((new MasrawyDealGame)->hostIsPlayer());
     }
 
     public function test_minimum_and_maximum_players(): void
     {
-        $game = new MasrawyDealGame();
+        $game = new MasrawyDealGame;
 
         $this->assertEquals(2, $game->minimumPlayers());
         $this->assertEquals(8, $game->maximumPlayers());
@@ -382,7 +382,7 @@ class MasrawyDealGameTest extends TestCase
     {
         $room = $this->makeRoom(4);
 
-        $state = (new MasrawyDealGame())->initializeState($room);
+        $state = (new MasrawyDealGame)->initializeState($room);
 
         foreach ($state['hands'] as $hand) {
             $this->assertCount(5, $hand);
@@ -393,7 +393,7 @@ class MasrawyDealGameTest extends TestCase
     {
         $room = $this->makeRoom(3);
 
-        $state = (new MasrawyDealGame())->initializeState($room);
+        $state = (new MasrawyDealGame)->initializeState($room);
 
         $dealtCardIds = collect($state['hands'])->flatten()->all();
         $allCardIds = array_merge($dealtCardIds, $state['draw_pile']);
@@ -407,7 +407,7 @@ class MasrawyDealGameTest extends TestCase
     {
         $room = $this->makeRoom(6);
 
-        $state = (new MasrawyDealGame())->initializeState($room);
+        $state = (new MasrawyDealGame)->initializeState($room);
 
         $allCardIds = array_merge(collect($state['hands'])->flatten()->all(), $state['draw_pile']);
 
@@ -429,7 +429,7 @@ class MasrawyDealGameTest extends TestCase
     {
         $room = $this->makeRoom(5);
 
-        $state = (new MasrawyDealGame())->initializeState($room);
+        $state = (new MasrawyDealGame)->initializeState($room);
 
         // 106 - (5 cards * 5 players) = 81
         $this->assertCount(81, $state['draw_pile']);
@@ -440,7 +440,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->makeRoom(4);
         $expectedIds = $room->players()->pluck('users.id')->sort()->values()->all();
 
-        $state = (new MasrawyDealGame())->initializeState($room);
+        $state = (new MasrawyDealGame)->initializeState($room);
         $actualIds = collect($state['turn_order'])->sort()->values()->all();
 
         $this->assertEquals($expectedIds, $actualIds);
@@ -450,7 +450,7 @@ class MasrawyDealGameTest extends TestCase
     {
         $room = $this->makeRoom(3);
 
-        $state = (new MasrawyDealGame())->initializeState($room);
+        $state = (new MasrawyDealGame)->initializeState($room);
 
         $this->assertEquals($state['turn_order'][0], $state['current_player_id']);
     }
@@ -459,7 +459,7 @@ class MasrawyDealGameTest extends TestCase
     {
         $room = $this->makeRoom(2);
 
-        $state = (new MasrawyDealGame())->initializeState($room);
+        $state = (new MasrawyDealGame)->initializeState($room);
 
         foreach ($state['turn_order'] as $userId) {
             $this->assertEquals([], $state['banks'][$userId]);
@@ -471,7 +471,7 @@ class MasrawyDealGameTest extends TestCase
     {
         $room = $this->makeRoom(2);
 
-        $state = (new MasrawyDealGame())->initializeState($room);
+        $state = (new MasrawyDealGame)->initializeState($room);
 
         $this->assertNull($state['pending']);
         $this->assertNull($state['winner']);
@@ -556,7 +556,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setHand($room, $p1, ['money_1_1']);
         $room = $this->setState($room, ['draw_pile' => ['money_1_2', 'money_1_3', 'money_1_4']]);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'draw']);
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p1), ['type' => 'draw']);
 
         $this->assertCount(3, $state['hands'][$p1]);
         $this->assertCount(1, $state['draw_pile']);
@@ -571,7 +571,7 @@ class MasrawyDealGameTest extends TestCase
             'draw_pile' => ['money_1_1', 'money_1_2', 'money_1_3', 'money_1_4', 'money_1_5', 'money_1_6'],
         ]);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'draw']);
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p1), ['type' => 'draw']);
 
         $this->assertCount(5, $state['hands'][$p1]);
         $this->assertCount(1, $state['draw_pile']);
@@ -583,7 +583,7 @@ class MasrawyDealGameTest extends TestCase
         [$p1] = $room->game_state['turn_order'];
         $room = $this->setState($room, ['draw_pile' => ['money_1_1', 'money_1_2', 'money_1_3', 'money_1_4']]);
 
-        $game = new MasrawyDealGame();
+        $game = new MasrawyDealGame;
         $state = $game->submitAction($room, User::find($p1), ['type' => 'draw']);
         $room->update(['game_state' => $state]);
         $room->refresh();
@@ -605,7 +605,7 @@ class MasrawyDealGameTest extends TestCase
             'discard_pile' => ['money_1_2', 'money_1_3'],
         ]);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'draw']);
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p1), ['type' => 'draw']);
 
         // 1 starting + 2 drawn (1 from draw_pile, then the discard pile
         // reshuffles in and 1 more is drawn from it).
@@ -620,7 +620,7 @@ class MasrawyDealGameTest extends TestCase
         [$p1, $p2] = $room->game_state['turn_order'];
 
         $this->expectException(\InvalidArgumentException::class);
-        (new MasrawyDealGame())->submitAction($room, User::find($p2), ['type' => 'draw']);
+        (new MasrawyDealGame)->submitAction($room, User::find($p2), ['type' => 'draw']);
     }
 
     public function test_no_action_allowed_once_the_game_has_a_winner(): void
@@ -630,7 +630,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setState($room, ['winner' => $p1]);
 
         $this->expectException(\InvalidArgumentException::class);
-        (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'draw']);
+        (new MasrawyDealGame)->submitAction($room, User::find($p1), ['type' => 'draw']);
     }
 
     // --- Playing money ----------------------------------------------------
@@ -642,7 +642,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setHand($room, $p1, ['money_1_1']);
         $room = $this->setState($room, ['has_drawn_this_turn' => true]);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'play_money',
             'card_id' => 'money_1_1',
         ]);
@@ -659,7 +659,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setHand($room, $p1, ['money_1_1']);
 
         $this->expectException(\InvalidArgumentException::class);
-        (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'play_money',
             'card_id' => 'money_1_1',
         ]);
@@ -673,7 +673,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setState($room, ['has_drawn_this_turn' => true]);
 
         $this->expectException(\InvalidArgumentException::class);
-        (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'play_money',
             'card_id' => 'prop_green_1',
         ]);
@@ -686,7 +686,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setHand($room, $p1, ['money_1_1', 'money_1_2', 'money_1_3', 'money_1_4']);
         $room = $this->setState($room, ['has_drawn_this_turn' => true]);
 
-        $game = new MasrawyDealGame();
+        $game = new MasrawyDealGame;
 
         foreach (['money_1_1', 'money_1_2', 'money_1_3'] as $cardId) {
             $state = $game->submitAction($room, User::find($p1), ['type' => 'play_money', 'card_id' => $cardId]);
@@ -707,7 +707,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setHand($room, $p1, ['prop_green_1']);
         $room = $this->setState($room, ['has_drawn_this_turn' => true]);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'play_property',
             'card_id' => 'prop_green_1',
         ]);
@@ -723,7 +723,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setState($room, ['has_drawn_this_turn' => true]);
 
         $this->expectException(\InvalidArgumentException::class);
-        (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'play_property',
             'card_id' => 'wild_dark_blue_green_1',
             'color' => 'red', // not one of this wildcard's two colors
@@ -737,7 +737,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setHand($room, $p1, ['wild_dark_blue_green_1']);
         $room = $this->setState($room, ['has_drawn_this_turn' => true]);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'play_property',
             'card_id' => 'wild_dark_blue_green_1',
             'color' => 'green',
@@ -765,7 +765,7 @@ class MasrawyDealGameTest extends TestCase
         ]);
         $room = $this->setHand($room, $p1, ['prop_green_3']);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'play_property',
             'card_id' => 'prop_green_3',
         ]);
@@ -788,7 +788,7 @@ class MasrawyDealGameTest extends TestCase
         ]);
         $room = $this->setHand($room, $p1, ['wild_any_2']);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'play_property',
             'card_id' => 'wild_any_2',
             'color' => 'utility',
@@ -806,7 +806,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setHand($room, $p1, ['action_deal_breaker_1']);
         $room = $this->setState($room, ['has_drawn_this_turn' => true]);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'bank_card',
             'card_id' => 'action_deal_breaker_1',
         ]);
@@ -822,7 +822,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setState($room, ['has_drawn_this_turn' => true]);
 
         $this->expectException(\InvalidArgumentException::class);
-        (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'bank_card',
             'card_id' => 'prop_green_1',
         ]);
@@ -840,7 +840,7 @@ class MasrawyDealGameTest extends TestCase
             'draw_pile' => ['money_1_1', 'money_1_2'],
         ]);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'play_pass_go',
             'card_id' => 'action_pass_go_1',
         ]);
@@ -866,7 +866,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setHand($room, $p1, ['action_house_1']);
 
         $this->expectException(\InvalidArgumentException::class);
-        (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'play_shisha',
             'card_id' => 'action_house_1',
             'color' => 'brown',
@@ -887,7 +887,7 @@ class MasrawyDealGameTest extends TestCase
         ]);
         $room = $this->setHand($room, $p1, ['action_house_1']);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'play_shisha',
             'card_id' => 'action_house_1',
             'color' => 'brown',
@@ -911,7 +911,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setHand($room, $p1, ['action_hotel_1']);
 
         $this->expectException(\InvalidArgumentException::class);
-        (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'play_wil3a',
             'card_id' => 'action_hotel_1',
             'color' => 'brown',
@@ -932,7 +932,7 @@ class MasrawyDealGameTest extends TestCase
         ]);
         $room = $this->setHand($room, $p1, ['action_hotel_1']);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'play_wil3a',
             'card_id' => 'action_hotel_1',
             'color' => 'brown',
@@ -951,7 +951,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setState($room, ['has_drawn_this_turn' => true]);
 
         $this->expectException(\InvalidArgumentException::class);
-        (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'discard',
             'card_id' => 'money_1_1',
         ]);
@@ -965,7 +965,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setHand($room, $p1, $hand);
         $room = $this->setState($room, ['has_drawn_this_turn' => true]);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), [
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p1), [
             'type' => 'discard',
             'card_id' => 'money_2_2',
         ]);
@@ -983,7 +983,7 @@ class MasrawyDealGameTest extends TestCase
         [$p1] = $room->game_state['turn_order'];
 
         $this->expectException(\InvalidArgumentException::class);
-        (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'end_turn']);
+        (new MasrawyDealGame)->submitAction($room, User::find($p1), ['type' => 'end_turn']);
     }
 
     public function test_cannot_end_turn_while_over_the_hand_limit(): void
@@ -995,7 +995,7 @@ class MasrawyDealGameTest extends TestCase
         $room = $this->setState($room, ['has_drawn_this_turn' => true]);
 
         $this->expectException(\InvalidArgumentException::class);
-        (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'end_turn']);
+        (new MasrawyDealGame)->submitAction($room, User::find($p1), ['type' => 'end_turn']);
     }
 
     public function test_end_turn_advances_to_the_next_player_and_resets_turn_state(): void
@@ -1004,7 +1004,7 @@ class MasrawyDealGameTest extends TestCase
         [$p1, $p2] = $room->game_state['turn_order'];
         $room = $this->setState($room, ['has_drawn_this_turn' => true, 'cards_played_this_turn' => 2]);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p1), ['type' => 'end_turn']);
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p1), ['type' => 'end_turn']);
 
         $this->assertEquals($p2, $state['current_player_id']);
         $this->assertFalse($state['has_drawn_this_turn']);
@@ -1017,7 +1017,7 @@ class MasrawyDealGameTest extends TestCase
         [$p1, $p2, $p3] = $room->game_state['turn_order'];
         $room = $this->setState($room, ['current_player_id' => $p3, 'has_drawn_this_turn' => true]);
 
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($p3), ['type' => 'end_turn']);
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($p3), ['type' => 'end_turn']);
 
         $this->assertEquals($p1, $state['current_player_id']);
     }
@@ -1034,7 +1034,7 @@ class MasrawyDealGameTest extends TestCase
      */
     protected function act(Room $room, int $userId, array $payload): Room
     {
-        $state = (new MasrawyDealGame())->submitAction($room, User::find($userId), $payload);
+        $state = (new MasrawyDealGame)->submitAction($room, User::find($userId), $payload);
         $room->update(['game_state' => $state]);
 
         return $room->fresh();
@@ -1043,7 +1043,7 @@ class MasrawyDealGameTest extends TestCase
     protected function assertRejected(Room $room, int $userId, array $payload, ?string $messageFragment = null): void
     {
         try {
-            (new MasrawyDealGame())->submitAction($room, User::find($userId), $payload);
+            (new MasrawyDealGame)->submitAction($room, User::find($userId), $payload);
         } catch (\InvalidArgumentException $e) {
             if ($messageFragment !== null) {
                 $this->assertStringContainsString($messageFragment, $e->getMessage());
@@ -1730,7 +1730,7 @@ class MasrawyDealGameTest extends TestCase
         // Every opponent holds a Just Say No (so no charge auto-settles)
         // and 2M to pay with.
         foreach ([$p2, $p3, $p4] as $i => $target) {
-            $room = $this->equip($room, $target, hand: ['action_just_say_no_' . ($i + 1)], bank: ['money_2_' . ($i + 1)]);
+            $room = $this->equip($room, $target, hand: ['action_just_say_no_'.($i + 1)], bank: ['money_2_'.($i + 1)]);
         }
 
         $room = $this->playBirthday($room, $p1);
@@ -2537,7 +2537,7 @@ class MasrawyDealGameTest extends TestCase
         [$p1, $p2] = $room->game_state['turn_order'];
         $room = $this->equip($room, $p2, properties: ['brown' => $this->group(['prop_brown_1', 'prop_brown_2'])]);
 
-        $this->assertRejected($room, $p1, $this->slyDealPayload($p2, 'prop_brown_1'), 'complete set');
+        $this->assertRejected($room, $p1, $this->slyDealPayload($p2, 'prop_brown_1'), 'complete Manti2a');
     }
 
     public function test_a_set_completed_with_a_wildcard_cannot_be_raided_but_a_lone_el_bob_can(): void
@@ -2549,7 +2549,7 @@ class MasrawyDealGameTest extends TestCase
             'green' => $this->group(['wild_any_2']),
         ]);
 
-        $this->assertRejected($room, $p1, $this->slyDealPayload($p2, 'wild_any_1'), 'complete set');
+        $this->assertRejected($room, $p1, $this->slyDealPayload($p2, 'wild_any_1'), 'complete Manti2a');
 
         // A lone EL BOB never completes anything, so that one can be taken.
         $state = $this->act($room, $p1, $this->slyDealPayload($p2, 'wild_any_2'))->game_state;
@@ -2870,7 +2870,7 @@ class MasrawyDealGameTest extends TestCase
         [$p1, $p2] = $room->game_state['turn_order'];
         $room = $this->equip($room, $p2, properties: ['brown' => $this->group(['prop_brown_1', 'prop_brown_2'])]);
 
-        $this->assertRejected($room, $p1, $this->forcedDealPayload($p2, 'prop_brown_1', 'prop_red_1'), 'take a property from a complete set');
+        $this->assertRejected($room, $p1, $this->forcedDealPayload($p2, 'prop_brown_1', 'prop_red_1'), 'take a property from a complete Manti2a');
     }
 
     public function test_the_card_you_give_cannot_come_from_your_own_complete_set(): void
@@ -2879,7 +2879,7 @@ class MasrawyDealGameTest extends TestCase
         [$p1, $p2] = $room->game_state['turn_order'];
         $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1'])]);
 
-        $this->assertRejected($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', 'prop_brown_1'), 'give up a property from a complete set');
+        $this->assertRejected($room, $p1, $this->forcedDealPayload($p2, 'prop_green_1', 'prop_brown_1'), 'give up a property from a complete Manti2a');
     }
 
     public function test_the_card_you_give_must_be_one_of_your_own_properties(): void
@@ -3275,7 +3275,7 @@ class MasrawyDealGameTest extends TestCase
         [$p1, $p2] = $room->game_state['turn_order'];
         $room = $this->equip($room, $p2, properties: ['green' => $this->group(['prop_green_1', 'prop_green_2'])]);
 
-        $this->assertRejected($room, $p1, $this->dealBreakerPayload($p2, 'green'), 'complete sets');
+        $this->assertRejected($room, $p1, $this->dealBreakerPayload($p2, 'green'), 'complete Manati2');
     }
 
     public function test_a_set_of_only_el_bob_wildcards_is_not_a_complete_set(): void
@@ -3284,7 +3284,7 @@ class MasrawyDealGameTest extends TestCase
         [$p1, $p2] = $room->game_state['turn_order'];
         $room = $this->equip($room, $p2, properties: ['utility' => $this->group(['wild_any_1', 'wild_any_2'])]);
 
-        $this->assertRejected($room, $p1, $this->dealBreakerPayload($p2, 'utility'), 'complete sets');
+        $this->assertRejected($room, $p1, $this->dealBreakerPayload($p2, 'utility'), 'complete Manati2');
     }
 
     public function test_a_color_the_target_does_not_have_or_a_bad_color_is_rejected(): void
@@ -3295,10 +3295,10 @@ class MasrawyDealGameTest extends TestCase
 
         // My own complete set, a color nobody has, and junk are all refused.
         foreach (['brown', 'red', 'nonsense', ''] as $color) {
-            $this->assertRejected($room, $p1, $this->dealBreakerPayload($p2, $color), 'complete sets');
+            $this->assertRejected($room, $p1, $this->dealBreakerPayload($p2, $color), 'complete Manati2');
         }
 
-        $this->assertRejected($room, $p1, ['type' => 'play_deal_breaker', 'card_id' => 'action_deal_breaker_1', 'target_id' => $p2], 'complete sets');
+        $this->assertRejected($room, $p1, ['type' => 'play_deal_breaker', 'card_id' => 'action_deal_breaker_1', 'target_id' => $p2], 'complete Manati2');
     }
 
     public function test_deal_breaker_needs_a_valid_opponent(): void
@@ -3607,7 +3607,7 @@ class MasrawyDealGameTest extends TestCase
 
     protected function viewFor(Room $room, int $userId): array
     {
-        return (new MasrawyDealGame())->viewFor($room, User::find($userId));
+        return (new MasrawyDealGame)->viewFor($room, User::find($userId));
     }
 
     public function test_the_view_is_empty_before_the_game_starts(): void
@@ -3645,7 +3645,7 @@ class MasrawyDealGameTest extends TestCase
 
         $everything = json_encode($view);
         foreach (['money_1_1', 'prop_red_1', 'action_just_say_no_1'] as $othersCard) {
-            $this->assertFalse(str_contains($everything, '"' . $othersCard . '"'), "$othersCard leaked");
+            $this->assertFalse(str_contains($everything, '"'.$othersCard.'"'), "$othersCard leaked");
         }
     }
 
@@ -3662,7 +3662,7 @@ class MasrawyDealGameTest extends TestCase
 
         $everything = json_encode($view);
         foreach (['prop_pink_3', 'money_10_1', 'rent_any_2'] as $cardId) {
-            $this->assertFalse(str_contains($everything, '"' . $cardId . '"'), "$cardId leaked");
+            $this->assertFalse(str_contains($everything, '"'.$cardId.'"'), "$cardId leaked");
         }
     }
 

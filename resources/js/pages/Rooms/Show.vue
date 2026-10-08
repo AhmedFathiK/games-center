@@ -1,29 +1,29 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Link, router } from '@inertiajs/vue3'
-import axios from 'axios'
-import { themeForGame } from '@/themes/gameThemes'
-import NightPhase from './Mafia/NightPhase.vue'
-import DayPhase from './Mafia/DayPhase.vue'
-import GameOver from './Mafia/GameOver.vue'
-import Cancelled from './Mafia/Cancelled.vue'
-import MasrawyDeal from './MasrawyDeal/Table.vue'
-import type { Room, AuthUser } from '@/types/room'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/i18n';
+import { themeForGame } from '@/themes/gameThemes';
+import type { AuthUser, Room } from '@/types/room';
+import { Link, router } from '@inertiajs/vue3';
+import axios from 'axios';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import Cancelled from './Mafia/Cancelled.vue';
+import DayPhase from './Mafia/DayPhase.vue';
+import GameOver from './Mafia/GameOver.vue';
+import NightPhase from './Mafia/NightPhase.vue';
+import MasrawyDeal from './MasrawyDeal/Table.vue';
 
-const { t, gameName, locale } = useI18n()
+const { t, gameName, locale } = useI18n();
 
 const props = defineProps<{
-    room: Room
+    room: Room;
     auth: {
-        user: AuthUser
-    }
-}>()
+        user: AuthUser;
+    };
+}>();
 
 // --- Theme -----------------------------------------------------------
 // Visual identity only. Every id/behavior below is identical regardless
 // of which game this room belongs to — only colors/type/motifs change.
-const theme = computed(() => themeForGame(props.room.game.slug))
+const theme = computed(() => themeForGame(props.room.game.slug));
 
 const themeVars = computed(() => ({
     '--rc-bg': theme.value.colors.background,
@@ -39,10 +39,10 @@ const themeVars = computed(() => ({
     '--rc-font-display': theme.value.fonts.display,
     '--rc-font-body': theme.value.fonts.body,
     '--rc-font-mono': theme.value.fonts.mono,
-}))
+}));
 
 function indexLabel(i: number) {
-    return `N°${String(i + 1).padStart(2, '0')}`
+    return `N°${String(i + 1).padStart(2, '0')}`;
 }
 
 // Backend statuses are underscore-separated (e.g. "in_progress"). CSS
@@ -50,133 +50,122 @@ function indexLabel(i: number) {
 // space swap has to happen here — capitalization of each resulting word
 // is then handled by the existing `.rc-badge` CSS, same pattern already
 // used for game_state keys further down this file.
-const formattedStatus = computed(() => t(props.room.status.replace(/_/g, ' ')))
+const formattedStatus = computed(() => t(props.room.status.replace(/_/g, ' ')));
 
 function configurationLabel(key: string) {
-    const label = key
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, character => character.toUpperCase())
+    const label = key.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase());
 
-    return t(label)
+    return t(label);
 }
 
 // --- State / actions (unchanged from platform behavior) --------------
-const joiningRoom = ref(false)
-const joinError = ref<string | null>(null)
+const joiningRoom = ref(false);
+const joinError = ref<string | null>(null);
 
-const startingGame = ref(false)
-const startError = ref<string | null>(null)
+const startingGame = ref(false);
+const startError = ref<string | null>(null);
 
-const leavingRoom = ref(false)
-const leaveError = ref<string | null>(null)
+const leavingRoom = ref(false);
+const leaveError = ref<string | null>(null);
 
-const isHost = computed(() => props.room.host.id === props.auth.user.id)
+const isHost = computed(() => props.room.host.id === props.auth.user.id);
 
-const isPlayer = computed(() =>
-    props.room.players.some(player => player.id === props.auth.user.id),
-)
+const isPlayer = computed(() => props.room.players.some((player) => player.id === props.auth.user.id));
 
-const playersNeeded = computed(() =>
-    Math.max(0, props.room.game.minimum_players - props.room.players.length),
-)
+const playersNeeded = computed(() => Math.max(0, props.room.game.minimum_players - props.room.players.length));
 
-const canStart = computed(
-    () =>
-        props.room.status === 'waiting' &&
-        isHost.value &&
-        playersNeeded.value === 0,
-)
+const canStart = computed(() => props.room.status === 'waiting' && isHost.value && playersNeeded.value === 0);
 
 function joinRoom() {
-    joiningRoom.value = true
-    joinError.value = null
+    joiningRoom.value = true;
+    joinError.value = null;
 
     router.post(
         `/rooms/${props.room.id}/join`,
         {},
         {
-            onError: errors => {
-                joinError.value = Object.values(errors)[0] ?? 'Unable to join the room.'
+            onError: (errors) => {
+                joinError.value = Object.values(errors)[0] ?? 'Unable to join the room.';
             },
             onFinish: () => {
-                joiningRoom.value = false
+                joiningRoom.value = false;
             },
         },
-    )
+    );
 }
 
 function leaveRoom() {
-    leavingRoom.value = true
-    leaveError.value = null
+    leavingRoom.value = true;
+    leaveError.value = null;
 
     router.post(
         `/rooms/${props.room.id}/leave`,
         {},
         {
-            onError: errors => {
-                leaveError.value = Object.values(errors)[0] ?? 'Unable to leave the room.'
+            onError: (errors) => {
+                leaveError.value = Object.values(errors)[0] ?? 'Unable to leave the room.';
             },
             onFinish: () => {
-                leavingRoom.value = false
+                leavingRoom.value = false;
             },
         },
-    )
+    );
 }
 
 function startGame() {
-    if (!canStart.value) return
+    if (!canStart.value) return;
 
-    startingGame.value = true
-    startError.value = null
+    startingGame.value = true;
+    startError.value = null;
 
     router.post(
         `/rooms/${props.room.id}/start`,
         {},
         {
-            onError: errors => {
-                startError.value = Object.values(errors)[0] ?? 'Unable to start the game.'
+            onError: (errors) => {
+                startError.value = Object.values(errors)[0] ?? 'Unable to start the game.';
             },
             onFinish: () => {
-                startingGame.value = false
+                startingGame.value = false;
             },
         },
-    )
+    );
 }
 
 // --- Kick a player (host, waiting-room only) --------------------------
-const kickingPlayerId = ref<number | null>(null)
-const kickError = ref<string | null>(null)
+const kickingPlayerId = ref<number | null>(null);
+const kickError = ref<string | null>(null);
 
 function kickPlayer(playerId: number) {
-    kickingPlayerId.value = playerId
-    kickError.value = null
+    kickingPlayerId.value = playerId;
+    kickError.value = null;
 
     router.post(
         `/rooms/${props.room.id}/kick/${playerId}`,
         {},
         {
-            onError: errors => {
-                kickError.value = Object.values(errors)[0] ?? 'Unable to remove that player.'
+            onError: (errors) => {
+                kickError.value = Object.values(errors)[0] ?? 'Unable to remove that player.';
             },
             onFinish: () => {
-                kickingPlayerId.value = null
+                kickingPlayerId.value = null;
             },
         },
-    )
+    );
 }
 
 // The kicked player themself sees a brief modal, then gets redirected
 // out — they're no longer a member, so leaving them on this page would
 // just show them the room as an outside visitor with no explanation.
-const showKickedModal = ref(false)
-let kickedRedirectTimeout: ReturnType<typeof setTimeout> | null = null
+const showKickedModal = ref(false);
+let kickedRedirectTimeout: ReturnType<typeof setTimeout> | null = null;
 
 function handleSelfKicked() {
-    showKickedModal.value = true
+    showKickedModal.value = true;
 
     kickedRedirectTimeout = setTimeout(() => {
-        router.visit(route('games.index'))
-    }, 2500)
+        router.visit(route('games.index'));
+    }, 2500);
 }
 
 // --- Cancel room --------------------------------------------------------
@@ -186,20 +175,16 @@ function handleSelfKicked() {
 // this is the "host had an outage and can't cancel themselves" escape
 // hatch. The backend enforces the actual permission; these are just the
 // controls that become visible under each condition.
-const cancelling = ref(false)
-const cancelError = ref<string | null>(null)
-const showCancelModal = ref(false)
-const cancelConfirmText = ref('')
-const cancelModalHeading = ref('')
-const cancelModalBody = ref('')
+const cancelling = ref(false);
+const cancelError = ref<string | null>(null);
+const showCancelModal = ref(false);
+const cancelConfirmText = ref('');
+const cancelModalHeading = ref('');
+const cancelModalBody = ref('');
 
-const canHostCancel = computed(
-    () => isHost.value && (props.room.status === 'waiting' || props.room.status === 'in_progress'),
-)
+const canHostCancel = computed(() => isHost.value && (props.room.status === 'waiting' || props.room.status === 'in_progress'));
 
-const canStaleCancel = computed(
-    () => !isHost.value && props.room.status === 'in_progress' && props.room.host_stale === true,
-)
+const canStaleCancel = computed(() => !isHost.value && props.room.status === 'in_progress' && props.room.host_stale === true);
 
 // Cancelling is a rare, destructive action — it shouldn't visually
 // compete with Start Game for a host's attention while a room is still
@@ -208,67 +193,61 @@ const canStaleCancel = computed(
 // button. The in-progress and stale-host cases stay in the more
 // prominent bar below, since those situations are rarer and more urgent
 // (a stuck or abandoned game, not routine lobby management).
-const showProminentCancelBar = computed(
-    () => canStaleCancel.value || (canHostCancel.value && props.room.status === 'in_progress'),
-)
+const showProminentCancelBar = computed(() => canStaleCancel.value || (canHostCancel.value && props.room.status === 'in_progress'));
 
-const showWaitingCancelLink = computed(
-    () => canHostCancel.value && props.room.status === 'waiting',
-)
+const showWaitingCancelLink = computed(() => canHostCancel.value && props.room.status === 'waiting');
 
-const cancelConfirmValid = computed(
-    () => cancelConfirmText.value.trim().toLowerCase() === 'confirm',
-)
+const cancelConfirmValid = computed(() => cancelConfirmText.value.trim().toLowerCase() === 'confirm');
 
 function openCancelModal(heading: string, body: string) {
-    cancelModalHeading.value = heading
-    cancelModalBody.value = body
-    cancelConfirmText.value = ''
-    cancelError.value = null
-    showCancelModal.value = true
+    cancelModalHeading.value = heading;
+    cancelModalBody.value = body;
+    cancelConfirmText.value = '';
+    cancelError.value = null;
+    showCancelModal.value = true;
 }
 
 function closeCancelModal() {
-    showCancelModal.value = false
-    cancelConfirmText.value = ''
+    showCancelModal.value = false;
+    cancelConfirmText.value = '';
 }
 
 function submitCancel() {
-    if (!cancelConfirmValid.value) return
+    if (!cancelConfirmValid.value) return;
 
-    cancelling.value = true
-    cancelError.value = null
+    cancelling.value = true;
+    cancelError.value = null;
 
     router.post(
         `/rooms/${props.room.id}/cancel`,
         { confirmation: cancelConfirmText.value },
         {
             onSuccess: () => {
-                showCancelModal.value = false
+                showCancelModal.value = false;
             },
-            onError: errors => {
-                cancelError.value = Object.values(errors)[0] ?? 'Unable to cancel the room.'
+            onError: (errors) => {
+                cancelError.value = Object.values(errors)[0] ?? 'Unable to cancel the room.';
             },
             onFinish: () => {
-                cancelling.value = false
+                cancelling.value = false;
             },
         },
-    )
+    );
 }
 
 // The room was cancelled while still in the waiting lobby — it no
 // longer exists at all (see RoomCancelled's `deleted` flag), so anyone
 // else still viewing this page needs to be redirected out, same
 // treatment as being kicked.
-const showCancelledModal = ref(false)
-let cancelledRedirectTimeout: ReturnType<typeof setTimeout> | null = null
+const showCancelledModal = ref(false);
+let cancelledRedirectTimeout: ReturnType<typeof setTimeout> | null = null;
 
 function handleRoomDeleted() {
-    showCancelledModal.value = true
+    showCancelledModal.value = true;
 
     cancelledRedirectTimeout = setTimeout(() => {
-        router.visit(route('games.index'))
-    }, 2500)
+        router.visit(route('games.index'));
+    }, 2500);
 }
 
 // --- Host heartbeat + non-host stale-refresh ----------------------------
@@ -278,45 +257,45 @@ function handleRoomDeleted() {
 // player periodically reloads room props so the "host appears to be
 // gone" option can appear even if nothing else has triggered a reload
 // (e.g. the game is stalled with no actions happening).
-const HEARTBEAT_INTERVAL_MS = 45_000
-const STALE_REFRESH_INTERVAL_MS = 60_000
+const HEARTBEAT_INTERVAL_MS = 45_000;
+const STALE_REFRESH_INTERVAL_MS = 60_000;
 
-let heartbeatInterval: ReturnType<typeof setInterval> | null = null
-let staleRefreshInterval: ReturnType<typeof setInterval> | null = null
+let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+let staleRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
 function sendHeartbeat() {
     axios.post(`/rooms/${props.room.id}/heartbeat`).catch(() => {
         // Best-effort — a single missed heartbeat isn't worth surfacing
         // to the host; the next tick tries again.
-    })
+    });
 }
 
 function stopTimers() {
     if (heartbeatInterval) {
-        clearInterval(heartbeatInterval)
-        heartbeatInterval = null
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
     }
     if (staleRefreshInterval) {
-        clearInterval(staleRefreshInterval)
-        staleRefreshInterval = null
+        clearInterval(staleRefreshInterval);
+        staleRefreshInterval = null;
     }
 }
 
 function syncTimersToRoomState() {
-    stopTimers()
+    stopTimers();
 
-    if (props.room.status !== 'in_progress') return
+    if (props.room.status !== 'in_progress') return;
 
     if (isHost.value) {
-        heartbeatInterval = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS)
+        heartbeatInterval = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
     } else {
         staleRefreshInterval = setInterval(() => {
-            router.reload({ only: ['room'] })
-        }, STALE_REFRESH_INTERVAL_MS)
+            router.reload({ only: ['room'] });
+        }, STALE_REFRESH_INTERVAL_MS);
     }
 }
 
-watch(() => props.room.status, syncTimersToRoomState)
+watch(() => props.room.status, syncTimersToRoomState);
 
 // --- Copy code / link ---------------------------------------------------
 // Sharing the room is the primary thing a host or player needs to do
@@ -325,55 +304,55 @@ watch(() => props.room.status, syncTimersToRoomState)
 // section in the template). The shareable URL uses the room code,
 // matching the GET /rooms/{room:code} route — not the numeric id used
 // by the action endpoints above.
-const linkCopied = ref(false)
-let linkCopiedTimeout: ReturnType<typeof setTimeout> | null = null
+const linkCopied = ref(false);
+let linkCopiedTimeout: ReturnType<typeof setTimeout> | null = null;
 
-const codeCopied = ref(false)
-let codeCopiedTimeout: ReturnType<typeof setTimeout> | null = null
+const codeCopied = ref(false);
+let codeCopiedTimeout: ReturnType<typeof setTimeout> | null = null;
 
 async function copyToClipboard(text: string) {
     try {
-        await navigator.clipboard.writeText(text)
+        await navigator.clipboard.writeText(text);
     } catch {
         // Clipboard API can fail (permissions, non-HTTPS, older browsers).
         // Fall back to a hidden textarea + the legacy execCommand copy so
         // the button still works rather than silently doing nothing.
-        const textarea = document.createElement('textarea')
-        textarea.value = text
-        textarea.style.position = 'fixed'
-        textarea.style.opacity = '0'
-        document.body.appendChild(textarea)
-        textarea.select()
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
 
         try {
-            document.execCommand('copy')
+            document.execCommand('copy');
         } finally {
-            document.body.removeChild(textarea)
+            document.body.removeChild(textarea);
         }
     }
 }
 
 async function copyRoomLink() {
-    const link = `${window.location.origin}/rooms/${props.room.code}`
-    await copyToClipboard(link)
+    const link = `${window.location.origin}/rooms/${props.room.code}`;
+    await copyToClipboard(link);
 
-    linkCopied.value = true
+    linkCopied.value = true;
 
-    if (linkCopiedTimeout) clearTimeout(linkCopiedTimeout)
+    if (linkCopiedTimeout) clearTimeout(linkCopiedTimeout);
     linkCopiedTimeout = setTimeout(() => {
-        linkCopied.value = false
-    }, 2000)
+        linkCopied.value = false;
+    }, 2000);
 }
 
 async function copyRoomCode() {
-    await copyToClipboard(props.room.code)
+    await copyToClipboard(props.room.code);
 
-    codeCopied.value = true
+    codeCopied.value = true;
 
-    if (codeCopiedTimeout) clearTimeout(codeCopiedTimeout)
+    if (codeCopiedTimeout) clearTimeout(codeCopiedTimeout);
     codeCopiedTimeout = setTimeout(() => {
-        codeCopied.value = false
-    }, 2000)
+        codeCopied.value = false;
+    }, 2000);
 }
 
 // Authorization for `rooms.{id}` (see routes/channels.php) requires
@@ -385,13 +364,13 @@ async function copyRoomCode() {
 // reactively — once, the moment membership actually becomes true —
 // covers both cases: already a member at mount (subscribes immediately,
 // same as before), or becoming one afterward (subscribes right then).
-const canAccessRoomChannel = computed(() => isHost.value || isPlayer.value)
+const canAccessRoomChannel = computed(() => isHost.value || isPlayer.value);
 
-let roomChannelSubscribed = false
+let roomChannelSubscribed = false;
 
 function subscribeToRoomChannel() {
-    if (roomChannelSubscribed) return
-    roomChannelSubscribed = true
+    if (roomChannelSubscribed) return;
+    roomChannelSubscribed = true;
 
     window.Echo.private(`rooms.${props.room.id}`)
         .listen('.player.joined', () => router.reload({ only: ['room'] }))
@@ -399,16 +378,16 @@ function subscribeToRoomChannel() {
         .listen('.player.left', () => router.reload({ only: ['room'] }))
         .listen('.player.kicked', (e: { player: { id: number; name: string } }) => {
             if (e.player.id === props.auth.user.id) {
-                handleSelfKicked()
+                handleSelfKicked();
             } else {
-                router.reload({ only: ['room'] })
+                router.reload({ only: ['room'] });
             }
         })
         .listen('.room.cancelled', (e: { deleted: boolean }) => {
             if (e.deleted) {
-                handleRoomDeleted()
+                handleRoomDeleted();
             } else {
-                router.reload({ only: ['room'] })
+                router.reload({ only: ['room'] });
             }
         })
         .listen('.phase.changed', () => router.reload({ only: ['room'] }))
@@ -419,59 +398,54 @@ function subscribeToRoomChannel() {
         // (GameDefinition::eventsAfterAction()'s own default) — Masrawy
         // Deal doesn't have its own event types the way Mafia does
         // above, so every draw/play/pay/etc for that game arrives here.
-        .listen('.game.state_changed', () => router.reload({ only: ['room'] }))
+        .listen('.game.state_changed', () => router.reload({ only: ['room'] }));
 }
 
-watch(canAccessRoomChannel, canAccess => {
+watch(canAccessRoomChannel, (canAccess) => {
     if (canAccess) {
-        subscribeToRoomChannel()
+        subscribeToRoomChannel();
     }
-})
+});
 
 onMounted(() => {
     if (canAccessRoomChannel.value) {
-        subscribeToRoomChannel()
+        subscribeToRoomChannel();
     }
 
-    syncTimersToRoomState()
+    syncTimersToRoomState();
 
     // Broadcasts fired while this connection was down/reconnecting are
     // simply lost — Pusher doesn't replay them. Resync once the
     // connection comes back up so a flaky handshake or brief network
     // drop doesn't leave this tab silently stale until a manual refresh.
-    let hasConnectedBefore = false
+    let hasConnectedBefore = false;
 
-    window.Echo.connector.pusher.connection.bind(
-        'state_change',
-        (states: { previous: string; current: string }) => {
-            if (states.current === 'connected') {
-                if (hasConnectedBefore) {
-                    router.reload({ only: ['room'] })
-                }
-                hasConnectedBefore = true
+    window.Echo.connector.pusher.connection.bind('state_change', (states: { previous: string; current: string }) => {
+        if (states.current === 'connected') {
+            if (hasConnectedBefore) {
+                router.reload({ only: ['room'] });
             }
-        },
-    )
-})
+            hasConnectedBefore = true;
+        }
+    });
+});
 
 onUnmounted(() => {
-    window.Echo.leave(`rooms.${props.room.id}`)
+    window.Echo.leave(`rooms.${props.room.id}`);
 
-    stopTimers()
+    stopTimers();
 
-    if (linkCopiedTimeout) clearTimeout(linkCopiedTimeout)
-    if (codeCopiedTimeout) clearTimeout(codeCopiedTimeout)
-    if (kickedRedirectTimeout) clearTimeout(kickedRedirectTimeout)
-    if (cancelledRedirectTimeout) clearTimeout(cancelledRedirectTimeout)
-})
+    if (linkCopiedTimeout) clearTimeout(linkCopiedTimeout);
+    if (codeCopiedTimeout) clearTimeout(codeCopiedTimeout);
+    if (kickedRedirectTimeout) clearTimeout(kickedRedirectTimeout);
+    if (cancelledRedirectTimeout) clearTimeout(cancelledRedirectTimeout);
+});
 </script>
 
 <template>
     <div class="rc-page" :class="`rc-theme-${theme.slug}`" :style="themeVars">
         <div class="rc-container">
-            <Link :href="route('games.index')" class="rc-back-link rc-mono">
-                {{ locale() === 'ar' ? '→' : '←' }} {{ t('Back to Games') }}
-            </Link>
+            <Link :href="route('games.index')" class="rc-back-link rc-mono"> {{ locale() === 'ar' ? '→' : '←' }} {{ t('Back to Games') }} </Link>
 
             <!-- Room Header -->
             <div class="rc-header">
@@ -496,11 +470,7 @@ onUnmounted(() => {
                     <button type="button" class="rc-invite-btn" @click="copyRoomCode">
                         {{ codeCopied ? t('Copied!') : t('Copy Code') }}
                     </button>
-                    <button
-                        type="button"
-                        class="rc-invite-btn rc-invite-btn--secondary"
-                        @click="copyRoomLink"
-                    >
+                    <button type="button" class="rc-invite-btn rc-invite-btn--secondary" @click="copyRoomLink">
                         {{ linkCopied ? t('Copied!') : t('Copy Link') }}
                     </button>
                 </div>
@@ -527,7 +497,12 @@ onUnmounted(() => {
                         type="button"
                         class="rc-cancel-btn"
                         :disabled="cancelling"
-                        @click="openCancelModal(t('Cancel this room?'), t('The host appears to be gone. This cannot be undone. Type confirm below to proceed.'))"
+                        @click="
+                            openCancelModal(
+                                t('Cancel this room?'),
+                                t('The host appears to be gone. This cannot be undone. Type confirm below to proceed.'),
+                            )
+                        "
                     >
                         Cancel — host appears gone
                     </button>
@@ -550,12 +525,7 @@ onUnmounted(() => {
                     <div v-if="isHost" class="rc-divider" />
 
                     <div v-if="isHost" class="rc-start-block">
-                        <button
-                            type="button"
-                            class="rc-btn rc-btn--primary"
-                            :disabled="startingGame || !canStart"
-                            @click="startGame"
-                        >
+                        <button type="button" class="rc-btn rc-btn--primary" :disabled="startingGame || !canStart" @click="startGame">
                             <template v-if="startingGame">{{ t('Starting…') }}</template>
                             <template v-else-if="playersNeeded > 0">
                                 {{ t('Need') }} {{ playersNeeded }} {{ t(playersNeeded === 1 ? 'player' : 'players') }}
@@ -571,9 +541,7 @@ onUnmounted(() => {
                 <section class="rc-panel">
                     <div class="rc-panel-header">
                         <h2 class="rc-panel-title">{{ t(theme.labels.rosterSectionTitle) }}</h2>
-                        <span class="rc-mono rc-count">
-                            {{ room.players.length }} / {{ room.max_players }}
-                        </span>
+                        <span class="rc-mono rc-count"> {{ room.players.length }} / {{ room.max_players }} </span>
                     </div>
 
                     <div class="rc-roster">
@@ -594,9 +562,7 @@ onUnmounted(() => {
                             </button>
                         </div>
 
-                        <p v-if="room.players.length === 0" class="rc-muted">
-                            No players have joined yet.
-                        </p>
+                        <p v-if="room.players.length === 0" class="rc-muted">No players have joined yet.</p>
                     </div>
 
                     <p v-if="kickError" role="alert" class="rc-error">{{ kickError }}</p>
@@ -604,25 +570,13 @@ onUnmounted(() => {
                     <div class="rc-divider" />
 
                     <div class="rc-membership">
-                        <button
-                            v-if="!isHost && !isPlayer"
-                            type="button"
-                            class="rc-btn rc-btn--secondary"
-                            :disabled="joiningRoom"
-                            @click="joinRoom"
-                        >
+                        <button v-if="!isHost && !isPlayer" type="button" class="rc-btn rc-btn--secondary" :disabled="joiningRoom" @click="joinRoom">
                             {{ joiningRoom ? t('Joining…') : t('Join Room') }}
                         </button>
 
                         <p v-else class="rc-muted">{{ t('You are in this room.') }}</p>
 
-                        <button
-                            v-if="isPlayer && !isHost"
-                            type="button"
-                            class="rc-btn rc-btn--danger"
-                            :disabled="leavingRoom"
-                            @click="leaveRoom"
-                        >
+                        <button v-if="isPlayer && !isHost" type="button" class="rc-btn rc-btn--danger" :disabled="leavingRoom" @click="leaveRoom">
                             {{ leavingRoom ? t('Leaving…') : t('Leave Room') }}
                         </button>
 
@@ -662,20 +616,10 @@ onUnmounted(() => {
             </template>
 
             <!-- In progress: night phase -->
-            <NightPhase
-                v-else-if="room.status === 'in_progress' && room.phase === 'night'"
-                :room="room"
-                :auth="auth"
-                :is-host="isHost"
-            />
+            <NightPhase v-else-if="room.status === 'in_progress' && room.phase === 'night'" :room="room" :auth="auth" :is-host="isHost" />
 
             <!-- In progress: day phase -->
-            <DayPhase
-                v-else-if="room.status === 'in_progress' && room.phase === 'day'"
-                :room="room"
-                :auth="auth"
-                :is-host="isHost"
-            />
+            <DayPhase v-else-if="room.status === 'in_progress' && room.phase === 'day'" :room="room" :auth="auth" :is-host="isHost" />
 
             <!-- Masrawy Deal has no night/day phases and no separate
                  finished/cancelled screen — GameOver/Cancelled below are
@@ -692,20 +636,10 @@ onUnmounted(() => {
             />
 
             <!-- Finished -->
-            <GameOver
-                v-else-if="room.status === 'finished'"
-                :room="room"
-                :auth="auth"
-                :is-host="isHost"
-            />
+            <GameOver v-else-if="room.status === 'finished'" :room="room" :auth="auth" :is-host="isHost" />
 
             <!-- Cancelled -->
-            <Cancelled
-                v-else-if="room.status === 'cancelled'"
-                :room="room"
-                :auth="auth"
-                :is-host="isHost"
-            />
+            <Cancelled v-else-if="room.status === 'cancelled'" :room="room" :auth="auth" :is-host="isHost" />
         </div>
 
         <!-- Kicked modal -->
@@ -746,15 +680,8 @@ onUnmounted(() => {
                 <p v-if="cancelError" role="alert" class="rc-error">{{ cancelError }}</p>
 
                 <div class="rc-cancel-modal-actions">
-                    <button type="button" class="rc-cancel-modal-cancel-btn" @click="closeCancelModal">
-                        Never mind
-                    </button>
-                    <button
-                        type="button"
-                        class="rc-cancel-modal-confirm-btn"
-                        :disabled="!cancelConfirmValid || cancelling"
-                        @click="submitCancel"
-                    >
+                    <button type="button" class="rc-cancel-modal-cancel-btn" @click="closeCancelModal">Never mind</button>
+                    <button type="button" class="rc-cancel-modal-confirm-btn" :disabled="!cancelConfirmValid || cancelling" @click="submitCancel">
                         {{ cancelling ? t('Cancelling…') : t('Cancel Room') }}
                     </button>
                 </div>
@@ -952,7 +879,9 @@ onUnmounted(() => {
     padding: 0.45rem 0.9rem;
     font-size: 0.8rem;
     cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
+    transition:
+        background 0.15s ease,
+        color 0.15s ease;
 }
 
 .rc-cancel-btn:hover:not(:disabled) {
@@ -1019,7 +948,9 @@ onUnmounted(() => {
 
 .rc-theme-mafia .rc-panel {
     border-radius: 2px;
-    box-shadow: 0 1px 0 var(--rc-surface-alt), 0 6px 16px rgba(0, 0, 0, 0.35);
+    box-shadow:
+        0 1px 0 var(--rc-surface-alt),
+        0 6px 16px rgba(0, 0, 0, 0.35);
     position: relative;
 }
 
@@ -1100,7 +1031,9 @@ onUnmounted(() => {
     font-size: 0.75rem;
     cursor: pointer;
     white-space: nowrap;
-    transition: border-color 0.15s ease, color 0.15s ease;
+    transition:
+        border-color 0.15s ease,
+        color 0.15s ease;
 }
 
 .rc-kick-btn:hover:not(:disabled) {
@@ -1142,7 +1075,9 @@ onUnmounted(() => {
     font-size: 0.9rem;
     border: 1px solid var(--rc-border);
     cursor: pointer;
-    transition: opacity 0.15s ease, transform 0.1s ease;
+    transition:
+        opacity 0.15s ease,
+        transform 0.1s ease;
 }
 
 .rc-btn:disabled {

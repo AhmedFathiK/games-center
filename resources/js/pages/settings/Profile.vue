@@ -1,41 +1,41 @@
 <script setup lang="ts">
-import { Head, Link, useForm, usePage } from '@inertiajs/vue3'
-import { ref } from 'vue'
-import AppLayout from '@/layouts/AppLayout.vue'
-import SettingsNav from '@/components/SettingsNav.vue'
-import { useI18n } from '@/i18n'
-import DeleteAccountModal from '@/components/DeleteAccountModal.vue'
-import { type SharedData, type User } from '@/types'
+import DeleteAccountModal from '@/components/DeleteAccountModal.vue';
+import SettingsNav from '@/components/SettingsNav.vue';
+import { useI18n } from '@/i18n';
+import AppLayout from '@/layouts/AppLayout.vue';
+import { type SharedData, type User } from '@/types';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { ref } from 'vue';
 
-defineOptions({ layout: AppLayout })
+defineOptions({ layout: AppLayout });
 
 interface Props {
-    mustVerifyEmail: boolean
-    status?: string
+    mustVerifyEmail: boolean;
+    status?: string;
 }
 
-defineProps<Props>()
+defineProps<Props>();
 
-const page = usePage<SharedData>()
-const user = page.props.auth.user as User
+const page = usePage<SharedData>();
+const user = page.props.auth.user as User;
 
 const form = useForm({
     name: user.name,
     email: user.email,
-})
-const { t } = useI18n()
+});
+const { t } = useI18n();
 
-const showSaved = ref(false)
+const showSaved = ref(false);
 
 const submit = () => {
     form.patch(route('profile.update'), {
         preserveScroll: true,
         onSuccess: () => {
-            showSaved.value = true
-            setTimeout(() => (showSaved.value = false), 2000)
+            showSaved.value = true;
+            setTimeout(() => (showSaved.value = false), 2000);
         },
-    })
-}
+    });
+};
 </script>
 
 <template>
@@ -45,7 +45,7 @@ const submit = () => {
         <div class="st-container">
             <header class="st-header">
                 <h1 class="st-title">{{ t('Settings') }}</h1>
-                    <p class="st-subtitle">{{ t('Manage your profile and account settings.') }}</p>
+                <p class="st-subtitle">{{ t('Manage your profile and account settings.') }}</p>
             </header>
 
             <SettingsNav />
@@ -102,7 +102,6 @@ const submit = () => {
 </template>
 
 <style scoped>
-
 .st-page {
     --st-ink: #0f1613;
     --st-surface: #16201c;
