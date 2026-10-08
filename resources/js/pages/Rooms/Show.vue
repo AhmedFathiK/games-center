@@ -543,7 +543,7 @@ onUnmounted(() => {
                     <h2 class="rc-panel-title">{{ t(theme.labels.hostSectionTitle) }}</h2>
 
                     <div class="rc-row">
-                        <span class="rc-row-name">{{ room.host.name }}</span>
+                        <span class="rc-row-name" dir="auto">{{ room.host.name }}</span>
                         <span class="rc-row-tag">{{ isHost ? t('Host · You') : t('Host') }}</span>
                     </div>
 
@@ -581,7 +581,7 @@ onUnmounted(() => {
                             <span v-if="theme.motifs.useIndexNumbers" class="rc-mono rc-index">
                                 {{ indexLabel(i) }}
                             </span>
-                            <span class="rc-row-name">{{ player.name }}</span>
+                            <span class="rc-row-name" dir="auto">{{ player.name }}</span>
 
                             <button
                                 v-if="isHost && player.id !== room.host.id"

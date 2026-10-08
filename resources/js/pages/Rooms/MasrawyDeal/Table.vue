@@ -1042,7 +1042,7 @@ onUnmounted(() => {
                     <strong class="md-activity-title">{{ t('Recent plays') }}</strong>
                     <ol>
                         <li v-for="event in recentActivity" :key="event.id">
-                            <strong>{{ playerName(event.player_id) }}</strong> {{ activityDescription(event) }}
+                            <strong><bdi>{{ playerName(event.player_id) }}</bdi></strong> {{ activityDescription(event) }}
                         </li>
                     </ol>
                 </div>
@@ -1057,7 +1057,7 @@ onUnmounted(() => {
 
                 <ul class="md-charges">
                     <li v-for="(charge, targetIdKey) in pending.charges" :key="targetIdKey" class="md-charge">
-                        <span>{{ playerName(targetIdKey) }}: {{ charge.phase }}</span>
+                        <span><bdi>{{ playerName(targetIdKey) }}</bdi>: {{ charge.phase }}</span>
                         <span v-if="charge.owed > 0"> — owes {{ charge.owed }}M</span>
                         <span v-if="charge.outcome"> — {{ charge.outcome }}</span>
                     </li>
@@ -1379,7 +1379,7 @@ onUnmounted(() => {
                             </p>
                             <div v-if="targetStealablePropertyGroups.length" class="md-property-choice-groups" :aria-label="t('Choose their property to take')">
                                 <section v-for="group in targetStealablePropertyGroups" :key="group.color" class="md-property-choice-group">
-                                    <h4>{{ colorLabel(group.color) }} · {{ playerName(targetId!) }}</h4>
+                                    <h4>{{ colorLabel(group.color) }} · <bdi>{{ playerName(targetId!) }}</bdi></h4>
                                     <div class="md-property-choice-cards">
                                         <button
                                             v-for="cardId in group.cardIds"

@@ -112,6 +112,7 @@ const FLIGHT_MS = 780
 const STAGGER_MS = 170
 const flights = ref<Flight[]>([])
 const caption = ref<string | null>(null)
+const captionName = ref('')
 const flashPlayerId = ref<number | null>(null)
 const queue: MasrawyActivity[] = []
 let pumping = false
@@ -254,7 +255,10 @@ async function playEvent(event: MasrawyActivity) {
         made.push({ key: ++flightKey, cardId: leg.cardId, activeColor: colorFor(event, leg.cardId), from, to, delay: index * STAGGER_MS, s0: s1 * 1.4, s1 })
     })
 
-    if (props.describe) caption.value = `${props.playerName(event.player_id)} ${props.describe(event)}`
+    if (props.describe) {
+        captionName.value = String(props.playerName(event.player_id))
+        caption.value = props.describe(event)
+    }
     flashPlayerId.value = event.player_id
 
     const total = made.length ? FLIGHT_MS + (made.length - 1) * STAGGER_MS : 0
@@ -516,7 +520,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
                         @click="openPlayer(entry.seat.id)"
                     >
                         <span class="tb-id">
-                            <strong class="tb-name">{{ playerName(entry.seat.id) }}</strong>
+                            <strong class="tb-name" dir="auto">{{ playerName(entry.seat.id) }}</strong>
                             <span class="tb-stats">
                                 <span class="tb-bank" :title="t('Bank')">{{ entry.bank }}M</span>
                                 <span class="tb-hand" :title="t('Hand cards')">▤ {{ entry.seat.hand_count }}</span>
@@ -533,7 +537,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 
         <!-- Move captions + flying cards. Teleported: the stage's perspective would turn position:fixed into position:absolute. -->
         <Teleport to="body">
-            <div v-if="caption" class="tb-caption" role="status" aria-live="polite">{{ caption }}</div>
+            <div v-if="caption" class="tb-caption" role="status" aria-live="polite"><bdi>{{ captionName }}</bdi> {{ caption }}</div>
             <div class="tb-flights" aria-hidden="true">
                 <div v-for="flight in flights" :key="flight.key" class="tb-fly" :style="flightStyle(flight)">
                     <MasrawyCard v-if="flight.cardId && table.catalog[flight.cardId]" :entry="table.catalog[flight.cardId]" :active-color="flight.activeColor" />
@@ -801,6 +805,7 @@ function seatLabel(entry: (typeof seats.value)[number]): string {
 
 .tb-name {
     display: block;
+    text-align: center;
     max-width: 100%;
     overflow: hidden;
     font-size: 1em;
