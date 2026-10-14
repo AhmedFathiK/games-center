@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from '@/i18n';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { router } from '@inertiajs/vue3';
+import { Head, router } from '@inertiajs/vue3';
 
 defineOptions({ layout: AppLayout });
 const { t, gameName } = useI18n();
@@ -64,6 +64,7 @@ function formatStatus(status: string) {
 </script>
 
 <template>
+    <Head :title="t('My Rooms')" />
     <div class="mr-page">
         <div class="mr-container">
             <header class="mr-header">

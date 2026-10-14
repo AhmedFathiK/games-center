@@ -19,7 +19,7 @@ const submit = () => {
 
 <template>
     <AuthLayout title="Confirm your password" description="This is a secure area of the application. Please confirm your password before continuing.">
-        <Head title="Confirm password" />
+        <Head :title="t('Confirm password')" />
 
         <form @submit.prevent="submit" class="au-form">
             <div class="au-field">

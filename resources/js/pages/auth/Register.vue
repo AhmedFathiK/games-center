@@ -20,7 +20,7 @@ const submit = () => {
 
 <template>
     <AuthLayout title="Create an account" description="Enter your details below to create your account">
-        <Head title="Register" />
+        <Head :title="t('Register')" />
 
         <form @submit.prevent="submit" class="au-form">
             <div class="au-field">

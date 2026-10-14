@@ -104,6 +104,7 @@ const ar: Record<string, string> = {
     Register: 'إنشاء حساب',
     'Enter your details below to create your account': 'أدخل بياناتك لإنشاء حسابك.',
     'Full name': 'الاسم الكامل',
+    'Email verification': 'تأكيد البريد الإلكتروني',
     'Forgot password': 'نسيت كلمة المرور',
     'Enter your email to receive a password reset link': 'أدخل بريدك الإلكتروني لتصلك رسالة إعادة تعيين كلمة المرور.',
     'Reset password': 'إعادة تعيين كلمة المرور',

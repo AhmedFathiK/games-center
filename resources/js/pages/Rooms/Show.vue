@@ -2,7 +2,7 @@
 import { useI18n } from '@/i18n';
 import { themeForGame } from '@/themes/gameThemes';
 import type { AuthUser, Room } from '@/types/room';
-import { Link, router } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import Cancelled from './Mafia/Cancelled.vue';
@@ -443,6 +443,7 @@ onUnmounted(() => {
 </script>
 
 <template>
+    <Head :title="gameName(room.game.slug, room.game.name)" />
     <div class="rc-page" :class="`rc-theme-${theme.slug}`" :style="themeVars">
         <div class="rc-container">
             <Link :href="route('games.index')" class="rc-back-link rc-mono"> {{ locale() === 'ar' ? '→' : '←' }} {{ t('Back to Games') }} </Link>

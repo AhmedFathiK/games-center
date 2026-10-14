@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from '@/i18n';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { router } from '@inertiajs/vue3';
+import { Head, router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
 defineOptions({ layout: AppLayout });
@@ -130,6 +130,7 @@ async function createRoom() {
 </script>
 
 <template>
+    <Head :title="t('Choose a Game')" />
     <div class="gc-page">
         <div class="gc-container">
             <header class="gc-header">

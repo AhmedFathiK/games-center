@@ -19,7 +19,7 @@ const submit = () => {
 
 <template>
     <AuthLayout title="Forgot password" description="Enter your email to receive a password reset link">
-        <Head title="Forgot password" />
+        <Head :title="t('Forgot password')" />
 
         <p v-if="status" class="au-status">{{ status }}</p>
 

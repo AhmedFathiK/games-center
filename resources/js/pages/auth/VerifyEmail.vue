@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from '@/i18n';
 import AuthLayout from '@/layouts/AuthLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
@@ -6,6 +7,7 @@ defineProps<{
     status?: string;
 }>();
 
+const { t } = useI18n();
 const form = useForm({});
 
 const submit = () => {
@@ -15,7 +17,7 @@ const submit = () => {
 
 <template>
     <AuthLayout title="Verify email" description="Please verify your email address by clicking on the link we just emailed to you.">
-        <Head title="Email verification" />
+        <Head :title="t('Email verification')" />
 
         <p v-if="status === 'verification-link-sent'" class="au-status">
             A new verification link has been sent to the email address you provided during registration.

@@ -29,7 +29,7 @@ const submit = () => {
 
 <template>
     <AuthLayout title="Reset password" description="Please enter your new password below">
-        <Head title="Reset password" />
+        <Head :title="t('Reset password')" />
 
         <form @submit.prevent="submit" class="au-form">
             <div class="au-field">
